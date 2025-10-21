@@ -176,27 +176,25 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- ULTIMATE SANDBOX: Blocks All Popups/Ads/Downloads -->
     <iframe 
       id="playerIframe" 
       src="" 
       allowfullscreen
-      sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-modals"
+      sandbox="allow-scripts allow-same-origin allow-presentation"
       loading="lazy"
       referrerpolicy="no-referrer"
     ></iframe>
   </div>
 
   <script>
-    // OFFICIAL 2025 MIRRORS (from VidSrc API docs)
+    // ✅ Updated mirrors (as of late 2025)
     const VIDSRC_MIRRORS = [
-      'https://vidsrc-embed.ru/embed/movie',
-      'https://vsrc.su/embed/movie',  // Alternative official
-      'https://vidsrc.to/embed/movie'  // Fallback
+      'https://vidsrc.to/embed',
+      'https://vidsrc.pro/embed',
+      'https://vidsrc.vip/embed',
+      'https://vidsrc.cc/embed',
+      'https://vidsrc.me/embed'
     ];
-
-    // AD-FREE PROXY (GitHub serverless - removes ads/popups)
-    const AD_FREE_PROXY = 'https://vidsrc-proxy.glitch.me/embed?url=';  // Free, open-source
 
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
@@ -205,7 +203,6 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // Free IMDB search (no key)
     async function searchMovies() {
       const query = searchInput.value.trim();
       if (!query) return;
@@ -218,15 +215,15 @@
         const data = await res.json();
         const results = data.description || [];
 
-        if (results.length === 0) {
-          movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results. Try another name.</p>';
+        if (!results.length) {
+          movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results found. Try another title.</p>';
           showLoading(false);
           return;
         }
 
         displayMovies(results);
-      } catch (e) {
-        movieGrid.innerHTML = '<p style="color:#ff6b6b; text-align:center;">Search failed. Try again.</p>';
+      } catch (err) {
+        movieGrid.innerHTML = '<p style="text-align:center; color:#f55;">Search failed. Try again later.</p>';
       } finally {
         showLoading(false);
       }
@@ -234,10 +231,10 @@
 
     function displayMovies(movies) {
       movieGrid.innerHTML = '';
-      movies.slice(0, 10).forEach(movie => {  // Limit to top 10
-        if (!movie['#IMDB_ID']) return;
+      movies.slice(0, 12).forEach(movie => {
+        const imdbId = movie['#IMDB_ID']?.startsWith('tt') ? movie['#IMDB_ID'] : `tt${movie['#IMDB_ID']}`;
+        if (!imdbId) return;
 
-        const imdbId = movie['#IMDB_ID'].startsWith('tt') ? movie['#IMDB_ID'] : `tt${movie['#IMDB_ID']}`;
         const card = document.createElement('div');
         card.className = 'movie-card';
         card.innerHTML = `
@@ -246,42 +243,40 @@
                onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
           <div class="movie-info">
             <h3>${movie['#TITLE']}</h3>
-            <p>${movie['#YEAR'] || 'N/A'}</p>
+            <p>${movie['#YEAR'] || ''}</p>
           </div>
         `;
-        card.onclick = () => playMovie(imdbId);
+        card.onclick = () => playMovie(imdbId, movie['#MEDIA_TYPE']);
         movieGrid.appendChild(card);
       });
     }
 
-    function playMovie(imdbId) {
-      // Step 1: Try direct embed with fallback mirrors
-      let currentMirrorIndex = 0;
-      function tryMirror() {
-        if (currentMirrorIndex >= VIDSRC_MIRRORS.length) {
-          // Step 2: Fallback to ad-free proxy
-          const directUrl = `${VIDSRC_MIRRORS[0]}/${imdbId}?autoplay=1`;
-          playerIframe.src = `${AD_FREE_PROXY}${encodeURIComponent(directUrl)}`;
+    function playMovie(imdbId, type = 'movie') {
+      let currentMirror = 0;
+      let playable = false;
+      playerContainer.classList.add('active');
+      playerIframe.src = '';
+
+      const tryNext = () => {
+        if (currentMirror >= VIDSRC_MIRRORS.length) {
+          playerIframe.srcdoc = `<style>body{color:#fff;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;}</style><h2>❌ Media not available on any mirror.</h2>`;
           return;
         }
 
-        const embedUrl = `${VIDSRC_MIRRORS[currentMirrorIndex]}/${imdbId}?autoplay=1`;
-        playerIframe.src = embedUrl;
+        const url = `${VIDSRC_MIRRORS[currentMirror]}/${type}/${imdbId}?autoplay=1`;
+        playerIframe.src = url;
 
-        // Check for error (e.g., "unavailable" in title or load fail)
-        playerIframe.onload = () => {
-          // Assume success if loads
-        };
-        playerIframe.onerror = () => {
-          currentMirrorIndex++;
-          tryMirror();
-        };
+        // fallback if it doesn’t load properly after timeout
+        setTimeout(() => {
+          if (!playable) {
+            currentMirror++;
+            tryNext();
+          }
+        }, 5000);
+      };
 
-        currentMirrorIndex++;
-      }
-
-      tryMirror();
-      playerContainer.classList.add('active');
+      playerIframe.onload = () => { playable = true; };
+      tryNext();
     }
 
     function closePlayer() {
@@ -293,19 +288,10 @@
       loading.style.display = show ? 'block' : 'none';
     }
 
-    // Events
     searchBtn.onclick = searchMovies;
-    searchInput.addEventListener('keypress', e => {
-      if (e.key === 'Enter') searchMovies();
-    });
-
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') closePlayer();
-    });
-
-    window.onload = () => {
-      searchInput.placeholder = "Try: Inception, Shrek, Oppenheimer...";
-    };
+    searchInput.addEventListener('keypress', e => { if (e.key === 'Enter') searchMovies(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closePlayer(); });
+    window.onload = () => searchInput.placeholder = "Try: Inception, Shrek, Oppenheimer...";
   </script>
 </body>
 </html>
