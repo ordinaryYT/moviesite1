@@ -6,7 +6,7 @@
   <title>VidSrc Player</title>
   <style>
     :root {
-      --bg: #0f0f0f;
+      --bg: #0a0a0a;
       --card: #1a1a1a;
       --accent: #e50914;
       --text: #fff;
@@ -17,7 +17,6 @@
       background: var(--bg);
       color: var(--text);
       font-family: 'Segoe UI', sans-serif;
-      line-height: 1.6;
     }
 
     header {
@@ -27,7 +26,6 @@
       position: sticky;
       top: 0;
       z-index: 100;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
     }
 
     h1 {
@@ -75,12 +73,11 @@
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
       gap: 1.5rem;
-      margin-top: 1rem;
     }
 
     .movie-card {
       background: var(--card);
-     : 12px;
+      border-radius: 12px;
       overflow: hidden;
       cursor: pointer;
       transition: 0.3s;
@@ -96,6 +93,7 @@
       width: 100%;
       height: 300px;
       object-fit: cover;
+      background: #222;
     }
 
     .movie-info {
@@ -111,6 +109,12 @@
 
     .movie-info p {
       font-size: 0.9rem;
+      color: #aaa;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 3rem;
       color: #aaa;
     }
 
@@ -139,7 +143,7 @@
       position: absolute;
       top: 20px;
       right: 20px;
-      background: rgba(0,0,0,0.7);
+      background: rgba(0,0, nests0,0.7);
       color: white;
       border: none;
       width: 44px;
@@ -160,17 +164,18 @@
   <header>
     <h1>VidSrc Player</h1>
     <div class="search-box">
-      <input type="text" id="searchInput" placeholder="Search movie (e.g. Inception, The Matrix)" />
-      <button id="searchBtn">Go</button>
+      <input type="text" id="searchInput" placeholder="Type any movie (e.g. Avatar, Shrek, Titanic)" />
+      <button id="searchBtn">Search</button>
     </div>
   </header>
 
   <main>
+    <div id="loading" class="loading" style="display:none;">Finding movies...</div>
     <div id="movieGrid"></div>
   </main>
 
   <div id="playerContainer" class="player-container">
-    <button class="close-btn" onclick="closePlayer()">×</button>
+    <button class="close-btn" onclick="closePlayer()">X</button>
     <iframe id="playerIframe" src="" allowfullscreen></iframe>
   </div>
 
@@ -179,48 +184,57 @@
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
     const movieGrid = document.getElementById('movieGrid');
+    const loading = document.getElementById('loading');
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // Hardcoded popular movies (IMDB IDs)
-    const popularMovies = [
-      { title: "Inception", year: "2010", imdb: "tt1375666" },
-      { title: "The Matrix", year: "1999", imdb: "tt0133093" },
-      { title: "Interstellar", year: "2014", imdb: "tt0816692" },
-      { title: "Pulp Fiction", year: "1994", imdb: "tt0110912" },
-      { title: "The Dark Knight", year: "2008", imdb: "tt0468569" },
-      { title: "Fight Club", year: "1999", imdb: "tt0137523" },
-      { title: "Forrest Gump", year: "1994", imdb: "tt0109830" },
-      { title: "The Shawshank Redemption", year: "1994", imdb: "tt0111161" },
-      { title: "Gladiator", year: "2000", imdb: "tt0172495" },
-      { title: "Titanic", year: "1997", imdb: "tt0120338" }
-    ];
+    // Free public API: title → IMDB ID (no key needed)
+    async function searchIMDB(title) {
+      try {
+        const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(title)}`);
+        const data = await res.json();
+        return data.description || [];
+      } catch (e) {
+        console.error("IMDB search failed:", e);
+        return [];
+      }
+    }
 
-    // Search by title match
-    function searchMovies() {
-      const query = searchInput.value.trim().toLowerCase();
+    async function searchMovies() {
+      const query = searchInput.value.trim();
       if (!query) return;
 
-      const results = popularMovies.filter(m => 
-        m.title.toLowerCase().includes(query)
-      );
+      showLoading(true);
+      movieGrid.innerHTML = '';
 
-      displayMovies(results.length > 0 ? results : popularMovies);
+      const results = await searchIMDB(query);
+      if (results.length === 0) {
+        movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No movies found. Try another name.</p>';
+        showLoading(false);
+        return;
+      }
+
+      displayMovies(results);
+      showLoading(false);
     }
 
     function displayMovies(movies) {
       movieGrid.innerHTML = '';
       movies.forEach(movie => {
+        if (!movie['#IMDB_ID']) return;
+
         const card = document.createElement('div');
         card.className = 'movie-card';
         card.innerHTML = `
-          <img src="https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(movie.title)}" alt="${movie.title}">
+          <img src="${movie.image || 'https://via.placeholder.com/300x450/222/fff?text=' + encodeURIComponent(movie['#TITLE'])}" 
+               alt="${movie['#TITLE']}" 
+               onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
           <div class="movie-info">
-            <h3>${movie.title}</h3>
-            <p>${movie.year}</p>
+            <h3>${movie['#TITLE']}</h3>
+            <p>${movie['#YEAR'] || 'N/A'}</p>
           </div>
         `;
-        card.onclick = () => playMovie(movie.imdb);
+        card.onclick = () => playMovie(movie['#IMDB_ID']);
         movieGrid.appendChild(card);
       });
     }
@@ -236,6 +250,10 @@
       playerIframe.src = '';
     }
 
+    function showLoading(show) {
+      loading.style.display = show ? 'block' : 'none';
+    }
+
     // Events
     searchBtn.onclick = searchMovies;
     searchInput.addEventListener('keypress', e => {
@@ -246,8 +264,10 @@
       if (e.key === 'Escape') closePlayer();
     });
 
-    // Load popular on start
-    window.onload = () => displayMovies(popularMovies);
+    // Optional: Load popular on start
+    window.onload = () => {
+      searchInput.placeholder = "Try: Inception, Shrek, Avatar, Titanic...";
+    };
   </script>
 </body>
 </html>
