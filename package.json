@@ -1,0 +1,16 @@
+{
+  "name": "movie-streamer",
+  "version": "1.0.0",
+  "description": "Simple movie streaming site using VidSrc embeds",
+  "main": "index.html",
+  "scripts": {
+    "start": "serve -s . -l $PORT",
+    "build": "echo 'No build step required'"
+  },
+  "dependencies": {
+    "serve": "^14.2.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
