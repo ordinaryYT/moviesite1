@@ -132,10 +132,10 @@
       border: none;
       border-radius: 12px;
       opacity: 0;
-      transition: opacity 0.5s;
+      transition: opacity 0.5s ease;
     }
 
-    #playerIframe.loaded {
+    #playerIframe.visible {
       opacity: 1;
     }
 
@@ -157,7 +157,7 @@
     @media (max-width: 768px) {
       #movieGrid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
     }
-  </style>
+  </  </style>
 </head>
 <body>
 
@@ -175,6 +175,7 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
+    <!-- IFRAME STARTS EMPTY -->
     <iframe 
       id="playerIframe" 
       src="" 
@@ -240,25 +241,38 @@
 
     function playMovie(imdbId) {
       const embedUrl = `${SUPEREMBED_BASE}${imdbId}`;
-      
+
+      // Reset iframe
       playerIframe.src = '';
-      playerIframe.classList.remove('loaded');
-      playerIframe.src = embedUrl;
-      
+      playerIframe.classList.remove('visible');
+
+      // Show container
       playerContainer.classList.add('active');
 
-      // Show only when loaded
-      playerIframe.onload = () => {
-        setTimeout(() => {
-          playerIframe.classList.add('loaded');
-        }, 500);
-      };
+      // Load after small delay to avoid black flash
+      setTimeout(() => {
+        playerIframe.src = embedUrl;
+
+        // Wait for content to load (SuperEmbed takes ~1.5s)
+        let checks = 0;
+        const interval = setInterval(() => {
+          checks++;
+          if (playerIframe.contentDocument && playerIframe.contentDocument.body.innerHTML.includes('video')) {
+            playerIframe.classList.add('visible');
+            clearInterval(interval);
+          }
+          if (checks > 50) { // 5 sec timeout
+            playerIframe.classList.add('visible'); // Show anyway
+            clearInterval(interval);
+          }
+        }, 100);
+      }, 100);
     }
 
     function closePlayer() {
       playerContainer.classList.remove('active');
       playerIframe.src = '';
-      playerIframe.classList.remove('loaded');
+      playerIframe.classList.remove('visible');
     }
 
     // Events
