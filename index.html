@@ -137,6 +137,7 @@
       height: 95%;
       border: none;
       border-radius: 12px;
+      background: #000;
     }
 
     .close-btn {
@@ -152,6 +153,19 @@
       font-size: 1.8rem;
       cursor: pointer;
       z-index: 1001;
+    }
+
+    .player-loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-size: 1.2rem;
+      background: rgba(0,0,0,0.7);
+      padding: 1rem 2rem;
+      border-radius: 8px;
+      z-index: 1002;
     }
 
     @media (max-width: 768px) {
@@ -176,23 +190,18 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- SANDBOX BLOCKS POPUPS/ADS -->
+    <div id="playerLoading" class="player-loading">Loading stream...</div>
     <iframe 
       id="playerIframe" 
       src="" 
       allowfullscreen
-      sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-modals"
-      loading="lazy"
+      sandbox="allow-scripts allow-same-origin allow-presentation allow-forms"
       referrerpolicy="no-referrer"
     ></iframe>
   </div>
 
   <script>
-    // SUPEREMBED ENDPOINTS (2025 Working)
-    const SUPEREMBED_BASES = [
-      'https://multiembed.mov/?video_id=',
-      'https://api.superembed.stream/embed/movie/'  // Fallback API
-    ];
+    const SUPEREMBED_BASE = 'https://multiembed.mov/?video_id=';
 
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
@@ -200,8 +209,8 @@
     const loading = document.getElementById('loading');
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
+    const playerLoading = document.getElementById('playerLoading');
 
-    // Free IMDB search (no key)
     async function searchMovies() {
       const query = searchInput.value.trim();
       if (!query) return;
@@ -210,8 +219,8 @@
       movieGrid.innerHTML = '';
 
       try {
-        const response = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(query)}`);
-        const data = await response.json();
+        const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(query)}`);
+        const data = await res.json();
         const results = data.description || [];
 
         if (results.length === 0) {
@@ -251,29 +260,45 @@
     }
 
     function playMovie(imdbId) {
-      let index = 0;
-      function tryEmbed() {
-        if (index >= SUPEREMBED_BASES.length) return;  // All failed
+      const embedUrl = `${SUPEREMBED_BASE}${imdbId}&tmdb=1`;
+      
+      playerLoading.style.display = 'block';
+      playerIframe.src = '';
+      
+      playerContainer.classList.add('active');
 
-        const embedUrl = `${SUPEREMBED_BASES[index]}${imdbId}`;
-        playerIframe.src = embedUrl;
+      // Load with retry
+      let attempts = 0;
+      const maxAttempts = 3;
 
-        playerIframe.onload = () => { /* Success */ };
-        playerIframe.onerror = () => {
-          index++;
-          tryEmbed();
+      function loadStream() {
+        playerIframe.src = embedUrl + `&t=${Date.now()}`; // Cache bust
+
+        playerIframe.onload = () => {
+          playerLoading.style.display = 'none';
         };
 
-        index++;
+        // Fallback after 8 seconds
+        setTimeout(() => {
+          if (playerLoading.style.display !== 'none') {
+            attempts++;
+            if (attempts < maxAttempts) {
+              playerLoading.textContent = `Retrying... (${attempts}/${maxAttempts})`;
+              loadStream();
+            } else {
+              playerLoading.textContent = 'Failed. Try another movie.';
+            }
+          }
+        }, 8000);
       }
 
-      tryEmbed();
-      playerContainer.classList.add('active');
+      loadStream();
     }
 
     function closePlayer() {
       playerContainer.classList.remove('active');
       playerIframe.src = '';
+      playerLoading.style.display = 'none';
     }
 
     function showLoading(show) {
