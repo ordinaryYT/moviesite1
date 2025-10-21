@@ -3,113 +3,85 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>SuperEmbed Player</title>
+  <title>Movie Player</title>
   <style>
-    :root {
-      --bg: #0a0a0a;
-      --card: #1a1a1a;
-      --accent: #e50914;
-      --text: #fff;
-    }
-
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Segoe UI', sans-serif;
-    }
-
-    header {
       background: #000;
-      padding: 1.5rem;
+      color: #fff;
+      font-family: Arial, sans-serif;
+    }
+    header {
       text-align: center;
-      position: sticky;
-      top: 0;
-      z-index: 100;
+      padding: 2rem;
     }
-
     h1 {
-      font-size: 2rem;
-      color: var(--accent);
-      margin-bottom: 1rem;
+      color: #e50914;
+      font-size: 2.5rem;
     }
-
     .search-box {
-      display: flex;
       max-width: 600px;
-      margin: 0 auto;
-      gap: 0.5rem;
+      margin: 1rem auto;
+      display: flex;
+      gap: 10px;
     }
-
     #searchInput {
       flex: 1;
-      padding: 0.75rem 1rem;
+      padding: 12px;
+      font-size: 1rem;
       border: none;
       border-radius: 8px;
       background: #333;
       color: white;
-      font-size: 1rem;
     }
-
     #searchBtn {
-      padding: 0.75rem 1.5rem;
-      background: var(--accent);
+      padding: 12px 24px;
+      background: #e50914;
       color: white;
       border: none;
       border-radius: 8px;
       cursor: pointer;
       font-weight: bold;
     }
-
     #searchBtn:hover { background: #c00; }
-
-    main {
-      padding: 2rem;
-      max-width: 1400px;
-      margin: 0 auto;
-    }
 
     #movieGrid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
       gap: 1.5rem;
+      padding: 2rem;
+      max-width: 1400px;
+      margin: 0 auto;
     }
-
     .movie-card {
-      background: var(--card);
+      cursor: pointer;
       border-radius: 12px;
       overflow: hidden;
-      cursor: pointer;
+      background: #1a1a1a;
       transition: 0.3s;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.4);
     }
-
     .movie-card:hover {
-      transform: translateY(-8px);
-      box-shadow: 0 12px 20px rgba(229, 9, 20, 0.3);
+      transform: scale(1.05);
+      box-shadow: 0 0 20px rgba(229, 9, 20, 0.5);
     }
-
     .movie-card img {
       width: 100%;
       height: 300px;
       object-fit: cover;
-      background: #222;
     }
-
     .movie-info {
       padding: 1rem;
+      text-align: center;
     }
-
     .movie-info h3 {
       font-size: 1.1rem;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
-
     .movie-info p {
-      font-size: 0.9rem;
       color: #aaa;
+      font-size: 0.9rem;
     }
 
     .player-container {
@@ -118,27 +90,16 @@
       top: 0; left: 0;
       width: 100%; height: 100%;
       background: #000;
-      z-index: 1000;
-      justify-content: center;
-      align-items: center;
-      padding: 1rem;
+      z-index: 9999;
     }
-
-    .player-container.active { display: flex; }
-
+    .player-container.active {
+      display: block;
+    }
     #playerIframe {
-      width: 95%;
-      height: 95%;
+      width: 100%;
+      height: 100%;
       border: none;
-      border-radius: 12px;
-      opacity: 0;
-      transition: opacity 0.5s ease;
     }
-
-    #playerIframe.visible {
-      opacity: 1;
-    }
-
     .close-btn {
       position: absolute;
       top: 20px;
@@ -146,26 +107,22 @@
       background: rgba(0,0,0,0.7);
       color: white;
       border: none;
-      width: 44px;
-      height: 44px;
+      width: 50px;
+      height: 50px;
       border-radius: 50%;
-      font-size: 1.8rem;
+      font-size: 2rem;
       cursor: pointer;
-      z-index: 1001;
+      z-index: 10000;
     }
-
-    @media (max-width: 768px) {
-      #movieGrid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-    }
-  </  </style>
+  </style>
 </head>
 <body>
 
   <header>
-    <h1>SuperEmbed Player</h1>
+    <h1>Movie Player</h1>
     <div class="search-box">
       <input type="text" id="searchInput" placeholder="Search any movie..." />
-      <button id="searchBtn">Go</button>
+      <button id="searchBtn">GO</button>
     </div>
   </header>
 
@@ -175,19 +132,11 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- IFRAME STARTS EMPTY -->
-    <iframe 
-      id="playerIframe" 
-      src="" 
-      allowfullscreen
-      allow="autoplay; fullscreen; encrypted-media"
-      sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-popups allow-top-navigation-by-user-activation"
-      referrerpolicy="no-referrer"
-    ></iframe>
+    <iframe id="playerIframe" src="" allowfullscreen></iframe>
   </div>
 
   <script>
-    const SUPEREMBED_BASE = 'https://multiembed.mov/?video_id=';
+    const SUPEREMBED = 'https://multiembed.mov/?video_id=';
 
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
@@ -195,99 +144,63 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
+    // Search
     async function searchMovies() {
-      const query = searchInput.value.trim();
-      if (!query) return;
-
-      movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">Searching...</p>';
+      const q = searchInput.value.trim();
+      if (!q) return;
+      movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">Loading...</p>';
 
       try {
-        const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(query)}`);
+        const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(q)}`);
         const data = await res.json();
         const results = data.description || [];
 
-        if (results.length === 0) {
+        if (!results.length) {
           movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results.</p>';
           return;
         }
 
-        displayMovies(results);
-      } catch (e) {
-        movieGrid.innerHTML = '<p style="color:#ff6b6b; text-align:center;">Search failed.</p>';
+        displayMovies(results.slice(0, 10));
+      } catch {
+        movieGrid.innerHTML = '<p style="color:red; text-align:center;">Error. Try again.</p>';
       }
     }
 
     function displayMovies(movies) {
       movieGrid.innerHTML = '';
-      movies.slice(0, 10).forEach(movie => {
-        if (!movie['#IMDB_ID']) return;
-
-        const imdbId = movie['#IMDB_ID'].startsWith('tt') ? movie['#IMDB_ID'] : `tt${movie['#IMDB_ID']}`;
+      movies.forEach(m => {
+        if (!m['#IMDB_ID']) return;
+        const id = m['#IMDB_ID'].startsWith('tt') ? m['#IMDB_ID'] : 'tt' + m['#IMDB_ID'];
         const card = document.createElement('div');
         card.className = 'movie-card';
         card.innerHTML = `
-          <img src="${movie.image || `https://via.placeholder.com/300x450/222/fff?text=${encodeURIComponent(movie['#TITLE'])}`}" 
-               alt="${movie['#TITLE']}" 
+          <img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}" 
                onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
           <div class="movie-info">
-            <h3>${movie['#TITLE']}</h3>
-            <p>${movie['#YEAR'] || 'N/A'}</p>
+            <h3>${m['#TITLE']}</h3>
+            <p>${m['#YEAR'] || 'N/A'}</p>
           </div>
         `;
-        card.onclick = () => playMovie(imdbId);
+        card.onclick = () => playMovie(id);
         movieGrid.appendChild(card);
       });
     }
 
+    // PLAY — NO BULLSHIT
     function playMovie(imdbId) {
-      const embedUrl = `${SUPEREMBED_BASE}${imdbId}`;
-
-      // Reset iframe
-      playerIframe.src = '';
-      playerIframe.classList.remove('visible');
-
-      // Show container
+      playerIframe.src = `${SUPEREMBED}${imdbId}`;
       playerContainer.classList.add('active');
-
-      // Load after small delay to avoid black flash
-      setTimeout(() => {
-        playerIframe.src = embedUrl;
-
-        // Wait for content to load (SuperEmbed takes ~1.5s)
-        let checks = 0;
-        const interval = setInterval(() => {
-          checks++;
-          if (playerIframe.contentDocument && playerIframe.contentDocument.body.innerHTML.includes('video')) {
-            playerIframe.classList.add('visible');
-            clearInterval(interval);
-          }
-          if (checks > 50) { // 5 sec timeout
-            playerIframe.classList.add('visible'); // Show anyway
-            clearInterval(interval);
-          }
-        }, 100);
-      }, 100);
     }
 
     function closePlayer() {
       playerContainer.classList.remove('active');
       playerIframe.src = '';
-      playerIframe.classList.remove('visible');
     }
 
     // Events
     searchBtn.onclick = searchMovies;
-    searchInput.addEventListener('keypress', e => {
-      if (e.key === 'Enter') searchMovies();
-    });
-
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') closePlayer();
-    });
-
-    window.onload = () => {
-      searchInput.placeholder = "Try: Inception, Shrek, Oppenheimer...";
-    };
+    searchInput.addEventListener('keypress', e => e.key === 'Enter' && searchMovies());
+    document.addEventListener('keydown', e => e.key === 'Escape' && closePlayer());
   </script>
 </body>
 </html>
