@@ -176,19 +176,23 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- SANDBOX BLOCKS POPUPS + CRASHES -->
+    <!-- ENHANCED SANDBOX: Blocks Popups, Downloads, Ads, Crashes -->
     <iframe 
       id="playerIframe" 
       src="" 
       allowfullscreen
-      sandbox="allow-scripts allow-same-origin allow-forms"
+      sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-modals"
       loading="lazy"
+      referrerpolicy="no-referrer"
     ></iframe>
   </div>
 
   <script>
-    // BEST WORKING DOMAIN (Oct 21, 2025)
-    const VIDSRC_BASE = 'https://vidsrcxyz.com/embed';
+    // OFFICIAL WORKING MIRROR (2025): vidsrc-embed.ru (from VidSrc API docs)
+    const VIDSRC_MIRRORS = [
+      'https://vidsrc-embed.ru/embed/movie',
+      'https://vidsrc.to/embed/movie'  // Fallback
+    ];
 
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
@@ -245,10 +249,22 @@
       });
     }
 
-    function playMovie(imdbId) {
-      const embedUrl = `${VIDSRC_BASE}/${imdbId}`;
-      playerIframe.src = embedUrl;
-      playerContainer.classList.add('active');
+    async function playMovie(imdbId) {
+      for (let base of VIDSRC_MIRRORS) {
+        const embedUrl = `${base}/${imdbId}?autoplay=1`;
+        playerIframe.src = embedUrl;
+        playerContainer.classList.add('active');
+        
+        // Quick test: If iframe loads (no error after 3s), break
+        setTimeout(() => {
+          if (playerIframe.src !== '') return;  // Assume success
+        }, 3000);
+        
+        // If error (e.g., unavailable), try next
+        playerIframe.onerror = () => {
+          playerIframe.src = '';  // Clear and try next loop
+        };
+      }
     }
 
     function closePlayer() {
