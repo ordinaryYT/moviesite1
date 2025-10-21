@@ -132,12 +132,13 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- BLOCKS ALL POPUPS / NEW TABS -->
+    <!-- BLOCKS POPUPS, KEEPS PLAYER ALIVE -->
     <iframe 
       id="playerIframe" 
       src="" 
       allowfullscreen
-      sandbox="allow-scripts allow-same-origin allow-presentation allow-forms"
+      allow="autoplay; fullscreen"
+      sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-popups-to-escape-sandbox"
       referrerpolicy="no-referrer"
     ></iframe>
   </div>
