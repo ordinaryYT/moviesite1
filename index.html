@@ -131,7 +131,12 @@
       height: 95%;
       border: none;
       border-radius: 12px;
-      background: #000;
+      opacity: 0;
+      transition: opacity 0.5s;
+    }
+
+    #playerIframe.loaded {
+      opacity: 1;
     }
 
     .close-btn {
@@ -174,13 +179,13 @@
       id="playerIframe" 
       src="" 
       allowfullscreen
-      sandbox="allow-scripts allow-same-origin allow-presentation allow-forms"
+      allow="autoplay; fullscreen; encrypted-media"
+      sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-popups allow-top-navigation-by-user-activation"
       referrerpolicy="no-referrer"
     ></iframe>
   </div>
 
   <script>
-    // WORKING BASE (CONFIRMED BY YOU)
     const SUPEREMBED_BASE = 'https://multiembed.mov/?video_id=';
 
     const searchInput = document.getElementById('searchInput');
@@ -235,13 +240,25 @@
 
     function playMovie(imdbId) {
       const embedUrl = `${SUPEREMBED_BASE}${imdbId}`;
+      
+      playerIframe.src = '';
+      playerIframe.classList.remove('loaded');
       playerIframe.src = embedUrl;
+      
       playerContainer.classList.add('active');
+
+      // Show only when loaded
+      playerIframe.onload = () => {
+        setTimeout(() => {
+          playerIframe.classList.add('loaded');
+        }, 500);
+      };
     }
 
     function closePlayer() {
       playerContainer.classList.remove('active');
       playerIframe.src = '';
+      playerIframe.classList.remove('loaded');
     }
 
     // Events
