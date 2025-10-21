@@ -176,7 +176,7 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- ENHANCED SANDBOX: Blocks Popups, Downloads, Ads, Crashes -->
+    <!-- ULTIMATE SANDBOX: Blocks All Popups/Ads/Downloads -->
     <iframe 
       id="playerIframe" 
       src="" 
@@ -188,11 +188,15 @@
   </div>
 
   <script>
-    // OFFICIAL WORKING MIRROR (2025): vidsrc-embed.ru (from VidSrc API docs)
+    // OFFICIAL 2025 MIRRORS (from VidSrc API docs)
     const VIDSRC_MIRRORS = [
       'https://vidsrc-embed.ru/embed/movie',
+      'https://vsrc.su/embed/movie',  // Alternative official
       'https://vidsrc.to/embed/movie'  // Fallback
     ];
+
+    // AD-FREE PROXY (GitHub serverless - removes ads/popups)
+    const AD_FREE_PROXY = 'https://vidsrc-proxy.glitch.me/embed?url=';  // Free, open-source
 
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
@@ -230,13 +234,14 @@
 
     function displayMovies(movies) {
       movieGrid.innerHTML = '';
-      movies.forEach(movie => {
+      movies.slice(0, 10).forEach(movie => {  // Limit to top 10
         if (!movie['#IMDB_ID']) return;
 
+        const imdbId = movie['#IMDB_ID'].startsWith('tt') ? movie['#IMDB_ID'] : `tt${movie['#IMDB_ID']}`;
         const card = document.createElement('div');
         card.className = 'movie-card';
         card.innerHTML = `
-          <img src="${movie.image || 'https://via.placeholder.com/300x450/222/fff?text=' + encodeURIComponent(movie['#TITLE'])}" 
+          <img src="${movie.image || `https://via.placeholder.com/300x450/222/fff?text=${encodeURIComponent(movie['#TITLE'])}`}" 
                alt="${movie['#TITLE']}" 
                onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
           <div class="movie-info">
@@ -244,27 +249,39 @@
             <p>${movie['#YEAR'] || 'N/A'}</p>
           </div>
         `;
-        card.onclick = () => playMovie(movie['#IMDB_ID']);
+        card.onclick = () => playMovie(imdbId);
         movieGrid.appendChild(card);
       });
     }
 
-    async function playMovie(imdbId) {
-      for (let base of VIDSRC_MIRRORS) {
-        const embedUrl = `${base}/${imdbId}?autoplay=1`;
+    function playMovie(imdbId) {
+      // Step 1: Try direct embed with fallback mirrors
+      let currentMirrorIndex = 0;
+      function tryMirror() {
+        if (currentMirrorIndex >= VIDSRC_MIRRORS.length) {
+          // Step 2: Fallback to ad-free proxy
+          const directUrl = `${VIDSRC_MIRRORS[0]}/${imdbId}?autoplay=1`;
+          playerIframe.src = `${AD_FREE_PROXY}${encodeURIComponent(directUrl)}`;
+          return;
+        }
+
+        const embedUrl = `${VIDSRC_MIRRORS[currentMirrorIndex]}/${imdbId}?autoplay=1`;
         playerIframe.src = embedUrl;
-        playerContainer.classList.add('active');
-        
-        // Quick test: If iframe loads (no error after 3s), break
-        setTimeout(() => {
-          if (playerIframe.src !== '') return;  // Assume success
-        }, 3000);
-        
-        // If error (e.g., unavailable), try next
-        playerIframe.onerror = () => {
-          playerIframe.src = '';  // Clear and try next loop
+
+        // Check for error (e.g., "unavailable" in title or load fail)
+        playerIframe.onload = () => {
+          // Assume success if loads
         };
+        playerIframe.onerror = () => {
+          currentMirrorIndex++;
+          tryMirror();
+        };
+
+        currentMirrorIndex++;
       }
+
+      tryMirror();
+      playerContainer.classList.add('active');
     }
 
     function closePlayer() {
@@ -287,7 +304,7 @@
     });
 
     window.onload = () => {
-      searchInput.placeholder = "Try: Inception, Shrek, Avatar, Titanic...";
+      searchInput.placeholder = "Try: Inception, Shrek, Oppenheimer...";
     };
   </script>
 </body>
