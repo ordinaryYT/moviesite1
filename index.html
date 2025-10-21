@@ -3,25 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Movie Streamer</title>
+  <title>VidSrc Player</title>
   <style>
     :root {
-      --bg: #121212;
-      --card: #1f1f1f;
-      --primary: #ff6b6b;
+      --bg: #0f0f0f;
+      --card: #1a1a1a;
+      --accent: #e50914;
       --text: #fff;
     }
 
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background-color: var(--bg);
+      background: var(--bg);
       color: var(--text);
+      font-family: 'Segoe UI', sans-serif;
       line-height: 1.6;
     }
 
@@ -29,51 +24,46 @@
       background: #000;
       padding: 1.5rem;
       text-align: center;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
       position: sticky;
       top: 0;
       z-index: 100;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
     }
 
     h1 {
       font-size: 2rem;
+      color: var(--accent);
       margin-bottom: 1rem;
-      color: var(--primary);
     }
 
-    .search-container {
+    .search-box {
       display: flex;
-      justify-content: center;
-      gap: 0.5rem;
       max-width: 600px;
       margin: 0 auto;
+      gap: 0.5rem;
     }
 
     #searchInput {
+      flex: 1;
       padding: 0.75rem 1rem;
-      width: 100%;
-      max-width: 400px;
       border: none;
       border-radius: 8px;
-      font-size: 1rem;
       background: #333;
       color: white;
+      font-size: 1rem;
     }
 
     #searchBtn {
       padding: 0.75rem 1.5rem;
-      background: var(--primary);
+      background: var(--accent);
       color: white;
       border: none;
       border-radius: 8px;
       cursor: pointer;
       font-weight: bold;
-      transition: 0.3s;
     }
 
-    #searchBtn:hover {
-      background: #ff5252;
-    }
+    #searchBtn:hover { background: #c00; }
 
     main {
       padding: 2rem;
@@ -85,39 +75,35 @@
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
       gap: 1.5rem;
-      margin-top: 2rem;
+      margin-top: 1rem;
     }
 
     .movie-card {
       background: var(--card);
-      border-radius: 12px;
+     : 12px;
       overflow: hidden;
       cursor: pointer;
-      transition: transform 0.3s ease, box-shadow 0.3s ease;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+      transition: 0.3s;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.4);
     }
 
     .movie-card:hover {
       transform: translateY(-8px);
-      box-shadow: 0 12px 20px rgba(255, 107, 107, 0.2);
+      box-shadow: 0 12px 20px rgba(229, 9, 20, 0.3);
     }
 
     .movie-card img {
       width: 100%;
       height: 300px;
       object-fit: cover;
-      background: #333;
     }
 
     .movie-info {
       padding: 1rem;
     }
 
- —
-
     .movie-info h3 {
       font-size: 1.1rem;
-      margin-bottom: 0.5rem;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -128,20 +114,11 @@
       color: #aaa;
     }
 
-    .loading {
-      text-align: center;
-      padding: 3rem;
-      font-size: 1.2rem;
-      color: #aaa;
-    }
-
     .player-container {
       display: none;
       position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
       background: #000;
       z-index: 1000;
       justify-content: center;
@@ -149,188 +126,128 @@
       padding: 1rem;
     }
 
-    .player-container.active {
-      display: flex;
-    }
+    .player-container.active { display: flex; }
 
     #playerIframe {
       width: 95%;
       height: 95%;
       border: none;
       border-radius: 12px;
-      box-shadow: 0 0 30px rgba(255, 107, 107, 0.3);
     }
 
-    .close-player {
+    .close-btn {
       position: absolute;
       top: 20px;
       right: 20px;
       background: rgba(0,0,0,0.7);
       color: white;
       border: none;
-      width: 40px;
-      height: 40px;
+      width: 44px;
+      height: 44px;
       border-radius: 50%;
-      font-size: 1.5rem;
+      font-size: 1.8rem;
       cursor: pointer;
       z-index: 1001;
     }
 
     @media (max-width: 768px) {
-      #searchInput {
-        max-width: 250px;
-      }
-      h1 {
-        font-size: 1.6rem;
-      }
-      #movieGrid {
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-      }
+      #movieGrid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
     }
   </style>
 </head>
 <body>
 
   <header>
-    <h1>Movie Streamer</h1>
-    <div class="search-container">
-      <input type="text" id="searchInput" placeholder="Search movies..." />
-      <button id="searchBtn">Search</button>
+    <h1>VidSrc Player</h1>
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Search movie (e.g. Inception, The Matrix)" />
+      <button id="searchBtn">Go</button>
     </div>
   </header>
 
   <main>
-    <div id="loading" class="loading" style="display: none;">Loading movies...</div>
     <div id="movieGrid"></div>
   </main>
 
-  <!-- Embedded Player -->
   <div id="playerContainer" class="player-container">
-    <button class="close-player" onclick="closePlayer()">×</button>
+    <button class="close-btn" onclick="closePlayer()">×</button>
     <iframe id="playerIframe" src="" allowfullscreen></iframe>
   </div>
 
   <script>
-    // === CONFIG ===
-    const TMDB_API_KEY = 'YOUR_TMDB_API_KEY'; // REPLACE WITH YOUR KEY
-    const TMDB_BASE = 'https://api.themoviedb.org/3';
-    const VIDSRC_BASE = 'https://vidsrc.to/embed';
-
-    // DOM Elements
+    const VIDSRC_BASE = 'https://vidsrc.to/embed/movie';
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
     const movieGrid = document.getElementById('movieGrid');
-    const loading = document.getElementById('loading');
-    const playerContainer = document.getElementById('playerContainer');
     const playerIframe = document.getElementById('playerIframe');
+    const playerContainer = document.getElementById('playerContainer');
 
-    // === Search & Display Movies ===
-    searchBtn.addEventListener('click', () => searchMovies());
-    searchInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') searchMovies();
-    });
+    // Hardcoded popular movies (IMDB IDs)
+    const popularMovies = [
+      { title: "Inception", year: "2010", imdb: "tt1375666" },
+      { title: "The Matrix", year: "1999", imdb: "tt0133093" },
+      { title: "Interstellar", year: "2014", imdb: "tt0816692" },
+      { title: "Pulp Fiction", year: "1994", imdb: "tt0110912" },
+      { title: "The Dark Knight", year: "2008", imdb: "tt0468569" },
+      { title: "Fight Club", year: "1999", imdb: "tt0137523" },
+      { title: "Forrest Gump", year: "1994", imdb: "tt0109830" },
+      { title: "The Shawshank Redemption", year: "1994", imdb: "tt0111161" },
+      { title: "Gladiator", year: "2000", imdb: "tt0172495" },
+      { title: "Titanic", year: "1997", imdb: "tt0120338" }
+    ];
 
-    async function searchMovies() {
-      const query = searchInput.value.trim();
+    // Search by title match
+    function searchMovies() {
+      const query = searchInput.value.trim().toLowerCase();
       if (!query) return;
 
-      showLoading(true);
-      movieGrid.innerHTML = '';
+      const results = popularMovies.filter(m => 
+        m.title.toLowerCase().includes(query)
+      );
 
-      try {
-        const res = await fetch(`${TMDB_BASE}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}`);
-        const data = await res.json();
-        displayMovies(data.results || []);
-      } catch (err) {
-        movieGrid.innerHTML = `<p style="color: #ff6b6b; text-align: center;">Error: ${err.message}</p>`;
-      } finally {
-        showLoading(false);
-      }
+      displayMovies(results.length > 0 ? results : popularMovies);
     }
 
     function displayMovies(movies) {
-      if (movies.length === 0) {
-        movieGrid.innerHTML = '<p style="text-align: center; color: #aaa;">No movies found.</p>';
-        return;
-      }
-
       movieGrid.innerHTML = '';
       movies.forEach(movie => {
-        if (!movie.poster_path) return;
-
         const card = document.createElement('div');
         card.className = 'movie-card';
         card.innerHTML = `
-          <img src="https://image.tmdb.org/t/p/w500${movie.poster_path}" 
-               alt="${movie.title}" 
-               onerror="this.src='https://via.placeholder.com/200x300?text=No+Image'">
+          <img src="https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(movie.title)}" alt="${movie.title}">
           <div class="movie-info">
             <h3>${movie.title}</h3>
-            <p>${movie.release_date?.substring(0, 4) || 'N/A'}</p>
+            <p>${movie.year}</p>
           </div>
         `;
-        card.onclick = () => playMovie(movie.id);
+        card.onclick = () => playMovie(movie.imdb);
         movieGrid.appendChild(card);
       });
     }
 
-    // === Play Movie ===
-    async function playMovie(tmdbId) {
-      showLoading(true);
-      try {
-        // Get IMDB ID (VidSrc prefers IMDB)
-        const extRes = await fetch(`${TMDB_BASE}/movie/${tmdbId}/external_ids?api_key=${TMDB_API_KEY}`);
-        const ext = await extRes.json();
-        const imdbId = ext.imdb_id;
-
-        let embedUrl;
-        if (imdbId) {
-          embedUrl = `${VIDSRC_BASE}/movie/${imdbId}`;
-        } else {
-          embedUrl = `${VIDSRC_BASE}/tmdb/${tmdbId}`;
-        }
-
-        // Optional: Add autoplay
-        embedUrl += '?autoplay=1';
-
-        playerIframe.src = embedUrl;
-        playerContainer.classList.add('active');
-      } catch (err) {
-        alert('Failed to load player: ' + err.message);
-      } finally {
-        showLoading(false);
-      }
+    function playMovie(imdbId) {
+      const embedUrl = `${VIDSRC_BASE}/${imdbId}?autoplay=1`;
+      playerIframe.src = embedUrl;
+      playerContainer.classList.add('active');
     }
 
-    // === Player Controls ===
     function closePlayer() {
       playerContainer.classList.remove('active');
       playerIframe.src = '';
     }
 
-    // Close on ESC
-    document.addEventListener('keydown', (e) => {
+    // Events
+    searchBtn.onclick = searchMovies;
+    searchInput.addEventListener('keypress', e => {
+      if (e.key === 'Enter') searchMovies();
+    });
+
+    document.addEventListener('keydown', e => {
       if (e.key === 'Escape') closePlayer();
     });
 
-    // === Helpers ===
-    function showLoading(show) {
-      loading.style.display = show ? 'block' : 'none';
-    }
-
-    // Load popular movies on start
-    window.onload = async () => {
-      showLoading(true);
-      try {
-        const res = await fetch(`${TMDB_BASE}/movie/popular?api_key=${TMDB_API_KEY}&page=1`);
-        const data = await res.json();
-        displayMovies(data.results.slice(0, 20));
-      } catch (err) {
-        console.error(err);
-      } finally {
-        showLoading(false);
-      }
-    };
+    // Load popular on start
+    window.onload = () => displayMovies(popularMovies);
   </script>
 </body>
 </html>
