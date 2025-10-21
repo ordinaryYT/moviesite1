@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>VidSrc Player</title>
+  <title>SuperEmbed Player</title>
   <style>
     :root {
       --bg: #0a0a0a;
@@ -162,7 +162,7 @@
 <body>
 
   <header>
-    <h1>VidSrc Player</h1>
+    <h1>SuperEmbed Player</h1>
     <div class="search-box">
       <input type="text" id="searchInput" placeholder="Search any movie..." />
       <button id="searchBtn">Go</button>
@@ -176,24 +176,22 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
+    <!-- SANDBOX BLOCKS POPUPS/ADS -->
     <iframe 
       id="playerIframe" 
       src="" 
       allowfullscreen
-      sandbox="allow-scripts allow-same-origin allow-presentation"
+      sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-modals"
       loading="lazy"
       referrerpolicy="no-referrer"
     ></iframe>
   </div>
 
   <script>
-    // ✅ Updated mirrors (as of late 2025)
-    const VIDSRC_MIRRORS = [
-      'https://vidsrc.to/embed',
-      'https://vidsrc.pro/embed',
-      'https://vidsrc.vip/embed',
-      'https://vidsrc.cc/embed',
-      'https://vidsrc.me/embed'
+    // SUPEREMBED ENDPOINTS (2025 Working)
+    const SUPEREMBED_BASES = [
+      'https://multiembed.mov/?video_id=',
+      'https://api.superembed.stream/embed/movie/'  // Fallback API
     ];
 
     const searchInput = document.getElementById('searchInput');
@@ -203,6 +201,7 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
+    // Free IMDB search (no key)
     async function searchMovies() {
       const query = searchInput.value.trim();
       if (!query) return;
@@ -211,19 +210,19 @@
       movieGrid.innerHTML = '';
 
       try {
-        const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(query)}`);
-        const data = await res.json();
+        const response = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(query)}`);
+        const data = await response.json();
         const results = data.description || [];
 
-        if (!results.length) {
-          movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results found. Try another title.</p>';
+        if (results.length === 0) {
+          movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results. Try another name.</p>';
           showLoading(false);
           return;
         }
 
         displayMovies(results);
-      } catch (err) {
-        movieGrid.innerHTML = '<p style="text-align:center; color:#f55;">Search failed. Try again later.</p>';
+      } catch (e) {
+        movieGrid.innerHTML = '<p style="color:#ff6b6b; text-align:center;">Search failed. Try again.</p>';
       } finally {
         showLoading(false);
       }
@@ -231,10 +230,10 @@
 
     function displayMovies(movies) {
       movieGrid.innerHTML = '';
-      movies.slice(0, 12).forEach(movie => {
-        const imdbId = movie['#IMDB_ID']?.startsWith('tt') ? movie['#IMDB_ID'] : `tt${movie['#IMDB_ID']}`;
-        if (!imdbId) return;
+      movies.slice(0, 10).forEach(movie => {
+        if (!movie['#IMDB_ID']) return;
 
+        const imdbId = movie['#IMDB_ID'].startsWith('tt') ? movie['#IMDB_ID'] : `tt${movie['#IMDB_ID']}`;
         const card = document.createElement('div');
         card.className = 'movie-card';
         card.innerHTML = `
@@ -243,40 +242,33 @@
                onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
           <div class="movie-info">
             <h3>${movie['#TITLE']}</h3>
-            <p>${movie['#YEAR'] || ''}</p>
+            <p>${movie['#YEAR'] || 'N/A'}</p>
           </div>
         `;
-        card.onclick = () => playMovie(imdbId, movie['#MEDIA_TYPE']);
+        card.onclick = () => playMovie(imdbId);
         movieGrid.appendChild(card);
       });
     }
 
-    function playMovie(imdbId, type = 'movie') {
-      let currentMirror = 0;
-      let playable = false;
+    function playMovie(imdbId) {
+      let index = 0;
+      function tryEmbed() {
+        if (index >= SUPEREMBED_BASES.length) return;  // All failed
+
+        const embedUrl = `${SUPEREMBED_BASES[index]}${imdbId}`;
+        playerIframe.src = embedUrl;
+
+        playerIframe.onload = () => { /* Success */ };
+        playerIframe.onerror = () => {
+          index++;
+          tryEmbed();
+        };
+
+        index++;
+      }
+
+      tryEmbed();
       playerContainer.classList.add('active');
-      playerIframe.src = '';
-
-      const tryNext = () => {
-        if (currentMirror >= VIDSRC_MIRRORS.length) {
-          playerIframe.srcdoc = `<style>body{color:#fff;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;}</style><h2>❌ Media not available on any mirror.</h2>`;
-          return;
-        }
-
-        const url = `${VIDSRC_MIRRORS[currentMirror]}/${type}/${imdbId}?autoplay=1`;
-        playerIframe.src = url;
-
-        // fallback if it doesn’t load properly after timeout
-        setTimeout(() => {
-          if (!playable) {
-            currentMirror++;
-            tryNext();
-          }
-        }, 5000);
-      };
-
-      playerIframe.onload = () => { playable = true; };
-      tryNext();
     }
 
     function closePlayer() {
@@ -288,10 +280,19 @@
       loading.style.display = show ? 'block' : 'none';
     }
 
+    // Events
     searchBtn.onclick = searchMovies;
-    searchInput.addEventListener('keypress', e => { if (e.key === 'Enter') searchMovies(); });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') closePlayer(); });
-    window.onload = () => searchInput.placeholder = "Try: Inception, Shrek, Oppenheimer...";
+    searchInput.addEventListener('keypress', e => {
+      if (e.key === 'Enter') searchMovies();
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closePlayer();
+    });
+
+    window.onload = () => {
+      searchInput.placeholder = "Try: Inception, Shrek, Oppenheimer...";
+    };
   </script>
 </body>
 </html>
