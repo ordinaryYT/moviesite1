@@ -176,18 +176,19 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- SANDBOX BLOCKS POPUPS -->
+    <!-- SANDBOX BLOCKS POPUPS + CRASHES -->
     <iframe 
       id="playerIframe" 
       src="" 
       allowfullscreen
       sandbox="allow-scripts allow-same-origin allow-forms"
+      loading="lazy"
     ></iframe>
   </div>
 
   <script>
-    // CLEAN VIDSRC DOMAIN (no ads, no popups)
-    const VIDSRC_BASE = 'https://vidsrc.me/embed/movie';
+    // BEST WORKING DOMAIN (Oct 21, 2025)
+    const VIDSRC_BASE = 'https://vidsrcxyz.com/embed';
 
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
@@ -197,17 +198,6 @@
     const playerContainer = document.getElementById('playerContainer');
 
     // Free IMDB search (no key)
-    async function searchIMDB(title) {
-      try {
-        const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(title)}`);
-        const data = await res.json();
-        return data.description || [];
-      } catch (e) {
-        console.error("IMDB search failed:", e);
-        return [];
-      }
-    }
-
     async function searchMovies() {
       const query = searchInput.value.trim();
       if (!query) return;
@@ -215,15 +205,23 @@
       showLoading(true);
       movieGrid.innerHTML = '';
 
-      const results = await searchIMDB(query);
-      if (results.length === 0) {
-        movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results. Try another name.</p>';
-        showLoading(false);
-        return;
-      }
+      try {
+        const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(query)}`);
+        const data = await res.json();
+        const results = data.description || [];
 
-      displayMovies(results);
-      showLoading(false);
+        if (results.length === 0) {
+          movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results. Try another name.</p>';
+          showLoading(false);
+          return;
+        }
+
+        displayMovies(results);
+      } catch (e) {
+        movieGrid.innerHTML = '<p style="color:#ff6b6b; text-align:center;">Search failed. Try again.</p>';
+      } finally {
+        showLoading(false);
+      }
     }
 
     function displayMovies(movies) {
@@ -248,7 +246,6 @@
     }
 
     function playMovie(imdbId) {
-      // vidsrc.me = clean, no popups
       const embedUrl = `${VIDSRC_BASE}/${imdbId}`;
       playerIframe.src = embedUrl;
       playerContainer.classList.add('active');
@@ -273,7 +270,6 @@
       if (e.key === 'Escape') closePlayer();
     });
 
-    // Optional: test on load
     window.onload = () => {
       searchInput.placeholder = "Try: Inception, Shrek, Avatar, Titanic...";
     };
