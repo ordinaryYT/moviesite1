@@ -132,13 +132,12 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- BLOCKS POPUPS, KEEPS PLAYER ALIVE -->
+    <!-- NO SANDBOX — BUT POPUPS BLOCKED -->
     <iframe 
       id="playerIframe" 
       src="" 
       allowfullscreen
       allow="autoplay; fullscreen"
-      sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-popups-to-escape-sandbox"
       referrerpolicy="no-referrer"
     ></iframe>
   </div>
@@ -151,6 +150,38 @@
     const movieGrid = document.getElementById('movieGrid');
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
+
+    // BLOCK POPUPS INSIDE IFRAME
+    function injectAntiPopup() {
+      const iframe = playerIframe;
+      if (!iframe.contentWindow) return;
+
+      const script = iframe.contentWindow.document.createElement('script');
+      script.textContent = `
+        (function() {
+          // Block window.open
+          window.open = function() { console.log('Popup blocked'); return null; };
+          
+          // Block target="_blank"
+          document.addEventListener('click', function(e) {
+            if (e.target.closest('a') && e.target.closest('a').target === '_blank') {
+              e.preventDefault();
+              console.log('Blocked _blank link');
+            }
+          });
+
+          // Block redirects
+          let originalLocation = location.href;
+          setInterval(() => {
+            if (location.href !== originalLocation) {
+              history.back();
+              console.log('Redirect blocked');
+            }
+          }, 100);
+        })();
+      `;
+      iframe.contentWindow.document.head.appendChild(script);
+    }
 
     async function searchMovies() {
       const q = searchInput.value.trim();
@@ -194,8 +225,14 @@
     }
 
     function playMovie(imdbId) {
-      playerIframe.src = `${SUPEREMBED}${imdbId}`;
+      const url = `${SUPEREMBED}${imdbId}`;
+      playerIframe.src = url;
       playerContainer.classList.add('active');
+
+      // Inject anti-popup after load
+      playerIframe.onload = () => {
+        setTimeout(injectAntiPopup, 1000);
+      };
     }
 
     function closePlayer() {
