@@ -132,7 +132,14 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <iframe id="playerIframe" src="" allowfullscreen></iframe>
+    <!-- BLOCKS ALL POPUPS / NEW TABS -->
+    <iframe 
+      id="playerIframe" 
+      src="" 
+      allowfullscreen
+      sandbox="allow-scripts allow-same-origin allow-presentation allow-forms"
+      referrerpolicy="no-referrer"
+    ></iframe>
   </div>
 
   <script>
@@ -144,7 +151,6 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // Search
     async function searchMovies() {
       const q = searchInput.value.trim();
       if (!q) return;
@@ -186,7 +192,6 @@
       });
     }
 
-    // PLAY — NO BULLSHIT
     function playMovie(imdbId) {
       playerIframe.src = `${SUPEREMBED}${imdbId}`;
       playerContainer.classList.add('active');
@@ -197,7 +202,6 @@
       playerIframe.src = '';
     }
 
-    // Events
     searchBtn.onclick = searchMovies;
     searchInput.addEventListener('keypress', e => e.key === 'Enter' && searchMovies());
     document.addEventListener('keydown', e => e.key === 'Escape' && closePlayer());
