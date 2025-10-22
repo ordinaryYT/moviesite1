@@ -1,148 +1,252 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OGMovie Player</title>
-<style>
-* { margin:0; padding:0; box-sizing:border-box; }
-body { background:#000; color:#fff; font-family:Arial,sans-serif; }
-header { text-align:center; padding:2rem; }
-h1 { color:#e50914; font-size:2.5rem; }
-.search-box { max-width:600px; margin:1rem auto; display:flex; gap:10px; }
-#searchInput { flex:1; padding:12px; font-size:1rem; border:none; border-radius:8px; background:#333; color:white; }
-#searchBtn { padding:12px 24px; background:#e50914; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold; }
-#searchBtn:hover { background:#c00; }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Movie Player</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #000;
+      color: #fff;
+      font-family: Arial, sans-serif;
+    }
+    header {
+      text-align: center;
+      padding: 2rem;
+    }
+    h1 {
+      color: #e50914;
+      font-size: 2.5rem;
+    }
+    .search-box {
+      max-width: 600px;
+      margin: 1rem auto;
+      display: flex;
+      gap: 10px;
+    }
+    #searchInput {
+      flex: 1;
+      padding: 12px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 8px;
+      background: #333;
+      color: white;
+    }
+    #searchBtn {
+      padding: 12px 24px;
+      background: #e50914;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    #searchBtn:hover { background: #c00; }
 
-#movieGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:1.5rem; padding:2rem; max-width:1400px; margin:0 auto; }
-.movie-card { cursor:pointer; border-radius:12px; overflow:hidden; background:#1a1a1a; transition:0.3s; }
-.movie-card:hover { transform:scale(1.05); box-shadow:0 0 20px rgba(229,9,20,0.5); }
-.movie-card img { width:100%; height:300px; object-fit:cover; }
-.movie-info { padding:1rem; text-align:center; }
-.movie-info h3 { font-size:1.1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.movie-info p { color:#aaa; font-size:0.9rem; }
+    #movieGrid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 1.5rem;
+      padding: 2rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    .movie-card {
+      cursor: pointer;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #1a1a1a;
+      transition: 0.3s;
+    }
+    .movie-card:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 20px rgba(229, 9, 20, 0.5);
+    }
+    .movie-card img {
+      width: 100%;
+      height: 300px;
+      object-fit: cover;
+    }
+    .movie-info {
+      padding: 1rem;
+      text-align: center;
+    }
+    .movie-info h3 {
+      font-size: 1.1rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .movie-info p {
+      color: #aaa;
+      font-size: 0.9rem;
+    }
 
-.player-container { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:#000; z-index:9999; }
-.player-container.active { display:block; }
-.close-btn { position:absolute; top:20px; right:20px; background:rgba(0,0,0,0.7); color:white; border:none; width:50px; height:50px; border-radius:50%; font-size:2rem; cursor:pointer; z-index:10002; }
-
-.player-wrapper { position:relative; width:100%; height:100%; }
-#playerIframe { width:100%; height:100%; border:none; }
-
-.iframe-overlay {
-  position:absolute; top:5px; left:20px; width:120px; height:40px;
-  background:rgba(0,0,0,0.9); z-index:3; pointer-events:auto;
-  display:flex; align-items:center; justify-content:center;
-  font-family:Arial,sans-serif; font-size:1rem; font-weight:bold;
-  color:rgba(255,255,255,0.4); text-transform:uppercase; letter-spacing:2px;
-  user-select:none; border-radius:8px;
-}
-
-#clickShield {
-  position:absolute; top:0; left:0; width:100%; height:100%;
-  z-index:10001; background:transparent; cursor:pointer; display:none;
-}
-</style>
+    .player-container {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: #000;
+      z-index: 9999;
+    }
+    .player-container.active {
+      display: block;
+    }
+    #playerIframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+    .close-btn {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.7);
+      color: white;
+      border: none;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      font-size: 2rem;
+      cursor: pointer;
+      z-index: 10000;
+    }
+  </style>
 </head>
 <body>
 
-<header>
-  <h1>OGMovie Player</h1>
-  <div class="search-box">
-    <input type="text" id="searchInput" placeholder="Search any movie..." />
-    <button id="searchBtn">GO</button>
+  <header>
+    <h1>Movie Player</h1>
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Search any movie..." />
+      <button id="searchBtn">GO</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="movieGrid"></div>
+  </main>
+
+  <div id="playerContainer" class="player-container">
+    <button class="close-btn" onclick="closePlayer()">X</button>
+    <!-- NO SANDBOX — VIDEO PLAYS -->
+    <iframe 
+      id="playerIframe" 
+      src="" 
+      allowfullscreen
+      allow="autoplay; fullscreen"
+      referrerpolicy="no-referrer"
+    ></iframe>
   </div>
-</header>
 
-<main>
-  <div id="movieGrid"></div>
-</main>
+  <script>
+    const EMBED_BASE = 'https://multiembed.mov/?video_id=';
 
-<div id="playerContainer" class="player-container">
-  <button class="close-btn" onclick="closePlayer()">X</button>
-  <div class="player-wrapper">
-    <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
-    <div class="iframe-overlay">ogmovie</div>
-    <div id="clickShield"></div>
-  </div>
-</div>
+    const searchInput = document.getElementById('searchInput');
+    const searchBtn = document.getElementById('searchBtn');
+    const movieGrid = document.getElementById('movieGrid');
+    const playerIframe = document.getElementById('playerIframe');
+    const playerContainer = document.getElementById('playerContainer');
 
-<script>
-const PROXY_BASE = '/proxy-video?video_id=';
-const searchInput = document.getElementById('searchInput');
-const searchBtn = document.getElementById('searchBtn');
-const movieGrid = document.getElementById('movieGrid');
-const playerIframe = document.getElementById('playerIframe');
-const playerContainer = document.getElementById('playerContainer');
-const clickShield = document.getElementById('clickShield');
+    // FAKE window.open() — PLAYER THINKS IT OPENED A TAB
+    function fakePopup() {
+      setTimeout(() => {
+        try {
+          const win = playerIframe.contentWindow;
+          if (!win) return;
 
-let clickCounter = 0;
+          // Create a fake window object
+          const fakeWindow = {
+            closed: false,
+            close: () => { fakeWindow.closed = true; },
+            focus: () => {},
+            blur: () => {},
+            document: { write: () => {}, close: () => {} },
+            location: { href: 'about:blank' }
+          };
 
-// Block popups
-window.open = function(url,name,specs){
-  console.log('Blocked popup attempt:',url);
-  return { closed:true, close:()=>{}, focus:()=>{} };
-};
+          // Override window.open
+          win.open = function(url, name, specs) {
+            console.log('Blocked popup:', url);
+            return fakeWindow;
+          };
 
-async function searchMovies() {
-  const q = searchInput.value.trim();
-  if(!q) return;
-  movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">Loading...</p>';
-  try{
-    const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    const results = data.description||[];
-    if(!results.length){ movieGrid.innerHTML='<p style="text-align:center; color:#aaa;">No results.</p>'; return; }
-    displayMovies(results.slice(0,10));
-  }catch{ movieGrid.innerHTML='<p style="color:red; text-align:center;">Error. Try again.</p>'; }
-}
-
-function displayMovies(movies){
-  movieGrid.innerHTML='';
-  movies.forEach(m=>{
-    if(!m['#IMDB_ID']) return;
-    const id = m['#IMDB_ID'].startsWith('tt') ? m['#IMDB_ID'] : 'tt'+m['#IMDB_ID'];
-    const card = document.createElement('div');
-    card.className='movie-card';
-    card.innerHTML=`
-      <img src="${m.image||'https://via.placeholder.com/300x450/222/fff?text=No+Image'}" 
-           onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
-      <div class="movie-info">
-        <h3>${m['#TITLE']}</h3>
-        <p>${m['#YEAR']||'N/A'}</p>
-      </div>`;
-    card.onclick=()=>playMovie(id);
-    movieGrid.appendChild(card);
-  });
-}
-
-function playMovie(imdbId){
-  playerIframe.src = `${PROXY_BASE}${imdbId}`;
-  playerContainer.classList.add('active');
-  clickCounter = 0;
-  clickShield.style.display='block';
-  clickShield.onclick = (e)=>{
-    e.preventDefault(); e.stopPropagation();
-    clickCounter++;
-    if(clickCounter === 2 || clickCounter === 5){
-      clickShield.style.display='none'; // allow interaction
-    } else {
-      console.log('Click blocked',clickCounter);
+          // Kill onclick popups
+          const script = win.document.createElement('script');
+          script.textContent = `
+            (function() {
+              window.open = function() { return { closed: false, close: function() {}, focus: function() {} }; };
+              document.body.onclick = null;
+              document.querySelectorAll('a').forEach(a => {
+                if (a.target === '_blank') a.target = '_self';
+                a.onclick = function(e) { e.preventDefault(); };
+              });
+            })();
+          `;
+          win.document.head.appendChild(script);
+        } catch (e) {}
+      }, 1500);
     }
-  };
-}
 
-function closePlayer(){
-  playerContainer.classList.remove('active');
-  playerIframe.src='';
-  clickCounter=0;
-  clickShield.style.display='none';
-}
+    // YOUR ORIGINAL SEARCH
+    async function searchMovies() {
+      const q = searchInput.value.trim();
+      if (!q) return;
+      movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">Loading...</p>';
 
-searchBtn.onclick = searchMovies;
-searchInput.addEventListener('keypress', e=> e.key==='Enter' && searchMovies());
-document.addEventListener('keydown', e=> e.key==='Escape' && closePlayer());
-</script>
+      try {
+        const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        const results = data.description || [];
 
+        if (!results.length) {
+          movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results.</p>';
+          return;
+        }
+
+        displayMovies(results.slice(0, 10));
+      } catch {
+        movieGrid.innerHTML = '<p style="color:red; text-align:center;">Error. Try again.</p>';
+      }
+    }
+
+    function displayMovies(movies) {
+      movieGrid.innerHTML = '';
+      movies.forEach(m => {
+        if (!m['#IMDB_ID']) return;
+        const id = m['#IMDB_ID'].startsWith('tt') ? m['#IMDB_ID'] : 'tt' + m['#IMDB_ID'];
+        const card = document.createElement('div');
+        card.className = 'movie-card';
+        card.innerHTML = `
+          <img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}" 
+               onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
+          <div class="movie-info">
+            <h3>${m['#TITLE']}</h3>
+            <p>${m['#YEAR'] || 'N/A'}</p>
+          </div>
+        `;
+        card.onclick = () => playMovie(id);
+        movieGrid.appendChild(card);
+      });
+    }
+
+    function playMovie(imdbId) {
+      playerIframe.src = `${EMBED_BASE}${imdbId}`;
+      playerContainer.classList.add('active');
+      playerIframe.onload = fakePopup;
+    }
+
+    function closePlayer() {
+      playerContainer.classList.remove('active');
+      playerIframe.src = '';
+    }
+
+    searchBtn.onclick = searchMovies;
+    searchInput.addEventListener('keypress', e => e.key === 'Enter' && searchMovies());
+    document.addEventListener('keydown', e => e.key === 'Escape' && closePlayer());
+  </script>
 </body>
 </html>
