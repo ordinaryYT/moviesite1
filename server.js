@@ -141,21 +141,17 @@ app.put('/api/movies/:id', requireAdmin, async (req, res) => {
   try {
     const id = req.params.id;
     const { name, imdbId, moviePassword, category } = req.body;
-
     let set = [], vals = [], i = 1;
     if (name) { set.push(`title=$${i++}`); vals.push(name); }
     if (imdbId) { set.push(`imdb_id=$${i++}`); vals.push(imdbId.startsWith('tt') ? imdbId : 'tt' + imdbId); }
     if (moviePassword) { const h = await bcrypt.hash(moviePassword, 10); set.push(`password_hash=$${i++}`); vals.push(h); }
     if (category) { set.push(`category=$${i++}`); vals.push(category); }
-
     if (set.length === 0) return res.status(400).json({ ok: false, error: 'Nothing to update' });
-
     vals.push(id);
     const result = await pool.query(
       `UPDATE movies SET ${set.join(', ')} WHERE id=$${i} RETURNING *`,
       vals
     );
-
     if (!result.rowCount) return res.status(404).json({ ok: false, error: 'Movie not found' });
     res.json({ ok: true, movie: result.rows[0] });
   } catch (err) {
