@@ -153,6 +153,36 @@ let loadingTimer = null;
 let clickCount = 0;
 const MAX_LOADING_CLICKS = 5;
 
+// === Image Search Function ===
+async function getMoviePoster(movieTitle, year = '') {
+  try {
+    // Try The Movie Database (TMDB) API - free and has posters
+    const tmdbResponse = await fetch(`https://api.themoviedb.org/3/search/movie?api_key=b7b7c68d7c17c2c8d457069e64320a1a&query=${encodeURIComponent(movieTitle)}${year ? `&year=${year}` : ''}`);
+    const tmdbData = await tmdbResponse.json();
+    
+    if (tmdbData.results && tmdbData.results.length > 0 && tmdbData.results[0].poster_path) {
+      return `https://image.tmdb.org/t/p/w500${tmdbData.results[0].poster_path}`;
+    }
+  } catch (error) {
+    console.log('TMDB image search failed');
+  }
+  
+  try {
+    // Try TVMaze API as fallback (has movie posters too)
+    const tvmazeResponse = await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(movieTitle)}`);
+    const tvmazeData = await tvmazeResponse.json();
+    
+    if (tvmazeData.length > 0 && tvmazeData[0].show.image && tvmazeData[0].show.image.medium) {
+      return tvmazeData[0].show.image.medium;
+    }
+  } catch (error) {
+    console.log('TVMaze image search failed');
+  }
+  
+  // Final fallback to placeholder
+  return 'https://via.placeholder.com/300x450/333/fff?text=No+Poster';
+}
+
 // === Admin Functions ===
 function openAdminPanel() {
   loginModal.classList.add('active');
@@ -438,36 +468,36 @@ async function loadMovies() {
 
 async function renderMovieCard(movie) {
   try {
-    // If we already have IMDb data from backend, use it
-    let imdbId = movie.imdb_id;
     let img = movie.image;
-    let year = movie.year;
+    let year = movie.year || 'N/A';
     
-    // If missing data, try to fetch from IMDb
-    if (!imdbId || !img) {
-      const q = encodeURIComponent(movie.title);
-      const res = await fetch('https://search.imdbot.workers.dev/?q=' + q);
-      const data = await res.json();
-      const hit = (data.description || []).find(h => h['#IMDB_ID']);
-      if (hit) {
-        imdbId = hit['#IMDB_ID'].startsWith('tt') ? hit['#IMDB_ID'] : 'tt' + hit['#IMDB_ID'];
-        img = hit.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image';
-        year = hit['#YEAR'] || 'N/A';
-      }
+    // Always try to get a better image from free APIs
+    const poster = await getMoviePoster(movie.title, movie.year);
+    
+    // Use the new poster if we got one, otherwise use existing image or placeholder
+    if (!poster.includes('placeholder.com')) {
+      img = poster;
+    } else if (!img || img.includes('placeholder.com')) {
+      img = poster;
     }
-    
-    if (!img) img = 'https://via.placeholder.com/300x450/222/fff?text=No+Image';
-    if (!year) year = 'N/A';
     
     const card = document.createElement('div');
     card.className = 'movie-card';
     card.innerHTML = `
-      <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
+      <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
       <div class="movie-info"><h3>${movie.title}</h3><p>${year}</p></div>`;
     card.onclick = () => requestMoviePassword(movie.id, movie.title);
     movieGrid.appendChild(card);
   } catch (e) {
     console.error('Movie card render failed for', movie.title, e);
+    // Fallback with placeholder
+    const card = document.createElement('div');
+    card.className = 'movie-card';
+    card.innerHTML = `
+      <img src="https://via.placeholder.com/300x450/333/fff?text=No+Poster">
+      <div class="movie-info"><h3>${movie.title}</h3><p>${movie.year || 'N/A'}</p></div>`;
+    card.onclick = () => requestMoviePassword(movie.id, movie.title);
+    movieGrid.appendChild(card);
   }
 }
 
