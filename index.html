@@ -88,15 +88,9 @@
       user-select: none;
       border-radius: 8px;
     }
-
-    /* INVISIBLE POPUP — PLAYER THINKS IT OPENED */
-    #fakePopup { position: fixed; left: -9999px; top: -9999px; width: 1px; height: 1px; border: none; }
   </style>
 </head>
 <body>
-
-  <!-- INVISIBLE POPUP FRAME -->
-  <iframe id="fakePopup" name="fakePopup"></iframe>
 
   <header>
     <h1>Movie Player</h1>
@@ -134,40 +128,66 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // FAKE TABS — PLAYER THINKS IT OPENED, BUT INVISIBLE
-    function fakeTabs() {
-      setTimeout(() => {
-        try {
-          const win = playerIframe.contentWindow;
-          if (!win) return;
+    // KILL ADS & TABS — INJECTED IMMEDIATELY
+    function killAdsAndTabs() {
+      playerIframe.onload = () => {
+        setTimeout(() => {
+          try {
+            const win = playerIframe.contentWindow;
+            const doc = playerIframe.contentDocument;
 
-          // Override window.open to use invisible iframe
-          win.open = function(url, name, specs) {
-            const fake = document.getElementById('fakePopup');
-            fake.src = url || 'about:blank';
-            return fake.contentWindow;
-          };
+            if (!win || !doc) return;
 
-          // Inject into iframe
-          const script = win.document.createElement('script');
-          script.textContent = `
-            (function() {
-              window.open = function(url) {
-                const fake = window.parent.document.getElementById('fakePopup');
-                fake.src = url || 'about:blank';
-                return fake.contentWindow;
-              };
-              document.addEventListener('click', function(e) {
-                if (e.target.tagName === 'A' && e.target.target === '_blank') {
-                  e.preventDefault();
-                  window.open(e.target.href);
-                }
-              });
-            })();
-          `;
-          win.document.head.appendChild(script);
-        } catch (e) {}
-      }, 1000);
+            // KILL window.open
+            win.open = () => null;
+
+            // KILL ALL CLICK EVENTS
+            doc.addEventListener('click', e => {
+              e.stopPropagation();
+              e.preventDefault();
+              return false;
+            }, true);
+
+            // REMOVE ALL ONCLICK & _blank
+            const script = doc.createElement('script');
+            script.textContent = `
+              (function() {
+                // Kill window.open
+                window.open = function() { return null; };
+
+                // Remove all onclick
+                document.querySelectorAll('*').forEach(el => {
+                  el.onclick = null;
+                  el.removeAttribute('onclick');
+                  if (el.tagName === 'A') {
+                    el.target = '_self';
+                    el.href = 'javascript:void(0)';
+                  }
+                });
+
+                // Kill body click
+                document.body.onclick = null;
+
+                // Remove ad divs
+                document.querySelectorAll('div, iframe, script').forEach(el => {
+                  if (el.id.includes('ad') || el.className.includes('ad') || el.src.includes('ad')) {
+                    el.remove();
+                  }
+                });
+
+                // Force video play
+                setTimeout(() => {
+                  document.querySelectorAll('video').forEach(v => {
+                    v.play().catch(() => {});
+                  });
+                }, 500);
+              })();
+            `;
+            doc.head.appendChild(script);
+
+          } catch (e) {}
+        }, 800);
+      };
     }
 
     async function searchMovies() {
@@ -213,13 +233,12 @@
     function playMovie(imdbId) {
       playerIframe.src = `${EMBED_BASE}${imdbId}`;
       playerContainer.classList.add('active');
-      playerIframe.onload = fakeTabs;
+      killAdsAndTabs();
     }
 
     function closePlayer() {
       playerContainer.classList.remove('active');
       playerIframe.src = '';
-      document.getElementById('fakePopup').src = 'about:blank';
     }
 
     searchBtn.onclick = searchMovies;
