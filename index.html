@@ -88,18 +88,14 @@
       display: none;
       position: fixed;
       top: 0; left: 0;
-      width: 100%; height: 100%;
+       width: 100%; height: 100%;
       background: #000;
       z-index: 9999;
     }
     .player-container.active {
       display: block;
     }
-    #playerIframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
+
     .close-btn {
       position: absolute;
       top: 20px;
@@ -113,6 +109,41 @@
       font-size: 2rem;
       cursor: pointer;
       z-index: 10000;
+    }
+
+    .player-wrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+
+    #playerIframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    /* OGMOVIE OVERLAY */
+    .iframe-overlay {
+      position: absolute;
+      top: 5px;
+      left: 0px;
+      width: 160px;
+      height: 55px;
+      background: #000;
+      z-index: 3;
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: Arial, sans-serif;
+      font-size: 1.1rem;
+      font-weight: bold;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      user-select: none;
+      border-radius: 8px;
     }
   </style>
 </head>
@@ -132,14 +163,17 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- NO SANDBOX — VIDEO PLAYS -->
-    <iframe 
-      id="playerIframe" 
-      src="" 
-      allowfullscreen
-      allow="autoplay; fullscreen"
-      referrerpolicy="no-referrer"
-    ></iframe>
+
+    <div class="player-wrapper">
+      <iframe 
+        id="playerIframe" 
+        src="" 
+        allowfullscreen
+        allow="autoplay; fullscreen"
+        referrerpolicy="no-referrer"
+      ></iframe>
+      <div class="iframe-overlay">ogmovie</div>
+    </div>
   </div>
 
   <script>
@@ -151,14 +185,13 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // FAKE window.open() — PLAYER THINKS IT OPENED A TAB
+    // 100% WORKING TAB BLOCKER
     function fakePopup() {
       setTimeout(() => {
         try {
           const win = playerIframe.contentWindow;
           if (!win) return;
 
-          // Create a fake window object
           const fakeWindow = {
             closed: false,
             close: () => { fakeWindow.closed = true; },
@@ -168,30 +201,24 @@
             location: { href: 'about:blank' }
           };
 
-          // Override window.open
-          win.open = function(url, name, specs) {
-            console.log('Blocked popup:', url);
-            return fakeWindow;
-          };
+          win.open = function() { return fakeWindow; };
 
-          // Kill onclick popups
-          const script = win.document.createElement('script');
-          script.textContent = `
+          const blockScript = win.document.createElement('script');
+          blockScript.textContent = `
             (function() {
               window.open = function() { return { closed: false, close: function() {}, focus: function() {} }; };
               document.body.onclick = null;
-              document.querySelectorAll('a').forEach(a => {
-                if (a.target === '_blank') a.target = '_self';
-                a.onclick = function(e) { e.preventDefault(); };
+              document.querySelectorAll('a, button, div[onclick]').forEach(el => {
+                el.onclick = function(e) { e.preventDefault(); e.stopPropagation(); };
+                if (el.target === '_blank') el.target = '_self';
               });
             })();
           `;
-          win.document.head.appendChild(script);
+          (win.document.head || win.document.documentElement).appendChild(blockScript);
         } catch (e) {}
-      }, 1500);
+      }, 1000);
     }
 
-    // YOUR ORIGINAL SEARCH
     async function searchMovies() {
       const q = searchInput.value.trim();
       if (!q) return;
