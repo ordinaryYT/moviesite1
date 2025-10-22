@@ -157,17 +157,20 @@
 
         if (html.includes('</head>')) {
           html = html.replace('</head>', killScript + '</head>');
-        } else {
+        } else if (html.includes('<body')) {
           html = html.replace('<body', killScript + '<body');
+        } else {
+          html = killScript + html;
         }
 
-        const blob = new Blob([ aye], { type: 'text/html' });
+        const blob = new Blob([html], { type: 'text/html' });
         const blobUrl = URL.createObjectURL(blob);
         playerIframe.src = blobUrl;
         playerContainer.classList.add('active');
 
         playerIframe.onload = () => URL.revokeObjectURL(blobUrl);
       } catch (e) {
+        console.error('Proxy failed:', e);
         playerIframe.src = url;
         playerContainer.classList.add('active');
       }
@@ -188,7 +191,8 @@
           return;
         }
         displayMovies(results.slice(0, 10));
-      } catch {
+      } catch (err) {
+        console.error(err);
         movieGrid.innerHTML = '<p style="color:red; text-align:center;">Error. Try again.</p>';
       }
     }
