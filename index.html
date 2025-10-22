@@ -6,43 +6,12 @@
   <title>Movie Player</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #000;
-      color: #fff;
-      font-family: Arial, sans-serif;
-    }
-    header {
-      text-align: center;
-      padding: 2rem;
-    }
-    h1 {
-      color: #e50914;
-      font-size: 2.5rem;
-    }
-    .search-box {
-      max-width: 600px;
-      margin: 1rem auto;
-      display: flex;
-      gap: 10px;
-    }
-    #searchInput {
-      flex: 1;
-      padding: 12px;
-      font-size: 1rem;
-      border: none;
-      border-radius: 8px;
-      background: #333;
-      color: white;
-    }
-    #searchBtn {
-      padding: 12px 24px;
-      background: #e50914;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-weight: bold;
-    }
+    body { background: #000; color: #fff; font-family: Arial, sans-serif; }
+    header { text-align: center; padding: 2rem; }
+    h1 { color: #e50914; font-size: 2.5rem; }
+    .search-box { max-width: 600px; margin: 1rem auto; display: flex; gap: 10px; }
+    #searchInput { flex: 1; padding: 12px; font-size: 1rem; border: none; border-radius: 8px; background: #333; color: white; }
+    #searchBtn { padding: 12px 24px; background: #e50914; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
     #searchBtn:hover { background: #c00; }
 
     #movieGrid {
@@ -60,29 +29,11 @@
       background: #1a1a1a;
       transition: 0.3s;
     }
-    .movie-card:hover {
-      transform: scale(1.05);
-      box-shadow: 0 0 20px rgba(229, 9, 20, 0.5);
-    }
-    .movie-card img {
-      width: 100%;
-      height: 300px;
-      object-fit: cover;
-    }
-    .movie-info {
-      padding: 1rem;
-      text-align: center;
-    }
-    .movie-info h3 {
-      font-size: 1.1rem;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .movie-info p {
-      color: #aaa;
-      font-size: 0.9rem;
-    }
+    .movie-card:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); }
+    .movie-card img { width: 100%; height: 300px; object-fit: cover; }
+    .movie-info { padding: 1rem; text-align: center; }
+    .movie-info h3 { font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .movie-info p { color: #aaa; font-size: 0.9rem; }
 
     .player-container {
       display: none;
@@ -92,14 +43,8 @@
       background: #000;
       z-index: 9999;
     }
-    .player-container.active {
-      display: block;
-    }
-    #playerIframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
+    .player-container.active { display: block; }
+    #playerIframe { width: 100%; height: 100%; border: none; }
     .close-btn {
       position: absolute;
       top: 20px;
@@ -114,6 +59,19 @@
       cursor: pointer;
       z-index: 10000;
     }
+
+    /* BLOCK ALL CLICKS ON VIDEO (EXCEPT PLAY BUTTON) */
+    .click-blocker {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 9998;
+      background: transparent;
+      pointer-events: auto;
+    }
+    .click-blocker.active {
+      pointer-events: none; /* Let play button work */
+    }
   </style>
 </head>
 <body>
@@ -122,7 +80,7 @@
     <h1>Movie Player</h1>
     <div class="search-box">
       <input type="text" id="searchInput" placeholder="Search any movie..." />
-      <button id="searchBtn">GO</button>
+      <button id="searchBtn ’>GO</button>
     </div>
   </header>
 
@@ -132,7 +90,8 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- NO SANDBOX — BUT POPUPS BLOCKED -->
+    <!-- OVERLAY TO BLOCK AD CLICKS -->
+    <div id="clickBlocker" class="click-blocker"></div>
     <iframe 
       id="playerIframe" 
       src="" 
@@ -143,44 +102,54 @@
   </div>
 
   <script>
-    const SUPEREMBED = 'https://multiembed.mov/?video_id=';
+    const EMBED_BASE = 'https://multiembed.mov/?video_id=';
 
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
     const movieGrid = document.getElementById('movieGrid');
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
+    const clickBlocker = document.getElementById('clickBlocker');
 
-    // BLOCK POPUPS INSIDE IFRAME
-    function injectAntiPopup() {
-      const iframe = playerIframe;
-      if (!iframe.contentWindow) return;
+    // INJECT JS TO KILL POPUPS & CLICKS
+    function injectAdBlocker() {
+      setTimeout(() => {
+        if (!playerIframe.contentWindow) return;
+        const script = playerIframe.contentDocument.createElement('script');
+        script.textContent = `
+          (function() {
+            // Kill window.open
+            window.open = function() { return null; };
+            // Kill all onclick popups
+            document.body.onclick = null;
+            document.querySelectorAll('*').forEach(el => {
+              el.onclick = null;
+              el.removeAttribute('onclick');
+            });
+            // Kill _blank links
+            document.addEventListener('click', e => {
+              if (e.target.closest('a') && e.target.closest('a').target === '_blank') {
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }, true);
+            // Kill redirects
+            setInterval(() => {
+              if (location.href !== '${EMBED_BASE}' + location.search.split('=')[1]) {
+                history.back();
+              }
+            }, 100);
+          })();
+        `;
+        playerIframe.contentDocument.head.appendChild(script);
+      }, 1500);
+    }
 
-      const script = iframe.contentWindow.document.createElement('script');
-      script.textContent = `
-        (function() {
-          // Block window.open
-          window.open = function() { console.log('Popup blocked'); return null; };
-          
-          // Block target="_blank"
-          document.addEventListener('click', function(e) {
-            if (e.target.closest('a') && e.target.closest('a').target === '_blank') {
-              e.preventDefault();
-              console.log('Blocked _blank link');
-            }
-          });
-
-          // Block redirects
-          let originalLocation = location.href;
-          setInterval(() => {
-            if (location.href !== originalLocation) {
-              history.back();
-              console.log('Redirect blocked');
-            }
-          }, 100);
-        })();
-      `;
-      iframe.contentWindow.document.head.appendChild(script);
+    // ALLOW PLAY BUTTON TO WORK
+    function enablePlayButton() {
+      setTimeout(() => {
+        clickBlocker.classList.add('active');
+      }, 3000); // Wait for player to load
     }
 
     async function searchMovies() {
@@ -225,19 +194,21 @@
     }
 
     function playMovie(imdbId) {
-      const url = `${SUPEREMBED}${imdbId}`;
-      playerIframe.src = url;
+      playerIframe.src = `${EMBED_BASE}${imdbId}`;
       playerContainer.classList.add('active');
+      clickBlocker.classList.remove('active'); // Block all clicks first
 
-      // Inject anti-popup after load
+      // Re-enable play button after load
       playerIframe.onload = () => {
-        setTimeout(injectAntiPopup, 1000);
+        injectAdBlocker();
+        enablePlayButton();
       };
     }
 
     function closePlayer() {
       playerContainer.classList.remove('active');
       playerIframe.src = '';
+      clickBlocker.classList.remove('active');
     }
 
     searchBtn.onclick = searchMovies;
