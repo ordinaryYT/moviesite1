@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Movie Player</title>
+<title>ogmovie</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{background:#000;color:#fff;font-family:Arial,sans-serif}
@@ -57,7 +57,7 @@
 <body>
 
 <header>
-  <h1>Movie Player</h1>
+  <h1>ogmovie</h1>
   <button id="adminBtn">Admin</button>
 </header>
 <main>
@@ -147,6 +147,7 @@ let selectedMovieId = null;
 let loadingTimer = null;
 let clickCount = 0;
 const MAX_LOADING_CLICKS = 5;
+const LOADING_DURATION = 10000; // 10 seconds
 
 // === Free Image Search Function ===
 async function getMoviePoster(movieTitle, year = '') {
@@ -429,10 +430,10 @@ function showPlayer(embedUrl) {
 function showLoadingScreen() {
   loadingScreen.classList.add('active');
   
-  // Hide loading screen after exactly 5 seconds
+  // Hide loading screen after exactly 10 seconds
   loadingTimer = setTimeout(() => {
     hideLoadingScreen();
-  }, 5000);
+  }, LOADING_DURATION);
 }
 
 function hideLoadingScreen() {
