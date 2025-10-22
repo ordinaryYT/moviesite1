@@ -67,6 +67,7 @@
     <div id="movieGrid"></div>
   </main>
 
+  <!-- Player Overlay -->
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
     <div id="clickShield"></div>
@@ -74,7 +75,7 @@
   </div>
 
   <script>
-    // ✅ Use your Render app as the proxy
+    // Use your Render proxy URL
     const EMBED_BASE = 'https://ogmovie.onrender.com/proxy/embed/';
 
     const searchInput = document.getElementById('searchInput');
@@ -120,23 +121,28 @@
             <p>${m['#YEAR'] || 'N/A'}</p>
           </div>
         `;
-        card.onclick = () => playMovie(id);
+        // Ensure click only triggers JS, not default link
+        card.onclick = (e) => {
+          e.preventDefault();
+          playMovie(id);
+        };
         movieGrid.appendChild(card);
       });
     }
 
     function playMovie(imdbId) {
+      // Set iframe src to your Render proxy
       playerIframe.src = `${EMBED_BASE}${imdbId}`;
       playerContainer.classList.add('active');
 
-      // show click shield to absorb first "popup" click
+      // Show click shield to block first popup click
       clickShield.style.display = 'block';
       const shieldHandler = (e) => {
         e.preventDefault();
         e.stopPropagation();
         clickShield.style.display = 'none';
 
-        // optional: simulate click after short delay
+        // Focus iframe and simulate click for playback if needed
         setTimeout(() => {
           playerIframe.focus();
           const evt = new MouseEvent('click', { bubbles: true, cancelable: true });
