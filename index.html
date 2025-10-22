@@ -52,6 +52,11 @@
   .loading-spinner{width:60px;height:60px;border:5px solid #333;border-top:5px solid #e50914;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:1rem}
   .loading-text{color:#fff;font-size:1.2rem;text-align:center}
   @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+  
+  /* Play Button Overlay */
+  .play-button-overlay{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:2;cursor:pointer}
+  .play-button{width:80px;height:80px;background:#e50914;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2rem;color:white;transition:transform 0.3s}
+  .play-button:hover{transform:scale(1.1)}
 </style>
 </head>
 <body>
@@ -123,6 +128,9 @@
 <div id="playerContainer" class="player-container">
   <button class="close-btn" onclick="closePlayer()">X</button>
   <div class="player-wrapper">
+    <div id="playButtonOverlay" class="play-button-overlay">
+      <div class="play-button">▶</div>
+    </div>
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
   </div>
@@ -140,11 +148,13 @@ const loginModal = document.getElementById('loginModal');
 const addMovieModal = document.getElementById('addMovieModal');
 const passwordModal = document.getElementById('passwordModal');
 const loadingScreen = document.getElementById('loadingScreen');
+const playButtonOverlay = document.getElementById('playButtonOverlay');
 
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
 let loadingTimer = null;
+let currentEmbedUrl = '';
 
 // === Admin Functions ===
 function openAdminPanel() {
@@ -317,7 +327,19 @@ async function verifyMoviePassword() {
     });
     const data = await res.json();
     if (data.ok) {
-      playMovieWithToken(data.token);
+      // Get the embed URL but don't load it yet
+      const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
+        headers: {
+          'Authorization': `Bearer ${data.token}`
+        }
+      });
+      const embedData = await embedRes.json();
+      if (embedData.ok) {
+        currentEmbedUrl = embedData.url;
+        showPlayerWithPlayButton();
+      } else {
+        alert('Error: ' + embedData.error);
+      }
     } else {
       alert('Wrong password');
     }
@@ -325,6 +347,16 @@ async function verifyMoviePassword() {
     console.error('Password verification failed', e);
     alert('Error verifying password');
   }
+}
+
+function showPlayerWithPlayButton() {
+  // Reset iframe
+  playerIframe.src = '';
+  // Show player with play button overlay
+  playerContainer.classList.add('active');
+  playButtonOverlay.style.display = 'flex';
+  passwordModal.classList.remove('active');
+  document.getElementById('moviePasswordInput').value = '';
 }
 
 function showLoadingScreen() {
@@ -343,54 +375,37 @@ function hideLoadingScreen() {
   loadingScreen.classList.remove('active');
 }
 
-async function playMovieWithToken(token) {
-  try {
-    const res = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
-    const data = await res.json();
-    if (data.ok) {
-      // Show loading screen for exactly 5 seconds
-      showLoadingScreen();
-      
-      // Set iframe source
-      playerIframe.src = data.url;
-      playerContainer.classList.add('active');
-      passwordModal.classList.remove('active');
-      document.getElementById('moviePasswordInput').value = '';
-      
-      // Security measure to prevent popups
-      playerIframe.onload = () => {
-        setTimeout(() => {
-          try {
-            const win = playerIframe.contentWindow;
-            if (!win) return;
-            win.open = function(url) {
-              const catcher = document.createElement('iframe');
-              catcher.style.display = 'none';
-              catcher.src = url || 'about:blank';
-              document.body.appendChild(catcher);
-              return catcher.contentWindow;
-            };
-          } catch (e) {}
-        }, 1000);
-      };
-      
-    } else {
-      alert('Error: ' + data.error);
-    }
-  } catch (e) {
-    console.error('Failed to get embed URL', e);
-    alert('Failed to play movie');
-    hideLoadingScreen();
-  }
+function startVideoPlayback() {
+  // Hide play button and show loading screen
+  playButtonOverlay.style.display = 'none';
+  showLoadingScreen();
+  
+  // Set iframe source to start loading the video
+  playerIframe.src = currentEmbedUrl;
+  
+  // Security measure to prevent popups
+  playerIframe.onload = () => {
+    setTimeout(() => {
+      try {
+        const win = playerIframe.contentWindow;
+        if (!win) return;
+        win.open = function(url) {
+          const catcher = document.createElement('iframe');
+          catcher.style.display = 'none';
+          catcher.src = url || 'about:blank';
+          document.body.appendChild(catcher);
+          return catcher.contentWindow;
+        };
+      } catch (e) {}
+    }, 1000);
+  };
 }
 
 function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
+  currentEmbedUrl = '';
+  playButtonOverlay.style.display = 'flex';
   hideLoadingScreen();
 }
 
@@ -453,6 +468,7 @@ async function renderMovieCard(movie) {
 
 // Event Listeners
 adminBtn.addEventListener('click', openAdminPanel);
+playButtonOverlay.addEventListener('click', startVideoPlayback);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closePlayer();
