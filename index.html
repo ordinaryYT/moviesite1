@@ -43,126 +43,112 @@
       position: absolute; top: 20px; right: 20px;
       background: rgba(0,0,0,0.7); color: white;
       border: none; width: 50px; height: 50px; border-radius: 50%;
-      font-size: 2rem; cursor: pointer; z-index: 10002;
-    }
-    #clickShield {
-      position: absolute; top: 0; left: 0;
-      width: 100%; height: 100%;
-      background: transparent; cursor: pointer;
-      z-index: 10001; display: none;
+      font-size: 2rem; cursor: pointer; z-index: 10000;
     }
   </style>
 </head>
 <body>
 
-  <header>
-    <h1>Movie Player</h1>
-    <div class="search-box">
-      <input type="text" id="searchInput" placeholder="Search any movie..." />
-      <button id="searchBtn">GO</button>
-    </div>
-  </header>
-
-  <main>
-    <div id="movieGrid"></div>
-  </main>
-
-  <!-- Player Overlay -->
-  <div id="playerContainer" class="player-container">
-    <button class="close-btn" onclick="closePlayer()">X</button>
-    <div id="clickShield"></div>
-    <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+<header>
+  <h1>Movie Player</h1>
+  <div class="search-box">
+    <input type="text" id="searchInput" placeholder="Search any movie..." />
+    <button id="searchBtn">GO</button>
   </div>
+</header>
 
-  <script>
-    // Use your Render proxy URL
-    const EMBED_BASE = 'https://ogmovie.onrender.com/proxy/embed/';
+<main>
+  <div id="movieGrid"></div>
+</main>
 
-    const searchInput = document.getElementById('searchInput');
-    const searchBtn = document.getElementById('searchBtn');
-    const movieGrid = document.getElementById('movieGrid');
-    const playerIframe = document.getElementById('playerIframe');
-    const playerContainer = document.getElementById('playerContainer');
-    const clickShield = document.getElementById('clickShield');
+<div id="playerContainer" class="player-container">
+  <button class="close-btn" onclick="closePlayer()">X</button>
+  <!-- NO SANDBOX — VIDEO PLAYS -->
+  <iframe 
+    id="playerIframe" 
+    src="" 
+    allowfullscreen
+    allow="autoplay; fullscreen"
+    referrerpolicy="no-referrer"
+  ></iframe>
+</div>
 
-    async function searchMovies() {
-      const q = searchInput.value.trim();
-      if (!q) return;
-      movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">Loading...</p>';
+<script>
+  // --- BLOCK NEW TABS ---
+  window.open = function(url, name, specs) {
+    console.warn('Blocked attempt to open new tab:', url);
+    return { closed:true, close:()=>{}, focus:()=>{} };
+  };
+  document.addEventListener('click', e => {
+    const a = e.target.closest('a[target="_blank"]');
+    if(a) { e.preventDefault(); console.warn('Blocked external link:', a.href); }
+  });
+  document.addEventListener('submit', e => {
+    if(e.target.target === '_blank') { e.preventDefault(); console.warn('Blocked form submission to new tab'); }
+  });
 
-      try {
-        const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(q)}`);
-        const data = await res.json();
-        const results = data.description || [];
+  const EMBED_BASE = 'https://multiembed.mov/?video_id=';
 
-        if (!results.length) {
-          movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results.</p>';
-          return;
-        }
+  const searchInput = document.getElementById('searchInput');
+  const searchBtn = document.getElementById('searchBtn');
+  const movieGrid = document.getElementById('movieGrid');
+  const playerIframe = document.getElementById('playerIframe');
+  const playerContainer = document.getElementById('playerContainer');
 
-        displayMovies(results.slice(0, 10));
-      } catch {
-        movieGrid.innerHTML = '<p style="color:red; text-align:center;">Error. Try again.</p>';
+  async function searchMovies() {
+    const q = searchInput.value.trim();
+    if(!q) return;
+    movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">Loading...</p>';
+
+    try {
+      const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      const results = data.description || [];
+
+      if(!results.length) {
+        movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results.</p>';
+        return;
       }
+
+      displayMovies(results.slice(0, 10));
+    } catch {
+      movieGrid.innerHTML = '<p style="color:red; text-align:center;">Error. Try again.</p>';
     }
+  }
 
-    function displayMovies(movies) {
-      movieGrid.innerHTML = '';
-      movies.forEach(m => {
-        if (!m['#IMDB_ID']) return;
-        const id = m['#IMDB_ID'].startsWith('tt') ? m['#IMDB_ID'] : 'tt' + m['#IMDB_ID'];
-        const card = document.createElement('div');
-        card.className = 'movie-card';
-        card.innerHTML = `
-          <img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}"
-               onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
-          <div class="movie-info">
-            <h3>${m['#TITLE']}</h3>
-            <p>${m['#YEAR'] || 'N/A'}</p>
-          </div>
-        `;
-        // Ensure click only triggers JS, not default link
-        card.onclick = (e) => {
-          e.preventDefault();
-          playMovie(id);
-        };
-        movieGrid.appendChild(card);
-      });
-    }
+  function displayMovies(movies) {
+    movieGrid.innerHTML = '';
+    movies.forEach(m => {
+      if(!m['#IMDB_ID']) return;
+      const id = m['#IMDB_ID'].startsWith('tt') ? m['#IMDB_ID'] : 'tt' + m['#IMDB_ID'];
+      const card = document.createElement('div');
+      card.className = 'movie-card';
+      card.innerHTML = `
+        <img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}" 
+             onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
+        <div class="movie-info">
+          <h3>${m['#TITLE']}</h3>
+          <p>${m['#YEAR'] || 'N/A'}</p>
+        </div>
+      `;
+      card.onclick = () => playMovie(id);
+      movieGrid.appendChild(card);
+    });
+  }
 
-    function playMovie(imdbId) {
-      // Set iframe src to your Render proxy
-      playerIframe.src = `${EMBED_BASE}${imdbId}`;
-      playerContainer.classList.add('active');
+  function playMovie(imdbId) {
+    playerIframe.src = `${EMBED_BASE}${imdbId}`;
+    playerContainer.classList.add('active');
+  }
 
-      // Show click shield to block first popup click
-      clickShield.style.display = 'block';
-      const shieldHandler = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        clickShield.style.display = 'none';
+  function closePlayer() {
+    playerContainer.classList.remove('active');
+    playerIframe.src = '';
+  }
 
-        // Focus iframe and simulate click for playback if needed
-        setTimeout(() => {
-          playerIframe.focus();
-          const evt = new MouseEvent('click', { bubbles: true, cancelable: true });
-          playerIframe.dispatchEvent(evt);
-        }, 200);
-
-        clickShield.removeEventListener('click', shieldHandler);
-      };
-      clickShield.addEventListener('click', shieldHandler);
-    }
-
-    function closePlayer() {
-      playerContainer.classList.remove('active');
-      playerIframe.src = '';
-      clickShield.style.display = 'none';
-    }
-
-    searchBtn.onclick = searchMovies;
-    searchInput.addEventListener('keypress', e => e.key === 'Enter' && searchMovies());
-    document.addEventListener('keydown', e => e.key === 'Escape' && closePlayer());
-  </script>
+  searchBtn.onclick = searchMovies;
+  searchInput.addEventListener('keypress', e => e.key === 'Enter' && searchMovies());
+  document.addEventListener('keydown', e => e.key === 'Escape' && closePlayer());
+</script>
 </body>
 </html>
