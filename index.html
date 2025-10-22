@@ -9,10 +9,7 @@
     body { background: #000; color: #fff; font-family: Arial, sans-serif; }
     header { text-align: center; padding: 2rem; }
     h1 { color: #e50914; font-size: 2.5rem; }
-    .search-box { max-width: 600px; margin: 1rem auto; display: flex; gap: 10px; }
-    #searchInput { flex: 1; padding: 12px; font-size: 1rem; border: none; border-radius: 8px; background: #333; color: white; }
-    #searchBtn { padding: 12px 24px; background: #e50914; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
-    #searchBtn:hover { background: #c00; }
+    button { cursor: pointer; }
 
     #movieGrid {
       display: grid;
@@ -22,94 +19,72 @@
       max-width: 1400px;
       margin: 0 auto;
     }
+
     .movie-card {
-      cursor: pointer;
+      background: #1a1a1a;
       border-radius: 12px;
       overflow: hidden;
-      background: #1a1a1a;
       transition: 0.3s;
+      cursor: pointer;
     }
-    .movie-card:hover {
-      transform: scale(1.05);
-      box-shadow: 0 0 20px rgba(229, 9, 20, 0.5);
-    }
+    .movie-card:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); }
     .movie-card img { width: 100%; height: 300px; object-fit: cover; }
     .movie-info { padding: 1rem; text-align: center; }
-    .movie-info h3 { font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .movie-info h3 { font-size: 1.1rem; }
     .movie-info p { color: #aaa; font-size: 0.9rem; }
 
+    /* Player */
     .player-container {
       display: none;
       position: fixed;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
+      inset: 0;
       background: #000;
       z-index: 9999;
     }
     .player-container.active { display: block; }
-
     .close-btn {
       position: absolute;
-      top: 20px;
-      right: 20px;
+      top: 20px; right: 20px;
       background: rgba(0,0,0,0.7);
       color: white;
       border: none;
-      width: 50px;
-      height: 50px;
+      width: 50px; height: 50px;
       border-radius: 50%;
       font-size: 2rem;
       cursor: pointer;
       z-index: 10000;
     }
 
-    .player-wrapper { position: relative; width: 100%; height: 100%; }
-    #playerIframe { width: 100%; height: 100%; border: none; }
-
-    .iframe-overlay {
-      position: absolute;
-      top: 5px;
-      left: 0px;
-      width: 160px;
-      height: 55px;
-      background: #000;
-      z-index: 3;
-      pointer-events: auto;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: Arial, sans-serif;
-      font-size: 1.1rem;
-      font-weight: bold;
-      color: rgba(255, 255, 255, 0.5);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      user-select: none;
-      border-radius: 8px;
-    }
-
-    /* INVISIBLE TAB CATCHER */
-    #tabCatcher {
+    /* Admin Panel */
+    #adminPanel {
+      background: rgba(30,30,30,0.95);
       position: fixed;
-      left: -9999px;
-      top: -9999px;
-      width: 1px;
-      height: 1px;
-      border: none;
-      opacity: 0;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 10000;
+      display: none;
+      padding: 2rem;
+      overflow-y: auto;
     }
+    #adminPanel.active { display: block; }
+    #adminPanel h2 { margin-bottom: 1rem; color: #e50914; }
+    #adminPanel input, #adminPanel button {
+      margin: .5rem 0;
+      padding: 0.7rem;
+      border-radius: 6px;
+      border: none;
+      font-size: 1rem;
+    }
+    #adminPanel input { width: 100%; background: #222; color: #fff; }
+    #adminPanel button { background: #e50914; color: white; font-weight: bold; }
+
+    .admin-actions { margin-top: 1rem; }
   </style>
 </head>
 <body>
-
-  <!-- INVISIBLE IFRAME TO CATCH TABS -->
-  <iframe id="tabCatcher" name="fakeTab"></iframe>
-
   <header>
-    <h1>Movie Player</h1>
-    <div class="search-box">
-      <input type="text" id="searchInput" placeholder="Search any movie..." />
-      <button id="searchBtn">GO</button>
+    <h1>🎬 Movie Player</h1>
+    <div style="margin-top:1rem;">
+      <button onclick="openAdmin()">Admin Panel</button>
     </div>
   </header>
 
@@ -117,117 +92,121 @@
     <div id="movieGrid"></div>
   </main>
 
+  <!-- Player -->
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <div class="player-wrapper">
-      <iframe id="playerIframe" src="" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
-      <div class="iframe-overlay">ogmovie</div>
+    <iframe id="playerIframe" src="" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer" style="width:100%;height:100%;border:none;"></iframe>
+  </div>
+
+  <!-- Admin Panel -->
+  <div id="adminPanel">
+    <h2>Admin Panel</h2>
+    <div id="adminLogin">
+      <p>Enter admin password:</p>
+      <input type="password" id="adminPass" placeholder="Admin password">
+      <button onclick="adminLogin()">Login</button>
+    </div>
+
+    <div id="adminControls" style="display:none;">
+      <h3>Add Movie</h3>
+      <input type="text" id="movieName" placeholder="Movie name">
+      <input type="text" id="moviePass" placeholder="Password for this movie">
+      <button onclick="addMovie()">Add Movie</button>
+      <div id="addStatus" style="margin-top:1rem;color:#0f0;"></div>
+      <hr style="margin:1rem 0;">
+      <button onclick="closeAdmin()">Close Admin Panel</button>
     </div>
   </div>
 
   <script>
-    const EMBED_BASE = 'https://multiembed.mov/?video_id=';
-    const searchInput = document.getElementById('searchInput');
-    const searchBtn = document.getElementById('searchBtn');
+    const API = location.origin + '/api';
     const movieGrid = document.getElementById('movieGrid');
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
+    const adminPanel = document.getElementById('adminPanel');
+    let adminToken = null;
 
-    function playMovie(imdbId) {
-      const url = EMBED_BASE + imdbId;
-      playerIframe.src = url;
-      playerContainer.classList.add('active');
-
-      // INJECT TAB KILLER AFTER LOAD
-      playerIframe.onload = () => {
-        setTimeout(() => {
-          try {
-            const win = playerIframe.contentWindow;
-            if (!win) return;
-
-            // REDIRECT ALL window.open() TO INVISIBLE IFRAME
-            win.open = function(url) {
-              const catcher = document.getElementById('tabCatcher');
-              catcher.src = url || 'about:blank';
-              return catcher.contentWindow;
-            };
-
-            // INJECT INTO IFRAME
-            const script = win.document.createElement('script');
-            script.textContent = `
-              (function() {
-                window.open = function(url) {
-                  const catcher = window.parent.document.getElementById('tabCatcher');
-                  catcher.src = url || 'about:blank';
-                  return catcher.contentWindow;
-                };
-                // Block real popups
-                document.addEventListener('click', e => {
-                  if (e.target.closest('a') && e.target.closest('a').target === '_blank') {
-                    e.preventDefault();
-                  }
-                });
-              })();
-            `;
-            win.document.head.appendChild(script);
-          } catch (e) {}
-        }, 1000);
-      };
-    }
-
-    async function searchMovies() {
-      const q = searchInput.value.trim();
-      if (!q) return;
-      movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">Loading...</p>';
-
-      try {
-        const res = await fetch('https://search.imdbot.workers.dev/?q=' + encodeURIComponent(q));
-        const data = await res.json();
-        const results = data.description || [];
-
-        if (!results.length) {
-          movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results.</p>';
-          return;
-        }
-        displayMovies(results.slice(0, 10));
-      } catch {
-        movieGrid.innerHTML = '<p style="color:red; text-align:center;">Error. Try again.</p>';
-      }
-    }
-
-    function displayMovies(movies) {
+    async function fetchMovies() {
+      const res = await fetch(API + '/movies');
+      const data = await res.json();
+      if (!data.ok) return alert('Error fetching movies');
       movieGrid.innerHTML = '';
-      movies.forEach(m => {
-        if (!m['#IMDB_ID']) return;
-        const id = m['#IMDB_ID'].startsWith('tt') ? m['#IMDB_ID'] : 'tt' + m['#IMDB_ID'];
+      data.movies.forEach(m => {
         const card = document.createElement('div');
         card.className = 'movie-card';
         card.innerHTML = `
-          <img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}" 
-               onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
+          <img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}">
           <div class="movie-info">
-            <h3>${m['#TITLE']}</h3>
-            <p>${m['#YEAR'] || 'N/A'}</p>
+            <h3>${m.title}</h3>
+            <p>${m.year || ''}</p>
           </div>
         `;
-        card.onclick = () => playMovie(id);
+        card.onclick = () => watchMovie(m.id);
         movieGrid.appendChild(card);
       });
+    }
+
+    async function watchMovie(id) {
+      const pw = prompt('Enter password for this movie:');
+      if (!pw) return;
+      const res = await fetch(API + '/movies/' + id + '/authorize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw })
+      });
+      const data = await res.json();
+      if (!data.ok) return alert('Wrong password.');
+      const token = data.token;
+      const embedRes = await fetch(API + '/movies/' + id + '/embed', {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      const embedData = await embedRes.json();
+      if (!embedData.ok) return alert('Error fetching player');
+      playerIframe.src = embedData.url;
+      playerContainer.classList.add('active');
     }
 
     function closePlayer() {
       playerContainer.classList.remove('active');
       playerIframe.src = '';
-      document.getElementById('tabCatcher').src = 'about:blank';
     }
 
-    searchBtn.onclick = searchMovies;
-    searchInput.addEventListener('keypress', e => {
-      if (e.key === 'Enter') searchMovies();
-    });
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') closePlayer();
-    });
+    function openAdmin() { adminPanel.classList.add('active'); }
+    function closeAdmin() { adminPanel.classList.remove('active'); }
+
+    async function adminLogin() {
+      const pw = document.getElementById('adminPass').value;
+      const res = await fetch(API + '/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw })
+      });
+      const data = await res.json();
+      if (!data.ok) return alert('Invalid admin password');
+      adminToken = data.token;
+      document.getElementById('adminLogin').style.display = 'none';
+      document.getElementById('adminControls').style.display = 'block';
+    }
+
+    async function addMovie() {
+      const name = document.getElementById('movieName').value.trim();
+      const moviePassword = document.getElementById('moviePass').value.trim();
+      if (!name || !moviePassword) return alert('Please fill both fields');
+      const res = await fetch(API + '/movies', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + adminToken
+        },
+        body: JSON.stringify({ name, moviePassword })
+      });
+      const data = await res.json();
+      if (!data.ok) return alert('Error adding movie: ' + data.error);
+      document.getElementById('addStatus').textContent = `✅ Added: ${data.movie.title}`;
+      fetchMovies();
+    }
+
+    fetchMovies();
   </script>
 </body>
 </html>
