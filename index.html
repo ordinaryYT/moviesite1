@@ -45,6 +45,13 @@
   .player-wrapper{position:relative;width:100%;height:100%}
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
+  
+  /* Loading Screen Styles */
+  #loadingScreen{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:10001;align-items:center;justify-content:center;flex-direction:column}
+  #loadingScreen.active{display:flex}
+  .loading-spinner{width:60px;height:60px;border:5px solid #333;border-top:5px solid #e50914;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:1rem}
+  .loading-text{color:#fff;font-size:1.2rem;text-align:center}
+  @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
@@ -57,6 +64,12 @@
   <div id="movieGrid"></div>
   <div id="adminPanel" class="admin-panel"></div>
 </main>
+
+<!-- Loading Screen -->
+<div id="loadingScreen" class="loading-screen">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Loading Player...</div>
+</div>
 
 <!-- Admin Login Modal -->
 <div id="loginModal" class="modal">
@@ -126,10 +139,12 @@ const adminPanel = document.getElementById('adminPanel');
 const loginModal = document.getElementById('loginModal');
 const addMovieModal = document.getElementById('addMovieModal');
 const passwordModal = document.getElementById('passwordModal');
+const loadingScreen = document.getElementById('loadingScreen');
 
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
+let loadingTimer = null;
 
 // === Admin Functions ===
 function openAdminPanel() {
@@ -312,6 +327,22 @@ async function verifyMoviePassword() {
   }
 }
 
+function showLoadingScreen() {
+  loadingScreen.classList.add('active');
+  // Hide loading screen after exactly 5 seconds
+  loadingTimer = setTimeout(() => {
+    hideLoadingScreen();
+  }, 5000);
+}
+
+function hideLoadingScreen() {
+  if (loadingTimer) {
+    clearTimeout(loadingTimer);
+    loadingTimer = null;
+  }
+  loadingScreen.classList.remove('active');
+}
+
 async function playMovieWithToken(token) {
   try {
     const res = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
@@ -321,6 +352,10 @@ async function playMovieWithToken(token) {
     });
     const data = await res.json();
     if (data.ok) {
+      // Show loading screen for exactly 5 seconds
+      showLoadingScreen();
+      
+      // Set iframe source
       playerIframe.src = data.url;
       playerContainer.classList.add('active');
       passwordModal.classList.remove('active');
@@ -342,18 +377,21 @@ async function playMovieWithToken(token) {
           } catch (e) {}
         }, 1000);
       };
+      
     } else {
       alert('Error: ' + data.error);
     }
   } catch (e) {
     console.error('Failed to get embed URL', e);
     alert('Failed to play movie');
+    hideLoadingScreen();
   }
 }
 
 function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
+  hideLoadingScreen();
 }
 
 // === Public Movie Loading ===
