@@ -1,141 +1,117 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Movie Player</title>
-  <style>
-    *{margin:0;padding:0;box-sizing:border-box}
-    body{background:#000;color:#fff;font-family:Arial,sans-serif}
-    header{text-align:center;padding:2rem}
-    h1{color:#e50914;font-size:2.5rem}
-    #movieGrid{
-      display:grid;
-      grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
-      gap:1.5rem;padding:2rem;
-      max-width:1400px;margin:auto;
-    }
-    .movie-card{cursor:pointer;border-radius:12px;overflow:hidden;background:#1a1a1a;transition:.3s}
-    .movie-card:hover{transform:scale(1.05);box-shadow:0 0 20px rgba(229,9,20,.5)}
-    .movie-card img{width:100%;height:300px;object-fit:cover}
-    .movie-info{padding:1rem;text-align:center}
-    .movie-info h3{font-size:1.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .movie-info p{color:#aaa;font-size:.9rem}
-    .player-container{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:9999}
-    .player-container.active{display:block}
-    .close-btn{position:absolute;top:20px;right:20px;background:rgba(0,0,0,.7);color:white;border:none;width:50px;height:50px;border-radius:50%;font-size:2rem;cursor:pointer;z-index:10000}
-    .player-wrapper{position:relative;width:100%;height:100%}
-    #playerIframe{width:100%;height:100%;border:none}
-    .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Movie Player</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#000;color:#fff;font-family:Arial,sans-serif}
+  header{text-align:center;padding:2rem}
+  h1{color:#e50914;font-size:2.5rem}
+  #movieGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+    gap:1.5rem;padding:2rem;max-width:1400px;margin:0 auto}
+  .movie-card{cursor:pointer;border-radius:12px;overflow:hidden;background:#1a1a1a;transition:.3s}
+  .movie-card:hover{transform:scale(1.05);box-shadow:0 0 20px rgba(229,9,20,.5)}
+  .movie-card img{width:100%;height:300px;object-fit:cover}
+  .movie-info{padding:1rem;text-align:center}
+  .movie-info h3{font-size:1.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .movie-info p{color:#aaa;font-size:.9rem}
+  .player-container{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:9999}
+  .player-container.active{display:block}
+  .close-btn{position:absolute;top:20px;right:20px;background:rgba(0,0,0,.7);color:white;border:none;width:50px;height:50px;border-radius:50%;font-size:2rem;cursor:pointer;z-index:10000}
+  .player-wrapper{position:relative;width:100%;height:100%}
+  #playerIframe{width:100%;height:100%;border:none}
+  .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
+</style>
 </head>
 <body>
 
-  <header>
-    <h1>Movie Player</h1>
-  </header>
+<header><h1>Movie Player</h1></header>
+<main><div id="movieGrid"></div></main>
 
-  <main>
-    <div id="movieGrid"></div>
-  </main>
-
-  <div id="playerContainer" class="player-container">
-    <button class="close-btn" onclick="closePlayer()">X</button>
-    <div class="player-wrapper">
-      <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
-      <div class="iframe-overlay">OGMOVIE</div>
-    </div>
+<div id="playerContainer" class="player-container">
+  <button class="close-btn" onclick="closePlayer()">X</button>
+  <div class="player-wrapper">
+    <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+    <div class="iframe-overlay">ogmovie</div>
   </div>
+</div>
 
-  <script>
-    const API = location.origin + '/api';
-    const EMBED_BASE = 'https://multiembed.mov/?video_id=';
-    const movieGrid = document.getElementById('movieGrid');
-    const playerContainer = document.getElementById('playerContainer');
-    const playerIframe = document.getElementById('playerIframe');
+<script>
+const API = location.origin + '/api';
+const EMBED_BASE = 'https://multiembed.mov/?video_id=';
+const movieGrid = document.getElementById('movieGrid');
+const playerIframe = document.getElementById('playerIframe');
+const playerContainer = document.getElementById('playerContainer');
 
-    // 🧩 Load movies from backend and search IMDb for each
-    async function loadMovies() {
-      movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">Loading movies...</p>';
-      try {
-        const res = await fetch(API + '/movies');
-        const data = await res.json();
-        if (!data.ok || !data.movies.length) {
-          movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">No movies found.</p>';
-          return;
-        }
-        movieGrid.innerHTML = '';
-        for (const m of data.movies) {
-          await renderMovieCard(m.title, m.imdb_id);
-        }
-      } catch (e) {
-        console.error(e);
-        movieGrid.innerHTML = '<p style="color:red;text-align:center;">Error loading movies.</p>';
-      }
+// === identical player logic ===
+function playMovie(imdbId){
+  const url = EMBED_BASE + imdbId;
+  playerIframe.src = url;
+  playerContainer.classList.add('active');
+  playerIframe.onload = () => {
+    setTimeout(() => {
+      try{
+        const win = playerIframe.contentWindow;
+        if(!win)return;
+        win.open = function(url){
+          const catcher = document.createElement('iframe');
+          catcher.style.display='none';
+          catcher.src = url || 'about:blank';
+          document.body.appendChild(catcher);
+          return catcher.contentWindow;
+        };
+      }catch(e){}
+    },1000);
+  };
+}
+function closePlayer(){
+  playerContainer.classList.remove('active');
+  playerIframe.src = '';
+}
+
+// === new part: get titles from backend, then use same IMDb logic ===
+async function loadMovies(){
+  movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">Loading...</p>';
+  try{
+    const res = await fetch(API+'/movies');
+    const data = await res.json();
+    if(!data.ok || !data.movies.length){
+      movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">No movies found.</p>';
+      return;
     }
+    movieGrid.innerHTML = '';
+    for(const m of data.movies){ await renderMovieCard(m.title); }
+  }catch(e){
+    console.error('Backend fetch failed',e);
+    movieGrid.innerHTML = '<p style="color:red;text-align:center;">Error loading movies.</p>';
+  }
+}
 
-    // 🧩 Search IMDb for title (if no IMDb ID)
-    async function renderMovieCard(title, imdbId) {
-      try {
-        let imdb = imdbId;
-        let img = 'https://via.placeholder.com/300x450/222/fff?text=No+Image';
-        let year = '';
-        if (!imdb) {
-          const q = encodeURIComponent(title);
-          const res = await fetch('https://search.imdbot.workers.dev/?q=' + q);
-          const data = await res.json();
-          const hit = (data.description || []).find(h => h['#IMDB_ID']);
-          if (hit) {
-            imdb = hit['#IMDB_ID'].startsWith('tt') ? hit['#IMDB_ID'] : 'tt' + hit['#IMDB_ID'];
-            img = hit.image || img;
-            year = hit['#YEAR'] || '';
-          }
-        }
-        const card = document.createElement('div');
-        card.className = 'movie-card';
-        card.innerHTML = `
-          <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
-          <div class="movie-info"><h3>${title}</h3><p>${year}</p></div>
-        `;
-        card.onclick = () => playMovie(imdb);
-        movieGrid.appendChild(card);
-      } catch (e) {
-        console.warn('Failed to load IMDb for', title, e);
-      }
-    }
+// identical to your old search→display
+async function renderMovieCard(title){
+  try{
+    const q = encodeURIComponent(title);
+    const res = await fetch('https://search.imdbot.workers.dev/?q='+q);
+    const data = await res.json();
+    const hit = (data.description||[]).find(h=>h['#IMDB_ID']);
+    if(!hit)return;
+    const id = hit['#IMDB_ID'].startsWith('tt') ? hit['#IMDB_ID'] : 'tt'+hit['#IMDB_ID'];
+    const img = hit.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image';
+    const year = hit['#YEAR'] || 'N/A';
+    const card = document.createElement('div');
+    card.className='movie-card';
+    card.innerHTML = `
+      <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
+      <div class="movie-info"><h3>${title}</h3><p>${year}</p></div>`;
+    card.onclick = () => playMovie(id);
+    movieGrid.appendChild(card);
+  }catch(e){console.error('IMDb lookup failed for',title,e);}
+}
 
-    // 🎬 Play movie
-    function playMovie(imdbId) {
-      if (!imdbId) return alert('No IMDb ID found.');
-      const url = EMBED_BASE + imdbId;
-      playerIframe.src = url;
-      playerContainer.classList.add('active');
-      // Popup block injection
-      playerIframe.onload = () => {
-        setTimeout(() => {
-          try {
-            const win = playerIframe.contentWindow;
-            if (!win) return;
-            win.open = function(url) {
-              const catcher = document.createElement('iframe');
-              catcher.style.display = 'none';
-              catcher.src = url || 'about:blank';
-              document.body.appendChild(catcher);
-              return catcher.contentWindow;
-            };
-          } catch (e) {}
-        }, 1000);
-      };
-    }
-
-    function closePlayer() {
-      playerContainer.classList.remove('active');
-      playerIframe.src = '';
-    }
-
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') closePlayer(); });
-
-    loadMovies();
-  </script>
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closePlayer();});
+loadMovies();
+</script>
 </body>
 </html>
