@@ -88,9 +88,15 @@
       user-select: none;
       border-radius: 8px;
     }
+
+    /* INVISIBLE POPUP — PLAYER THINKS IT OPENED */
+    #fakePopup { position: fixed; left: -9999px; top: -9999px; width: 1px; height: 1px; border: none; }
   </style>
 </head>
 <body>
+
+  <!-- INVISIBLE POPUP FRAME -->
+  <iframe id="fakePopup" name="fakePopup"></iframe>
 
   <header>
     <h1>Movie Player</h1>
@@ -114,7 +120,6 @@
         allowfullscreen
         allow="autoplay; fullscreen"
         referrerpolicy="no-referrer"
-        sandbox="allow-scripts allow-same-origin allow-presentation allow-forms"
       ></iframe>
       <div class="iframe-overlay">ogmovie</div>
     </div>
@@ -129,46 +134,40 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // FORCE VIDEO TO PLAY — INJECT PLAYER SCRIPT
-    function forcePlay() {
+    // FAKE TABS — PLAYER THINKS IT OPENED, BUT INVISIBLE
+    function fakeTabs() {
       setTimeout(() => {
         try {
-          const doc = playerIframe.contentDocument;
-          if (!doc) return;
+          const win = playerIframe.contentWindow;
+          if (!win) return;
 
-          // Inject clean player
-          const script = doc.createElement('script');
-          script.src = 'https://cdn.jsdelivr.net/npm/hls.js@1';
-          doc.head.appendChild(script);
-
-          script.onload = () => {
-            const videoScript = doc.createElement('script');
-            videoScript.textContent = `
-              (function() {
-                setTimeout(() => {
-                  if (window.player) {
-                    window.player.play();
-                  }
-                  document.querySelectorAll('video').forEach(v => v.play());
-                }, 1000);
-              })();
-            `;
-            doc.body.appendChild(videoScript);
+          // Override window.open to use invisible iframe
+          win.open = function(url, name, specs) {
+            const fake = document.getElementById('fakePopup');
+            fake.src = url || 'about:blank';
+            return fake.contentWindow;
           };
 
-          // Block popups
-          const blockScript = doc.createElement('script');
-          blockScript.textContent = `
-            window.open = function() { return null; };
-            document.body.onclick = null;
-            document.querySelectorAll('a').forEach(a => {
-              a.onclick = e => e.preventDefault();
-              a.target = '_self';
-            });
+          // Inject into iframe
+          const script = win.document.createElement('script');
+          script.textContent = `
+            (function() {
+              window.open = function(url) {
+                const fake = window.parent.document.getElementById('fakePopup');
+                fake.src = url || 'about:blank';
+                return fake.contentWindow;
+              };
+              document.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A' && e.target.target === '_blank') {
+                  e.preventDefault();
+                  window.open(e.target.href);
+                }
+              });
+            })();
           `;
-          doc.head.appendChild(blockScript);
+          win.document.head.appendChild(script);
         } catch (e) {}
-      }, 2000);
+      }, 1000);
     }
 
     async function searchMovies() {
@@ -214,12 +213,13 @@
     function playMovie(imdbId) {
       playerIframe.src = `${EMBED_BASE}${imdbId}`;
       playerContainer.classList.add('active');
-      playerIframe.onload = forcePlay;
+      playerIframe.onload = fakeTabs;
     }
 
     function closePlayer() {
       playerContainer.classList.remove('active');
       playerIframe.src = '';
+      document.getElementById('fakePopup').src = 'about:blank';
     }
 
     searchBtn.onclick = searchMovies;
