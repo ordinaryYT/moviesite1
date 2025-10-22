@@ -10,6 +10,9 @@
   header{text-align:center;padding:2rem;position:relative}
   h1{color:#e50914;font-size:2.5rem}
   #adminBtn{position:absolute;top:2rem;right:2rem;background:#e50914;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;font-weight:bold}
+  #searchContainer{max-width:500px;margin:0 auto 2rem auto;padding:0 2rem}
+  #searchInput{width:100%;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem}
+  #searchInput:focus{outline:none;border-color:#e50914}
   #movieGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem;padding:2rem;max-width:1400px;margin:0 auto}
   .movie-card{cursor:pointer;border-radius:12px;overflow:hidden;background:#1a1a1a;transition:.3s}
   .movie-card:hover{transform:scale(1.05);box-shadow:0 0 20px rgba(229,9,20,.5)}
@@ -61,6 +64,9 @@
   <button id="adminBtn">Admin</button>
 </header>
 <main>
+  <div id="searchContainer">
+    <input type="text" id="searchInput" placeholder="Search for movies..." />
+  </div>
   <div id="movieGrid"></div>
   <div id="adminPanel" class="admin-panel"></div>
 </main>
@@ -140,6 +146,7 @@ const loginModal = document.getElementById('loginModal');
 const addMovieModal = document.getElementById('addMovieModal');
 const passwordModal = document.getElementById('passwordModal');
 const loadingScreen = document.getElementById('loadingScreen');
+const searchInput = document.getElementById('searchInput');
 
 let adminToken = null;
 let currentMovies = [];
@@ -148,6 +155,40 @@ let loadingTimer = null;
 let clickCount = 0;
 const MAX_LOADING_CLICKS = 5;
 const LOADING_DURATION = 10000; // 10 seconds
+
+// === Search Functionality ===
+function filterMovies(searchTerm) {
+  const filteredMovies = currentMovies.filter(movie => 
+    movie.title.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  
+  displayMovies(filteredMovies);
+}
+
+function displayMovies(movies) {
+  movieGrid.innerHTML = '';
+  
+  if (movies.length === 0) {
+    movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
+    return;
+  }
+  
+  movies.forEach(movie => {
+    const card = createMovieCard(movie);
+    movieGrid.appendChild(card);
+  });
+}
+
+function createMovieCard(movie) {
+  const card = document.createElement('div');
+  card.className = 'movie-card';
+  card.innerHTML = `
+    <img src="${movie.image || 'https://via.placeholder.com/300x450/333/fff?text=No+Poster'}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+    <div class="movie-info"><h3>${movie.title}</h3><p>${movie.year || 'N/A'}</p></div>
+  `;
+  card.onclick = () => requestMoviePassword(movie.id, movie.title);
+  return card;
+}
 
 // === Free Image Search Function ===
 async function getMoviePoster(movieTitle, year = '') {
@@ -463,53 +504,18 @@ async function loadMovies() {
     }
     movieGrid.innerHTML = '';
     currentMovies = data.movies;
-    
-    for (const m of data.movies) {
-      await renderMovieCard(m);
-    }
+    displayMovies(currentMovies);
   } catch (e) {
     console.error('Backend fetch failed', e);
     movieGrid.innerHTML = '<p style="color:red;text-align:center;">Error loading movies.</p>';
   }
 }
 
-async function renderMovieCard(movie) {
-  try {
-    let img = movie.image;
-    let year = movie.year || 'N/A';
-    
-    // Always try to get a better image
-    const poster = await getMoviePoster(movie.title, movie.year);
-    
-    // Use the new poster if we got one, otherwise use existing image or placeholder
-    if (!poster.includes('placeholder.com')) {
-      img = poster;
-    } else if (!img || img.includes('placeholder.com')) {
-      img = poster;
-    }
-    
-    const card = document.createElement('div');
-    card.className = 'movie-card';
-    card.innerHTML = `
-      <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
-      <div class="movie-info"><h3>${movie.title}</h3><p>${year}</p></div>`;
-    card.onclick = () => requestMoviePassword(movie.id, movie.title);
-    movieGrid.appendChild(card);
-  } catch (e) {
-    console.error('Movie card render failed for', movie.title, e);
-    // Fallback with placeholder
-    const card = document.createElement('div');
-    card.className = 'movie-card';
-    card.innerHTML = `
-      <img src="https://via.placeholder.com/300x450/333/fff?text=No+Poster">
-      <div class="movie-info"><h3>${movie.title}</h3><p>${movie.year || 'N/A'}</p></div>`;
-    card.onclick = () => requestMoviePassword(movie.id, movie.title);
-    movieGrid.appendChild(card);
-  }
-}
-
 // Event Listeners
 adminBtn.addEventListener('click', openAdminPanel);
+searchInput.addEventListener('input', (e) => {
+  filterMovies(e.target.value);
+});
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closePlayer();
