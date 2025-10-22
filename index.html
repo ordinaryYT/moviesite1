@@ -95,11 +95,34 @@
     .player-container.active {
       display: block;
     }
+
+    .iframe-wrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
     #playerIframe {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
       border: none;
+      z-index: 1;
     }
+
+    /* Overlay that hides the SERVERS button area */
+    .iframe-overlay {
+      position: absolute;
+      top: 10px;       /* adjust if needed */
+      right: 10px;     /* adjust if needed */
+      width: 150px;    /* make this match the size of the SERVERS button */
+      height: 60px;
+      background: #000;   /* black cover */
+      opacity: 1;         /* fully hidden */
+      z-index: 2;
+      pointer-events: auto; /* block clicks in this area */
+    }
+
     .close-btn {
       position: absolute;
       top: 20px;
@@ -132,14 +155,16 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- NO SANDBOX — VIDEO PLAYS -->
-    <iframe 
-      id="playerIframe" 
-      src="" 
-      allowfullscreen
-      allow="autoplay; fullscreen"
-      referrerpolicy="no-referrer"
-    ></iframe>
+    <div class="iframe-wrapper">
+      <iframe 
+        id="playerIframe" 
+        src="" 
+        allowfullscreen
+        allow="autoplay; fullscreen"
+        referrerpolicy="no-referrer"
+      ></iframe>
+      <div class="iframe-overlay"></div>
+    </div>
   </div>
 
   <script>
@@ -151,14 +176,12 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // FAKE window.open() — PLAYER THINKS IT OPENED A TAB
+    // Fake popup patch
     function fakePopup() {
       setTimeout(() => {
         try {
           const win = playerIframe.contentWindow;
           if (!win) return;
-
-          // Create a fake window object
           const fakeWindow = {
             closed: false,
             close: () => { fakeWindow.closed = true; },
@@ -167,46 +190,26 @@
             document: { write: () => {}, close: () => {} },
             location: { href: 'about:blank' }
           };
-
-          // Override window.open
           win.open = function(url, name, specs) {
             console.log('Blocked popup:', url);
             return fakeWindow;
           };
-
-          // Kill onclick popups
-          const script = win.document.createElement('script');
-          script.textContent = `
-            (function() {
-              window.open = function() { return { closed: false, close: function() {}, focus: function() {} }; };
-              document.body.onclick = null;
-              document.querySelectorAll('a').forEach(a => {
-                if (a.target === '_blank') a.target = '_self';
-                a.onclick = function(e) { e.preventDefault(); };
-              });
-            })();
-          `;
-          win.document.head.appendChild(script);
         } catch (e) {}
       }, 1500);
     }
 
-    // YOUR ORIGINAL SEARCH
     async function searchMovies() {
       const q = searchInput.value.trim();
       if (!q) return;
       movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">Loading...</p>';
-
       try {
         const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(q)}`);
         const data = await res.json();
         const results = data.description || [];
-
         if (!results.length) {
           movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results.</p>';
           return;
         }
-
         displayMovies(results.slice(0, 10));
       } catch {
         movieGrid.innerHTML = '<p style="color:red; text-align:center;">Error. Try again.</p>';
