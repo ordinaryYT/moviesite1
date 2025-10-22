@@ -120,6 +120,8 @@
   </div>
 
   <script>
+    // CORS PROXY (PUBLIC, RELIABLE)
+    const PROXY = 'https://api.codetabs.com/v1/proxy?quest=';
     const EMBED_BASE = 'https://multiembed.mov/?video_id=';
 
     const searchInput = document.getElementById('searchInput');
@@ -128,66 +130,60 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // KILL ADS & TABS — INJECTED IMMEDIATELY
-    function killAdsAndTabs() {
-      playerIframe.onload = () => {
-        setTimeout(() => {
-          try {
-            const win = playerIframe.contentWindow;
-            const doc = playerIframe.contentDocument;
+    // KILL TABS & ADS VIA PROXY
+    async function playMovie(imdbId) {
+      const url = `${EMBED_BASE}${imdbId}`;
+      const proxyUrl = PROXY + encodeURIComponent(url);
 
-            if (!win || !doc) return;
+      try {
+        const res = await fetch(proxyUrl);
+        let html = await res.text();
 
-            // KILL window.open
-            win.open = () => null;
-
-            // KILL ALL CLICK EVENTS
-            doc.addEventListener('click', e => {
+        // INJECT KILLER SCRIPT
+        const killScript = `
+          <script>
+            // KILL ALL POPUPS
+            window.open = () => null;
+            document.addEventListener('click', e => {
               e.stopPropagation();
               e.preventDefault();
-              return false;
             }, true);
+            document.querySelectorAll('*').forEach(el => {
+              el.onclick = null;
+              el.removeAttribute('onclick');
+              if (el.tagName === 'A') el.href = 'javascript:void(0)';
+            });
+            // REMOVE ADS
+            setTimeout(() => {
+              document.querySelectorAll('div, iframe, script').forEach(el => {
+                const src = (el.src || '').toLowerCase();
+                const id = (el.id || '').toLowerCase();
+                const cls = (el.className || '').toLowerCase();
+                if (src.includes('ad') || id.includes('ad') || cls.includes('ad') || src.includes('pop')) {
+                  el.remove();
+                }
+              });
+              // FORCE PLAY
+              document.querySelectorAll('video').forEach(v => v.play());
+            }, 500);
+          </script>
+        `;
 
-            // REMOVE ALL ONCLICK & _blank
-            const script = doc.createElement('script');
-            script.textContent = `
-              (function() {
-                // Kill window.open
-                window.open = function() { return null; };
+        // INJECT BEFORE </head>
+        html = html.replace('</head>', killScript + '</head>');
 
-                // Remove all onclick
-                document.querySelectorAll('*').forEach(el => {
-                  el.onclick = null;
-                  el.removeAttribute('onclick');
-                  if (el.tagName === 'A') {
-                    el.target = '_self';
-                    el.href = 'javascript:void(0)';
-                  }
-                });
+        // LOAD IN IFRAME
+        const blob = new Blob([html], { type: 'text/html' });
+        const blobUrl = URL.createObjectURL(blob);
+        playerIframe.src = blobUrl;
+        playerContainer.classList.add('active');
 
-                // Kill body click
-                document.body.onclick = null;
-
-                // Remove ad divs
-                document.querySelectorAll('div, iframe, script').forEach(el => {
-                  if (el.id.includes('ad') || el.className.includes('ad') || el.src.includes('ad')) {
-                    el.remove();
-                  }
-                });
-
-                // Force video play
-                setTimeout(() => {
-                  document.querySelectorAll('video').forEach(v => {
-                    v.play().catch(() => {});
-                  });
-                }, 500);
-              })();
-            `;
-            doc.head.appendChild(script);
-
-          } catch (e) {}
-        }, 800);
-      };
+        // CLEAN UP
+        playerIframe.onload = () => URL.revokeObjectURL(blobUrl);
+      } catch (e) {
+        playerIframe.src = url; // fallback
+        playerContainer.classList.add('active');
+      }
     }
 
     async function searchMovies() {
@@ -228,12 +224,6 @@
         card.onclick = () => playMovie(id);
         movieGrid.appendChild(card);
       });
-    }
-
-    function playMovie(imdbId) {
-      playerIframe.src = `${EMBED_BASE}${imdbId}`;
-      playerContainer.classList.add('active');
-      killAdsAndTabs();
     }
 
     function closePlayer() {
