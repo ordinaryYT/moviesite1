@@ -76,7 +76,7 @@ const playerIframe = document.getElementById('playerIframe');
 const playerContainer = document.getElementById('playerContainer');
 const clickShield = document.getElementById('clickShield');
 
-// Override window.open to fake popup
+// Fake popup blocker
 window.open = function(url,name,specs){
   console.log('Blocked popup attempt:',url);
   return { closed:true, close:()=>{}, focus:()=>{} };
@@ -121,14 +121,18 @@ function playMovie(imdbId){
   playerContainer.classList.add('active');
   clickCounter = 0;
   clickShield.style.display='block';
+
   clickShield.onclick = (e)=>{
     e.preventDefault(); e.stopPropagation();
     clickCounter++;
     // Click pattern: block 1, allow 2, block 3-4, allow 5, block 6+
-    if(clickCounter===2 || clickCounter===5){
+    if(clickCounter === 2 || clickCounter === 5){
+      // remove shield completely so user can interact with iframe
       clickShield.style.display='none';
-      setTimeout(()=>{ clickShield.style.display='block'; },50);
-    } else { console.log('Click blocked',clickCounter); }
+    } else {
+      console.log('Click blocked', clickCounter);
+      // shield stays visible to block click
+    }
   };
 }
 
