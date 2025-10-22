@@ -123,23 +123,23 @@
       border: none;
     }
 
-    /* OVERLAY: BIGGER, SOLID BLACK, COVERS "SERVERS" */
+    /* OVERLAY: BLOCKS TABS + MORE LEFT + BIGGER + SOLID */
     .iframe-overlay {
       position: absolute;
       top: 5px;
-      left: 10px;
-      width: 140px;           /* +20px wider */
-      height: 50px;           /* +10px taller */
+      left: 0px;              /* FLUSH TO LEFT EDGE */
+      width: 160px;           /* +20px wider */
+      height: 55px;           /* +5px taller */
       background: #000;       /* SOLID BLACK */
       z-index: 3;
-      pointer-events: auto;
+      pointer-events: auto;   /* BLOCKS CLICKS */
       display: flex;
       align-items: center;
       justify-content: center;
       font-family: Arial, sans-serif;
-      font-size: 1rem;
+      font-size: 1.1rem;
       font-weight: bold;
-      color: rgba(255, 255, 255, 0.4);
+      color: rgba(255, 255, 255, 0.5);
       text-transform: uppercase;
       letter-spacing: 2px;
       user-select: none;
