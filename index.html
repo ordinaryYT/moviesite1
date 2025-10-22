@@ -123,14 +123,14 @@
       border: none;
     }
 
-    /* OVERLAY: SOLID BLACK — NO SEE-THROUGH */
+    /* OVERLAY: BIGGER, SOLID BLACK, COVERS "SERVERS" */
     .iframe-overlay {
       position: absolute;
       top: 5px;
       left: 10px;
-      width: 120px;
-      height: 40px;
-      background: #000;                    /* FULLY OPAQUE */
+      width: 140px;           /* +20px wider */
+      height: 50px;           /* +10px taller */
+      background: #000;       /* SOLID BLACK */
       z-index: 3;
       pointer-events: auto;
       display: flex;
