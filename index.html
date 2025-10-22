@@ -6,43 +6,12 @@
   <title>Movie Player</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #000;
-      color: #fff;
-      font-family: Arial, sans-serif;
-    }
-    header {
-      text-align: center;
-      padding: 2rem;
-    }
-    h1 {
-      color: #e50914;
-      font-size: 2.5rem;
-    }
-    .search-box {
-      max-width: 600px;
-      margin: 1rem auto;
-      display: flex;
-      gap: 10px;
-    }
-    #searchInput {
-      flex: 1;
-      padding: 12px;
-      font-size: 1rem;
-      border: none;
-      border-radius: 8px;
-      background: #333;
-      color: white;
-    }
-    #searchBtn {
-      padding: 12px 24px;
-      background: #e50914;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-weight: bold;
-    }
+    body { background: #000; color: #fff; font-family: Arial, sans-serif; }
+    header { text-align: center; padding: 2rem; }
+    h1 { color: #e50914; font-size: 2.5rem; }
+    .search-box { max-width: 600px; margin: 1rem auto; display: flex; gap: 10px; }
+    #searchInput { flex: 1; padding: 12px; font-size: 1rem; border: none; border-radius: 8px; background: #333; color: white; }
+    #searchBtn { padding: 12px 24px; background: #e50914; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
     #searchBtn:hover { background: #c00; }
 
     #movieGrid {
@@ -53,97 +22,34 @@
       max-width: 1400px;
       margin: 0 auto;
     }
-    .movie-card {
-      cursor: pointer;
-      border-radius: 12px;
-      overflow: hidden;
-      background: #1a1a1a;
-      transition: 0.3s;
-    }
-    .movie-card:hover {
-      transform: scale(1.05);
-      box-shadow: 0 0 20px rgba(229, 9, 20, 0.5);
-    }
-    .movie-card img {
-      width: 100%;
-      height: 300px;
-      object-fit: cover;
-    }
-    .movie-info {
-      padding: 1rem;
-      text-align: center;
-    }
-    .movie-info h3 {
-      font-size: 1.1rem;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .movie-info p {
-      color: #aaa;
-      font-size: 0.9rem;
-    }
+    .movie-card { cursor: pointer; border-radius: 12px; overflow: hidden; background: #1a1a1a; transition: 0.3s; }
+    .movie-card:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); }
+    .movie-card img { width: 100%; height: 300px; object-fit: cover; }
+    .movie-info { padding: 1rem; text-align: center; }
+    .movie-info h3 { font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .movie-info p { color: #aaa; font-size: 0.9rem; }
 
     .player-container {
       display: none;
       position: fixed;
       top: 0; left: 0;
-       width: 100%; height: 100%;
+      width: 100%; height: 100%;
       background: #000;
       z-index: 9999;
     }
-    .player-container.active {
-      display: block;
-    }
-
+    .player-container.active { display: block; }
+    #playerIframe { width: 100%; height: 100%; border: none; }
     .close-btn {
-      position: absolute;
-      top: 20px;
-      right: 20px;
-      background: rgba(0,0,0,0.7);
-      color: white;
-      border: none;
-      width: 50px;
-      height: 50px;
-      border-radius: 50%;
-      font-size: 2rem;
-      cursor: pointer;
-      z-index: 10000;
+      position: absolute; top: 20px; right: 20px;
+      background: rgba(0,0,0,0.7); color: white;
+      border: none; width: 50px; height: 50px; border-radius: 50%;
+      font-size: 2rem; cursor: pointer; z-index: 10002;
     }
-
-    .player-wrapper {
-      position: relative;
-      width: 100%;
-      height: 100%;
-    }
-
-    #playerIframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
-
-    /* OGMOVIE OVERLAY */
-    .iframe-overlay {
-      position: absolute;
-      top: 5px;
-      left: 0px;
-      width: 160px;
-      height: 55px;
-      background: #000;
-      z-index: 3;
-      pointer-events: auto;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: Arial, sans-serif;
-      font-size: 1.1rem;
-      font-weight: bold;
-      color: rgba(255, 255, 255, 0.5);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      user-select: none;
-      border-radius: 8px;
+    #clickShield {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: transparent; cursor: pointer;
+      z-index: 10001; display: none;
     }
   </style>
 </head>
@@ -163,61 +69,20 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-
-    <div class="player-wrapper">
-      <iframe 
-        id="playerIframe" 
-        src="" 
-        allowfullscreen
-        allow="autoplay; fullscreen"
-        referrerpolicy="no-referrer"
-      ></iframe>
-      <div class="iframe-overlay">ogmovie</div>
-    </div>
+    <div id="clickShield"></div>
+    <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
   </div>
 
   <script>
-    const EMBED_BASE = 'https://multiembed.mov/?video_id=';
+    // ✅ Use your Render app as the proxy
+    const EMBED_BASE = 'https://ogmovie.onrender.com/proxy/embed/';
 
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
     const movieGrid = document.getElementById('movieGrid');
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
-
-    // 100% WORKING TAB BLOCKER
-    function fakePopup() {
-      setTimeout(() => {
-        try {
-          const win = playerIframe.contentWindow;
-          if (!win) return;
-
-          const fakeWindow = {
-            closed: false,
-            close: () => { fakeWindow.closed = true; },
-            focus: () => {},
-            blur: () => {},
-            document: { write: () => {}, close: () => {} },
-            location: { href: 'about:blank' }
-          };
-
-          win.open = function() { return fakeWindow; };
-
-          const blockScript = win.document.createElement('script');
-          blockScript.textContent = `
-            (function() {
-              window.open = function() { return { closed: false, close: function() {}, focus: function() {} }; };
-              document.body.onclick = null;
-              document.querySelectorAll('a, button, div[onclick]').forEach(el => {
-                el.onclick = function(e) { e.preventDefault(); e.stopPropagation(); };
-                if (el.target === '_blank') el.target = '_self';
-              });
-            })();
-          `;
-          (win.document.head || win.document.documentElement).appendChild(blockScript);
-        } catch (e) {}
-      }, 1000);
-    }
+    const clickShield = document.getElementById('clickShield');
 
     async function searchMovies() {
       const q = searchInput.value.trim();
@@ -248,7 +113,7 @@
         const card = document.createElement('div');
         card.className = 'movie-card';
         card.innerHTML = `
-          <img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}" 
+          <img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}"
                onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
           <div class="movie-info">
             <h3>${m['#TITLE']}</h3>
@@ -263,12 +128,30 @@
     function playMovie(imdbId) {
       playerIframe.src = `${EMBED_BASE}${imdbId}`;
       playerContainer.classList.add('active');
-      playerIframe.onload = fakePopup;
+
+      // show click shield to absorb first "popup" click
+      clickShield.style.display = 'block';
+      const shieldHandler = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        clickShield.style.display = 'none';
+
+        // optional: simulate click after short delay
+        setTimeout(() => {
+          playerIframe.focus();
+          const evt = new MouseEvent('click', { bubbles: true, cancelable: true });
+          playerIframe.dispatchEvent(evt);
+        }, 200);
+
+        clickShield.removeEventListener('click', shieldHandler);
+      };
+      clickShield.addEventListener('click', shieldHandler);
     }
 
     function closePlayer() {
       playerContainer.classList.remove('active');
       playerIframe.src = '';
+      clickShield.style.display = 'none';
     }
 
     searchBtn.onclick = searchMovies;
