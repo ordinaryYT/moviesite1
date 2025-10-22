@@ -95,11 +95,7 @@
     .player-container.active {
       display: block;
     }
-    #playerIframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
+
     .close-btn {
       position: absolute;
       top: 20px;
@@ -114,9 +110,58 @@
       cursor: pointer;
       z-index: 10000;
     }
+
+    .player-wrapper {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+
+    #playerIframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    /* OGMOVIE OVERLAY — COVERS "SERVERS" */
+    .iframe-overlay {
+      position: absolute;
+      top: 5px;
+      left: 0px;
+      width: 160px;
+      height: 55px;
+      background: #000;
+      z-index: 3;
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: Arial, sans-serif;
+      font-size: 1.1rem;
+      font-weight: bold;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      user-select: none;
+      border-radius: 8px;
+    }
+
+    /* HIDDEN IFRAME — ACTS AS POPUP TARGET */
+    #hiddenFrame {
+      position: fixed;
+      left: -9999px;
+      top: -9999px;
+      width: 1px;
+      height: 1px;
+      border: none;
+      z-index: -1;
+    }
   </style>
 </head>
 <body>
+
+  <!-- HIDDEN IFRAME — ALL POPUPS GO HERE -->
+  <iframe id="hiddenFrame" name="hiddenPopup"></iframe>
 
   <header>
     <h1>Movie Player</h1>
@@ -132,14 +177,17 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- NO SANDBOX — VIDEO PLAYS -->
-    <iframe 
-      id="playerIframe" 
-      src="" 
-      allowfullscreen
-      allow="autoplay; fullscreen"
-      referrerpolicy="no-referrer"
-    ></iframe>
+
+    <div class="player-wrapper">
+      <iframe 
+        id="playerIframe" 
+        src="" 
+        allowfullscreen
+        allow="autoplay; fullscreen"
+        referrerpolicy="no-referrer"
+      ></iframe>
+      <div class="iframe-overlay">ogmovie</div>
+    </div>
   </div>
 
   <script>
@@ -151,47 +199,44 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // FAKE window.open() — PLAYER THINKS IT OPENED A TAB
-    function fakePopup() {
+    // LET POPUPS OPEN — BUT IN HIDDEN IFRAME (NO VISIBLE TABS)
+    function redirectPopupsToHiddenFrame() {
       setTimeout(() => {
         try {
           const win = playerIframe.contentWindow;
           if (!win) return;
 
-          // Create a fake window object
-          const fakeWindow = {
-            closed: false,
-            close: () => { fakeWindow.closed = true; },
-            focus: () => {},
-            blur: () => {},
-            document: { write: () => {}, close: () => {} },
-            location: { href: 'about:blank' }
-          };
-
-          // Override window.open
+          // Override window.open to use hidden iframe
           win.open = function(url, name, specs) {
-            console.log('Blocked popup:', url);
-            return fakeWindow;
+            const iframe = document.getElementById('hiddenFrame');
+            iframe.src = 'about:blank'; // Clear first
+            setTimeout(() => {
+              iframe.src = url || 'about:blank';
+            }, 10);
+            return iframe.contentWindow;
           };
 
-          // Kill onclick popups
+          // Force all _blank links to hidden iframe
           const script = win.document.createElement('script');
           script.textContent = `
             (function() {
-              window.open = function() { return { closed: false, close: function() {}, focus: function() {} }; };
-              document.body.onclick = null;
-              document.querySelectorAll('a').forEach(a => {
-                if (a.target === '_blank') a.target = '_self';
-                a.onclick = function(e) { e.preventDefault(); };
+              document.querySelectorAll('a[target="_blank"]').forEach(a => {
+                a.target = 'hiddenPopup';
+                a.rel = 'noopener';
+              });
+              document.addEventListener('click', function(e) {
+                if (e.target.tagName === 'A' && e.target.href) {
+                  e.preventDefault();
+                  window.open(e.target.href, 'hiddenPopup');
+                }
               });
             })();
           `;
           win.document.head.appendChild(script);
         } catch (e) {}
-      }, 1500);
+      }, 1000);
     }
 
-    // YOUR ORIGINAL SEARCH
     async function searchMovies() {
       const q = searchInput.value.trim();
       if (!q) return;
@@ -236,7 +281,7 @@
     function playMovie(imdbId) {
       playerIframe.src = `${EMBED_BASE}${imdbId}`;
       playerContainer.classList.add('active');
-      playerIframe.onload = fakePopup;
+      playerIframe.onload = redirectPopupsToHiddenFrame;
     }
 
     function closePlayer() {
