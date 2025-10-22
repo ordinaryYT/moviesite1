@@ -52,11 +52,6 @@
   .loading-spinner{width:60px;height:60px;border:5px solid #333;border-top:5px solid #e50914;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:1rem}
   .loading-text{color:#fff;font-size:1.2rem;text-align:center}
   @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
-  
-  /* Play Button Overlay */
-  .play-button-overlay{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:2;cursor:pointer}
-  .play-button{width:80px;height:80px;background:#e50914;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:2rem;color:white;transition:transform 0.3s}
-  .play-button:hover{transform:scale(1.1)}
 </style>
 </head>
 <body>
@@ -128,9 +123,6 @@
 <div id="playerContainer" class="player-container">
   <button class="close-btn" onclick="closePlayer()">X</button>
   <div class="player-wrapper">
-    <div id="playButtonOverlay" class="play-button-overlay">
-      <div class="play-button">▶</div>
-    </div>
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
   </div>
@@ -148,13 +140,12 @@ const loginModal = document.getElementById('loginModal');
 const addMovieModal = document.getElementById('addMovieModal');
 const passwordModal = document.getElementById('passwordModal');
 const loadingScreen = document.getElementById('loadingScreen');
-const playButtonOverlay = document.getElementById('playButtonOverlay');
 
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
 let loadingTimer = null;
-let currentEmbedUrl = '';
+let isFirstPlay = true;
 
 // === Admin Functions ===
 function openAdminPanel() {
@@ -327,7 +318,7 @@ async function verifyMoviePassword() {
     });
     const data = await res.json();
     if (data.ok) {
-      // Get the embed URL but don't load it yet
+      // Get the embed URL and load it
       const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
         headers: {
           'Authorization': `Bearer ${data.token}`
@@ -335,8 +326,7 @@ async function verifyMoviePassword() {
       });
       const embedData = await embedRes.json();
       if (embedData.ok) {
-        currentEmbedUrl = embedData.url;
-        showPlayerWithPlayButton();
+        showPlayer(embedData.url);
       } else {
         alert('Error: ' + embedData.error);
       }
@@ -349,14 +339,83 @@ async function verifyMoviePassword() {
   }
 }
 
-function showPlayerWithPlayButton() {
-  // Reset iframe
-  playerIframe.src = '';
-  // Show player with play button overlay
+function showPlayer(embedUrl) {
+  // Reset for new playback
+  isFirstPlay = true;
+  
+  // Set iframe source
+  playerIframe.src = embedUrl;
   playerContainer.classList.add('active');
-  playButtonOverlay.style.display = 'flex';
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
+  
+  // Listen for when the iframe loads and user interacts with it
+  playerIframe.onload = () => {
+    // Add click event listener to detect when user clicks the play button
+    setTimeout(() => {
+      try {
+        const iframeDoc = playerIframe.contentDocument || playerIframe.contentWindow.document;
+        
+        // Listen for clicks in the iframe
+        iframeDoc.addEventListener('click', handleIframeClick);
+        
+        // Also listen for any play events
+        playerIframe.contentWindow.addEventListener('click', handleIframeClick);
+        
+      } catch (e) {
+        // Cross-origin restriction - use a different approach
+        setupPlayButtonDetection();
+      }
+    }, 2000);
+    
+    // Security measure to prevent popups
+    setTimeout(() => {
+      try {
+        const win = playerIframe.contentWindow;
+        if (!win) return;
+        win.open = function(url) {
+          const catcher = document.createElement('iframe');
+          catcher.style.display = 'none';
+          catcher.src = url || 'about:blank';
+          document.body.appendChild(catcher);
+          return catcher.contentWindow;
+        };
+      } catch (e) {}
+    }, 1000);
+  };
+}
+
+function setupPlayButtonDetection() {
+  // Since we can't access cross-origin iframe content directly,
+  // we'll use a message-based approach or detect user interaction
+  let clickCount = 0;
+  
+  const handleContainerClick = () => {
+    clickCount++;
+    if (clickCount === 1 && isFirstPlay) {
+      // First click is likely the play button
+      showLoadingScreen();
+      isFirstPlay = false;
+    }
+  };
+  
+  // Add click listener to player container
+  playerContainer.addEventListener('click', handleContainerClick);
+  
+  // Also listen for focus events which might indicate interaction
+  window.addEventListener('blur', () => {
+    if (document.activeElement === playerIframe && isFirstPlay) {
+      showLoadingScreen();
+      isFirstPlay = false;
+    }
+  });
+}
+
+function handleIframeClick(event) {
+  if (isFirstPlay) {
+    showLoadingScreen();
+    isFirstPlay = false;
+  }
 }
 
 function showLoadingScreen() {
@@ -375,38 +434,11 @@ function hideLoadingScreen() {
   loadingScreen.classList.remove('active');
 }
 
-function startVideoPlayback() {
-  // Hide play button and show loading screen
-  playButtonOverlay.style.display = 'none';
-  showLoadingScreen();
-  
-  // Set iframe source to start loading the video
-  playerIframe.src = currentEmbedUrl;
-  
-  // Security measure to prevent popups
-  playerIframe.onload = () => {
-    setTimeout(() => {
-      try {
-        const win = playerIframe.contentWindow;
-        if (!win) return;
-        win.open = function(url) {
-          const catcher = document.createElement('iframe');
-          catcher.style.display = 'none';
-          catcher.src = url || 'about:blank';
-          document.body.appendChild(catcher);
-          return catcher.contentWindow;
-        };
-      } catch (e) {}
-    }, 1000);
-  };
-}
-
 function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
-  currentEmbedUrl = '';
-  playButtonOverlay.style.display = 'flex';
   hideLoadingScreen();
+  isFirstPlay = true;
 }
 
 // === Public Movie Loading ===
@@ -468,7 +500,6 @@ async function renderMovieCard(movie) {
 
 // Event Listeners
 adminBtn.addEventListener('click', openAdminPanel);
-playButtonOverlay.addEventListener('click', startVideoPlayback);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closePlayer();
