@@ -9,8 +9,7 @@
     body {
       background: #000;
       color: #fff;
-      font-family: Aria
-l, sans-serif;
+      font-family: Arial, sans-serif;
     }
     header {
       text-align: center;
@@ -18,7 +17,7 @@ l, sans-serif;
     }
     h1 {
       color: #e50914;
-      font-size: 1.5rem;
+      font-size: 2.5rem;
     }
     .search-box {
       max-width: 600px;
@@ -133,14 +132,14 @@ l, sans-serif;
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- SANDBOX: BLOCKS POPUPS, ALLOWS SCRIPTS SO VIDEO PLAYS -->
+    <!-- SANDBOX BLOCKS TABS, allow-scripts LETS VIDEO PLAY -->
     <iframe 
       id="playerIframe" 
       src="" 
       allowfullscreen
       allow="autoplay; fullscreen"
       referrerpolicy="no-referrer"
-      sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups-to-escape-sandbox"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-modals"
     ></iframe>
   </div>
 
@@ -149,7 +148,7 @@ l, sans-serif;
 
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
-   /K const movieGrid = document.getElementById('movieGrid');
+    const movieGrid = document.getElementById('movieGrid');
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
@@ -162,18 +161,15 @@ l, sans-serif;
           const script = doc.createElement('script');
           script.textContent = `
             (function() {
-              // Kill ALL popups
               window.open = function() { return null; };
               window.alert = function() {};
               window.confirm = function() { return false; };
-              // Kill _blank links
               document.addEventListener('click', function(e) {
                 if (e.target.closest && e.target.closest('a')) {
                   e.preventDefault();
                   e.stopPropagation();
                 }
               }, true);
-              // Kill onclick
               document.body.onclick = null;
               document.querySelectorAll('*').forEach(el => {
                 el.onclick = null;
@@ -186,6 +182,7 @@ l, sans-serif;
       }, 1500);
     }
 
+    // YOUR ORIGINAL SEARCH — NOW WORKS
     async function searchMovies() {
       const q = searchInput.value.trim();
       if (!q) return;
