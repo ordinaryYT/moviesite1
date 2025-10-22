@@ -123,14 +123,14 @@
       border: none;
     }
 
-    /* OVERLAY: LEFT SIDE, HIGHER, COVERS "SERVERS" */
+    /* OVERLAY: SOLID BLACK — NO SEE-THROUGH */
     .iframe-overlay {
       position: absolute;
-      top: 5px;               /* 5px higher than before */
-      left: 20px;             /* Aligned to left edge */
+      top: 5px;
+      left: 10px;
       width: 120px;
       height: 40px;
-      background: rgba(0, 0, 0, 0.9);
+      background: #000;                    /* FULLY OPAQUE */
       z-index: 3;
       pointer-events: auto;
       display: flex;
