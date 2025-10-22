@@ -110,17 +110,26 @@
       z-index: 1;
     }
 
-    /* Overlay that hides the SERVERS button area */
+    /* Black overlay hiding the SERVERS button with watermark */
     .iframe-overlay {
       position: absolute;
-      top: 10px;       /* adjust if needed */
-      right: 10px;     /* adjust if needed */
-      width: 150px;    /* make this match the size of the SERVERS button */
+      top: 10px;        /* adjust if necessary */
+      right: 220px;     /* move left to cover SERVERS */
+      width: 170px;
       height: 60px;
-      background: #000;   /* black cover */
-      opacity: 1;         /* fully hidden */
+      background: rgba(0, 0, 0, 0.9);
       z-index: 2;
-      pointer-events: auto; /* block clicks in this area */
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: Arial, sans-serif;
+      font-size: 1rem;
+      font-weight: bold;
+      color: rgba(255,255,255,0.4);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      user-select: none;
     }
 
     .close-btn {
@@ -163,7 +172,7 @@
         allow="autoplay; fullscreen"
         referrerpolicy="no-referrer"
       ></iframe>
-      <div class="iframe-overlay"></div>
+      <div class="iframe-overlay">ogmovie</div>
     </div>
   </div>
 
@@ -176,12 +185,14 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // Fake popup patch
+    // Restore popup-blocker script
     function fakePopup() {
       setTimeout(() => {
         try {
           const win = playerIframe.contentWindow;
           if (!win) return;
+
+          // Create fake window object
           const fakeWindow = {
             closed: false,
             close: () => { fakeWindow.closed = true; },
@@ -190,10 +201,26 @@
             document: { write: () => {}, close: () => {} },
             location: { href: 'about:blank' }
           };
+
+          // Override window.open in iframe
           win.open = function(url, name, specs) {
             console.log('Blocked popup:', url);
             return fakeWindow;
           };
+
+          // Inject script that disables body-level onclick ads
+          const script = win.document.createElement('script');
+          script.textContent = `
+            (function() {
+              window.open = function() { return { closed: false, close: function() {}, focus: function() {} }; };
+              document.body.onclick = null;
+              document.querySelectorAll('a').forEach(a => {
+                if (a.target === '_blank') a.target = '_self';
+                a.onclick = function(e) { e.preventDefault(); };
+              });
+            })();
+          `;
+          win.document.head.appendChild(script);
         } catch (e) {}
       }, 1500);
     }
@@ -224,7 +251,7 @@
         const card = document.createElement('div');
         card.className = 'movie-card';
         card.innerHTML = `
-          <img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}" 
+          <img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}"
                onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
           <div class="movie-info">
             <h3>${m['#TITLE']}</h3>
