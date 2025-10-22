@@ -123,14 +123,14 @@
       border: none;
     }
 
-    /* OVERLAY: BIGGER, MORE LEFT, SOLID, BLOCKS CLICKS */
+    /* OGMOVIE OVERLAY — COVERS "SERVERS" */
     .iframe-overlay {
       position: absolute;
       top: 5px;
-      left: 0px;              /* FLUSH TO LEFT */
+      left: 0px;
       width: 160px;
       height: 55px;
-      background: #000;       /* SOLID BLACK */
+      background: #000;
       z-index: 3;
       pointer-events: auto;
       display: flex;
@@ -185,14 +185,14 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // RESTORED: ORIGINAL WORKING TAB BLOCKER
+    // FAKE window.open() — PLAYER THINKS IT OPENED A TAB
     function fakePopup() {
       setTimeout(() => {
         try {
           const win = playerIframe.contentWindow;
           if (!win) return;
 
-          // Fake window object
+          // Create a fake window object
           const fakeWindow = {
             closed: false,
             close: () => { fakeWindow.closed = true; },
@@ -208,7 +208,7 @@
             return fakeWindow;
           };
 
-          // Inject script to kill popups & links
+          // Kill onclick popups
           const script = win.document.createElement('script');
           script.textContent = `
             (function() {
@@ -225,6 +225,7 @@
       }, 1500);
     }
 
+    // YOUR ORIGINAL SEARCH
     async function searchMovies() {
       const q = searchInput.value.trim();
       if (!q) return;
@@ -272,7 +273,7 @@
       playerIframe.onload = fakePopup;
     }
 
-    function closePlayer() {
+    function closePlayer972() {
       playerContainer.classList.remove('active');
       playerIframe.src = '';
     }
