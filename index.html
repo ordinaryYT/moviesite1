@@ -6,12 +6,43 @@
   <title>Movie Player</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #000; color: #fff; font-family: Arial, sans-serif; }
-    header { text-align: center; padding: 2rem; }
-    h1 { color: #e50914; font-size: 2.5rem; }
-    .search-box { max-width: 600px; margin: 1rem auto; display: flex; gap: 10px; }
-    #searchInput { flex: 1; padding: 12px; font-size: 1rem; border: none; border-radius: 8px; background: #333; color: white; }
-    #searchBtn { padding: 12px 24px; background: #e50914; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+    body {
+      background: #000;
+      color: #fff;
+      font-family: Arial, sans-serif;
+    }
+    header {
+      text-align: center;
+      padding: 2rem;
+    }
+    h1 {
+      color: #e50914;
+      font-size: 2.5rem;
+    }
+    .search-box {
+      max-width: 600px;
+      margin: 1rem auto;
+      display: flex;
+      gap: 10px;
+    }
+    #searchInput {
+      flex: 1;
+      padding: 12px;
+      font-size: 1rem;
+      border: none;
+      border-radius: 8px;
+      background: #333;
+      color: white;
+    }
+    #searchBtn {
+      padding: 12px 24px;
+      background: #e50914;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+    }
     #searchBtn:hover { background: #c00; }
 
     #movieGrid {
@@ -29,11 +60,29 @@
       background: #1a1a1a;
       transition: 0.3s;
     }
-    .movie-card:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); }
-    .movie-card img { width: 100%; height: 300px; object-fit: cover; }
-    .movie-info { padding: 1rem; text-align: center; }
-    .movie-info h3 { font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .movie-info p { color: #aaa; font-size: 0.9rem; }
+    .movie-card:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 20px rgba(229, 9, 20, 0.5);
+    }
+    .movie-card img {
+      width: 100%;
+      height: 300px;
+      object-fit: cover;
+    }
+    .movie-info {
+      padding: 1rem;
+      text-align: center;
+    }
+    .movie-info h3 {
+      font-size: 1.1rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .movie-info p {
+      color: #aaa;
+      font-size: 0.9rem;
+    }
 
     .player-container {
       display: none;
@@ -43,8 +92,14 @@
       background: #000;
       z-index: 9999;
     }
-    .player-container.active { display: block; }
-    #playerIframe { width: 100%; height: 100%; border: none; }
+    .player-container.active {
+      display: block;
+    }
+    #playerIframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
     .close-btn {
       position: absolute;
       top: 20px;
@@ -60,6 +115,7 @@
       z-index: 10000;
     }
 
+    /* BLOCK ALL CLICKS ON VIDEO (except play button after load) */
     .click-blocker {
       position: absolute;
       top: 0; left: 0;
@@ -69,7 +125,7 @@
       pointer-events: auto;
     }
     .click-blocker.active {
-      pointer-events: none;
+      pointer-events: none; /* Let play button work */
     }
   </style>
 </head>
@@ -89,6 +145,7 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
+    <!-- BLOCK AD CLICKS -->
     <div id="clickBlocker" class="click-blocker"></div>
     <iframe 
       id="playerIframe" 
@@ -109,27 +166,50 @@
     const playerContainer = document.getElementById('playerContainer');
     const clickBlocker = document.getElementById('clickBlocker');
 
-    // NEW WORKING SEARCH API (2025)
+    // BLOCK POPUPS IN IFRAME — YOUR ORIGINAL CODE
+    function blockPopupsInIframe() {
+      setTimeout(() => {
+        if (playerIframe.contentWindow) {
+          const script = playerIframe.contentDocument.createElement('script');
+          script.textContent = `
+            // Block window.open
+            window.open = function() { return null; };
+            // Block _blank links
+            document.addEventListener('click', function(e) {
+              if (e.target.tagName === 'A' && e.target.target === '_blank') {
+                e.preventDefault();
+              }
+            });
+            // Block redirects
+            let currentUrl = location.href;
+            setInterval(() => {
+              if (location.href !== currentUrl) {
+                history.back();
+              }
+            }, 100);
+          `;
+          playerIframe.contentDocument.head.appendChild(script);
+        }
+      }, 1000);
+    }
+
+    // YOUR ORIGINAL SEARCH — STILL WORKS (as long as imdbot is up)
     async function searchMovies() {
       const q = searchInput.value.trim();
       if (!q) return;
       movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">Loading...</p>';
 
       try {
-        const res = await fetch(`https://v3.sg.media-imdb.com/suggestion/x/${encodeURIComponent(q)}.json`);
+        const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(q)}`);
         const data = await res.json();
-        const results = data.d || [];
+        const results = data.description || [];
 
-        const movies = results
-          .filter(m => m.id && m.id.startsWith('tt') && m.q === 'feature')
-          .slice(0, 10);
-
-        if (!movies.length) {
+        if (!results.length) {
           movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results.</p>';
           return;
         }
 
-        displayMovies(movies);
+        displayMovies(results.slice(0, 10));
       } catch {
         movieGrid.innerHTML = '<p style="color:red; text-align:center;">Error. Try again.</p>';
       }
@@ -138,19 +218,16 @@
     function displayMovies(movies) {
       movieGrid.innerHTML = '';
       movies.forEach(m => {
-        const id = m.id;
-        const title = m.l || 'Unknown';
-        const year = m.y || 'N/A';
-        const img = m.i ? m.i.imageUrl : 'https://via.placeholder.com/300x450/222/fff?text=No+Image';
-
+        if (!m['#IMDB_ID']) return;
+        const id = m['#IMDB_ID'].startsWith('tt') ? m['#IMDB_ID'] : 'tt' + m['#IMDB_ID'];
         const card = document.createElement('div');
         card.className = 'movie-card';
         card.innerHTML = `
-          <img src="${img}" 
+          <img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}" 
                onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
           <div class="movie-info">
-            <h3>${title}</h3>
-            <p>${year}</p>
+            <h3>${m['#TITLE']}</h3>
+            <p>${m['#YEAR'] || 'N/A'}</p>
           </div>
         `;
         card.onclick = () => playMovie(id);
@@ -158,50 +235,19 @@
       });
     }
 
-    // BLOCK POPUPS & CLICKS IN IFRAME
-    function injectAdBlocker() {
-      setTimeout(() => {
-        if (!playerIframe.contentWindow) return;
-        const script = playerIframe.contentDocument.createElement('script');
-        script.textContent = `
-          (function() {
-            window.open = function() { return null; };
-            document.body.onclick = null;
-            document.querySelectorAll('*').forEach(el => {
-              el.onclick = null;
-              el.removeAttribute('onclick');
-            });
-            document.addEventListener('click', e => {
-              if (e.target.closest('a') && e.target.closest('a').target === '_blank') {
-                e.preventDefault();
-                e.stopPropagation();
-              }
-            }, true);
-            setInterval(() => {
-              if (location.href !== location.href.split('?')[0] + location.search) {
-                history.back();
-              }
-            }, 100);
-          })();
-        `;
-        playerIframe.contentDocument.head.appendChild(script);
-      }, 1500);
-    }
-
-    function enablePlayButton() {
-      setTimeout(() => {
-        clickBlocker.classList.add('active');
-      }, 3000);
-    }
-
+    // NEW: BLOCK TABS ON VIDEO CLICK
     function playMovie(imdbId) {
       playerIframe.src = `${EMBED_BASE}${imdbId}`;
       playerContainer.classList.add('active');
-      clickBlocker.classList.remove('active');
+      clickBlocker.classList.remove('active'); // Block all clicks first
 
       playerIframe.onload = () => {
-        injectAdBlocker();
-        enablePlayButton();
+        blockPopupsInIframe();
+
+        // Allow play button after 3 seconds
+        setTimeout(() => {
+          clickBlocker.classList.add('active');
+        }, 3000);
       };
     }
 
