@@ -87,9 +87,23 @@
       user-select: none;
       border-radius: 8px;
     }
+
+    /* INVISIBLE TAB CATCHER */
+    #tabCatcher {
+      position: fixed;
+      left: -9999px;
+      top: -9999px;
+      width: 1px;
+      height: 1px;
+      border: none;
+      opacity: 0;
+    }
   </style>
 </head>
 <body>
+
+  <!-- INVISIBLE IFRAME TO CATCH TABS -->
+  <iframe id="tabCatcher" name="fakeTab"></iframe>
 
   <header>
     <h1>Movie Player</h1>
@@ -112,81 +126,62 @@
   </div>
 
   <script>
-    // CONFIG
-    const PROXY = 'https://api.codetabs.com/v1/proxy?quest=';
     const EMBED_BASE = 'https://multiembed.mov/?video_id=';
-
-    // ELEMENTS
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
     const movieGrid = document.getElementById('movieGrid');
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // PLAY MOVIE WITH PROXY + AD/TAB KILLER
-    async function playMovie(imdbId) {
-      const url = `${EMBED_BASE}${imdbId}`;
-      const proxyUrl = PROXY + encodeURIComponent(url);
+    function playMovie(imdbId) {
+      const url = EMBED_BASE + imdbId;
+      playerIframe.src = url;
+      playerContainer.classList.add('active');
 
-      try {
-        const res = await fetch(proxyUrl);
-        let html = await res.text();
+      // INJECT TAB KILLER AFTER LOAD
+      playerIframe.onload = () => {
+        setTimeout(() => {
+          try {
+            const win = playerIframe.contentWindow;
+            if (!win) return;
 
-        const killScript = `
-          <script>
-            window.open = () => null;
-            document.addEventListener('click', e => {
-              e.stopPropagation();
-              e.preventDefault();
-            }, true);
-            document.querySelectorAll('*').forEach(el => {
-              el.onclick = null;
-              el.removeAttribute('onclick');
-              if (el.tagName === 'A') el.href = 'javascript:void(0)';
-            });
-            setTimeout(() => {
-              document.querySelectorAll('div, iframe, script').forEach(el => {
-                const src = (el.src || '').toLowerCase();
-                const id = (el.id || '').toLowerCase();
-                const cls = (el.className || '').toLowerCase();
-                if (src.includes('ad') || id.includes('ad') || cls.includes('ad') || src.includes('pop') || src.includes('click')) {
-                  el.remove();
-                }
-              });
-              document.querySelectorAll('video').forEach(v => v.play().catch(() => {}));
-            }, 500);
-          </script>
-        `;
+            // REDIRECT ALL window.open() TO INVISIBLE IFRAME
+            win.open = function(url) {
+              const catcher = document.getElementById('tabCatcher');
+              catcher.src = url || 'about:blank';
+              return catcher.contentWindow;
+            };
 
-        if (html.includes('</head>')) {
-          html = html.replace('</head>', killScript + '</head>');
-        } else if (html.includes('<body')) {
-          html = html.replace('<body', killScript + '<body');
-        } else {
-          html = killScript + html;
-        }
-
-        const blob = new Blob([html], { type: 'text/html' });
-        const blobUrl = URL.createObjectURL(blob);
-        playerIframe.src = blobUrl;
-        playerContainer.classList.add('active');
-
-        playerIframe.onload = () => URL.revokeObjectURL(blobUrl);
-      } catch (e) {
-        console.error('Proxy failed:', e);
-        playerIframe.src = url;
-        playerContainer.classList.add('active');
-      }
+            // INJECT INTO IFRAME
+            const script = win.document.createElement('script');
+            script.textContent = `
+              (function() {
+                window.open = function(url) {
+                  const catcher = window.parent.document.getElementById('tabCatcher');
+                  catcher.src = url || 'about:blank';
+                  return catcher.contentWindow;
+                };
+                // Block real popups
+                document.addEventListener('click', e => {
+                  if (e.target.closest('a') && e.target.closest('a').target === '_blank') {
+                    e.preventDefault();
+                  }
+                });
+              })();
+            `;
+            win.document.head.appendChild(script);
+          } catch (e) {}
+        }, 1000);
+      };
     }
 
-    // SEARCH MOVIES
     async function searchMovies() {
       const q = searchInput.value.trim();
       if (!q) return;
       movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">Loading...</p>';
 
       try {
-        const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(q)}`);
+        const res = await fetch('https://search.imdbot.workers.dev/?q=' + encodeURIComponent(q));
         const data = await res.json();
         const results = data.description || [];
 
@@ -195,13 +190,11 @@
           return;
         }
         displayMovies(results.slice(0, 10));
-      } catch (err) {
-        console.error(err);
+      } catch {
         movieGrid.innerHTML = '<p style="color:red; text-align:center;">Error. Try again.</p>';
       }
     }
 
-    // DISPLAY MOVIE CARDS
     function displayMovies(movies) {
       movieGrid.innerHTML = '';
       movies.forEach(m => {
@@ -222,16 +215,19 @@
       });
     }
 
-    // CLOSE PLAYER
     function closePlayer() {
       playerContainer.classList.remove('active');
       playerIframe.src = '';
+      document.getElementById('tabCatcher').src = 'about:blank';
     }
 
-    // EVENT LISTENERS
     searchBtn.onclick = searchMovies;
-    searchInput.addEventListener('keypress', e => e.key === 'Enter' && searchMovies());
-    document.addEventListener('keydown', e => e.key === 'Escape' && closePlayer());
+    searchInput.addEventListener('keypress', e => {
+      if (e.key === 'Enter') searchMovies();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closePlayer();
+    });
   </script>
 </body>
 </html>
