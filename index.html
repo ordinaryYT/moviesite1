@@ -19,7 +19,6 @@
       max-width: 1400px;
       margin: 0 auto;
     }
-
     .movie-card {
       background: #1a1a1a;
       border-radius: 12px;
@@ -27,7 +26,7 @@
       transition: 0.3s;
       cursor: pointer;
     }
-    .movie-card:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(229, 9, 20, 0.5); }
+    .movie-card:hover { transform: scale(1.05); box-shadow: 0 0 20px rgba(229,9,20,0.5); }
     .movie-card img { width: 100%; height: 300px; object-fit: cover; }
     .movie-info { padding: 1rem; text-align: center; }
     .movie-info h3 { font-size: 1.1rem; }
@@ -43,73 +42,35 @@
     }
     .player-container.active { display: block; }
     .close-btn {
-      position: absolute;
-      top: 20px; right: 20px;
-      background: rgba(0,0,0,0.7);
-      color: white;
-      border: none;
-      width: 50px; height: 50px;
-      border-radius: 50%;
-      font-size: 2rem;
-      cursor: pointer;
-      z-index: 10000;
+      position: absolute; top: 20px; right: 20px;
+      background: rgba(0,0,0,0.7); color: white; border: none;
+      width: 50px; height: 50px; border-radius: 50%;
+      font-size: 2rem; cursor: pointer; z-index: 10000;
     }
 
     /* Admin Panel */
     #adminPanel {
       background: rgba(30,30,30,0.97);
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
       z-index: 10000;
-      display: none;
-      padding: 2rem;
-      overflow-y: auto;
-      align-items: center;
-      justify-content: center;
+      display: none; padding: 2rem;
+      overflow-y: auto; align-items: center; justify-content: center;
     }
     #adminPanel.active { display: flex; }
     #adminPanelInner {
-      width: 100%;
-      max-width: 400px;
-      background: #111;
-      padding: 2rem;
-      border-radius: 12px;
+      width: 100%; max-width: 400px; background: #111;
+      padding: 2rem; border-radius: 12px;
       box-shadow: 0 0 25px rgba(229,9,20,0.4);
     }
-    #adminPanel h2, #adminPanel h3 { color: #e50914; text-align: center; margin-bottom: 1rem; }
     #adminPanel input, #adminPanel button {
-      display: block;
-      width: 100%;
-      margin: 0.5rem 0;
-      padding: 0.7rem;
-      border-radius: 6px;
-      border: none;
-      font-size: 1rem;
+      display: block; width: 100%; margin: .5rem 0;
+      padding: .7rem; border-radius: 6px; border: none; font-size: 1rem;
+      position: relative; z-index: 10001;
     }
-    #adminPanel input {
-      background: #222;
-      color: #fff;
-    }
-    #adminPanel button {
-      background: #e50914;
-      color: white;
-      font-weight: bold;
-    }
+    #adminPanel input { background: #222; color: #fff; }
+    #adminPanel button { background: #e50914; color: #fff; font-weight: bold; }
     #adminPanel button:hover { background: #c00; }
-    #adminPanel input, #adminPanel button { position: relative; z-index: 10001; }
-
-    #addStatus { text-align: center; margin-top: 1rem; color: #0f0; }
-
-    .admin-close {
-      background: none;
-      color: #aaa;
-      border: none;
-      font-size: 1.2rem;
-      display: block;
-      margin: 1rem auto 0;
-      cursor: pointer;
-    }
-    .admin-close:hover { color: #fff; }
+    #addStatus { text-align: center; margin-top: .5rem; color: #0f0; }
   </style>
 </head>
 <body>
@@ -124,29 +85,28 @@
     <div id="movieGrid"></div>
   </main>
 
-  <!-- Player -->
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
     <iframe id="playerIframe" src="" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer" style="width:100%;height:100%;border:none;"></iframe>
   </div>
 
-  <!-- Admin Panel -->
   <div id="adminPanel">
     <div id="adminPanelInner">
-      <h2>Admin Panel</h2>
+      <h2 style="text-align:center;color:#e50914;">Admin Panel</h2>
       <div id="adminLogin">
-        <p style="text-align:center;">Enter admin password:</p>
         <input type="password" id="adminPass" placeholder="Admin password">
         <button onclick="adminLogin()">Login</button>
       </div>
-
       <div id="adminControls" style="display:none;">
         <h3>Add Movie</h3>
         <input type="text" id="movieName" placeholder="Movie name">
         <input type="text" id="moviePass" placeholder="Password for this movie">
         <button onclick="addMovie()">Add Movie</button>
         <div id="addStatus"></div>
-        <button class="admin-close" onclick="closeAdmin()">Close Admin Panel</button>
+        <hr style="margin:1.5rem 0;">
+        <h3>Manage Movies</h3>
+        <div id="adminMovieList" style="margin-bottom:1rem;"></div>
+        <button onclick="closeAdmin()">Close</button>
       </div>
     </div>
   </div>
@@ -159,113 +119,109 @@
     const adminPanel = document.getElementById('adminPanel');
     let adminToken = null;
 
-    // Fetch and display movies
     async function fetchMovies() {
-      try {
-        const res = await fetch(API + '/movies');
-        const data = await res.json();
-        if (!data.ok) throw new Error(data.error || 'Fetch failed');
-        movieGrid.innerHTML = '';
-        data.movies.forEach(m => {
-          const card = document.createElement('div');
-          card.className = 'movie-card';
-          card.innerHTML = `
-            <img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}">
-            <div class="movie-info">
-              <h3>${m.title}</h3>
-              <p>${m.year || ''}</p>
-            </div>
-          `;
-          card.onclick = () => watchMovie(m.id);
-          movieGrid.appendChild(card);
-        });
-      } catch (err) {
-        console.error(err);
-        movieGrid.innerHTML = '<p style="text-align:center;color:red;">Error loading movies.</p>';
-      }
+      const res = await fetch(API + '/movies');
+      const data = await res.json();
+      if (!data.ok) return alert('Error fetching movies');
+      movieGrid.innerHTML = '';
+      data.movies.forEach(m => {
+        const card = document.createElement('div');
+        card.className = 'movie-card';
+        card.innerHTML = `
+          <img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}">
+          <div class="movie-info"><h3>${m.title}</h3><p>${m.year || ''}</p></div>
+        `;
+        card.onclick = () => watchMovie(m.id);
+        movieGrid.appendChild(card);
+      });
     }
 
-    // Play movie with password protection
     async function watchMovie(id) {
       const pw = prompt('Enter password for this movie:');
       if (!pw) return;
-      try {
-        const res = await fetch(`${API}/movies/${id}/authorize`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: pw })
-        });
-        const data = await res.json();
-        if (!data.ok) return alert('Wrong password.');
-        const token = data.token;
-        const embedRes = await fetch(`${API}/movies/${id}/embed`, {
-          headers: { Authorization: 'Bearer ' + token }
-        });
-        const embedData = await embedRes.json();
-        if (!embedData.ok) return alert('Error loading player.');
-        playerIframe.src = embedData.url;
-        playerContainer.classList.add('active');
-      } catch {
-        alert('Error connecting to server.');
-      }
+      const res = await fetch(API + '/movies/' + id + '/authorize', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw })
+      });
+      const data = await res.json();
+      if (!data.ok) return alert('Wrong password.');
+      const token = data.token;
+      const embedRes = await fetch(API + '/movies/' + id + '/embed', {
+        headers: { Authorization: 'Bearer ' + token }
+      });
+      const embedData = await embedRes.json();
+      if (!embedData.ok) return alert('Error loading player');
+      playerIframe.src = embedData.url;
+      playerContainer.classList.add('active');
     }
 
-    function closePlayer() {
-      playerContainer.classList.remove('active');
-      playerIframe.src = '';
-    }
+    function closePlayer() { playerContainer.classList.remove('active'); playerIframe.src = ''; }
 
     function openAdmin() { adminPanel.classList.add('active'); }
     function closeAdmin() { adminPanel.classList.remove('active'); }
 
     async function adminLogin() {
-      const pw = document.getElementById('adminPass').value.trim();
-      if (!pw) return alert('Enter admin password');
-      try {
-        const res = await fetch(API + '/admin/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: pw })
-        });
-        const data = await res.json();
-        if (!data.ok) return alert('Invalid admin password');
-        adminToken = data.token;
-        document.getElementById('adminLogin').style.display = 'none';
-        document.getElementById('adminControls').style.display = 'block';
-      } catch {
-        alert('Server error.');
-      }
+      const pw = document.getElementById('adminPass').value;
+      const res = await fetch(API + '/admin/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw })
+      });
+      const data = await res.json();
+      if (!data.ok) return alert('Invalid admin password');
+      adminToken = data.token;
+      document.getElementById('adminLogin').style.display = 'none';
+      document.getElementById('adminControls').style.display = 'block';
+      loadAdminMovies();
     }
 
     async function addMovie() {
       const name = document.getElementById('movieName').value.trim();
       const moviePassword = document.getElementById('moviePass').value.trim();
       if (!name || !moviePassword) return alert('Please fill both fields');
-      try {
-        const res = await fetch(API + '/movies', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            Authorization: 'Bearer ' + adminToken
-          },
-          body: JSON.stringify({ name, moviePassword })
-        });
-        const data = await res.json();
-        if (!data.ok) return alert('Error adding movie: ' + (data.error || 'Unknown'));
-        document.getElementById('addStatus').textContent = `✅ Added: ${data.movie.title}`;
-        document.getElementById('movieName').value = '';
-        document.getElementById('moviePass').value = '';
-        fetchMovies();
-      } catch {
-        alert('Server error.');
-      }
+      const res = await fetch(API + '/movies', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + adminToken
+        },
+        body: JSON.stringify({ name, moviePassword })
+      });
+      const data = await res.json();
+      if (!data.ok) return alert('Error adding movie: ' + data.error);
+      document.getElementById('addStatus').textContent = `✅ Added: ${data.movie.title}`;
+      fetchMovies();
+      loadAdminMovies();
+    }
+
+    async function loadAdminMovies() {
+      const res = await fetch(API + '/movies');
+      const data = await res.json();
+      if (!data.ok) return;
+      const list = document.getElementById('adminMovieList');
+      list.innerHTML = '';
+      data.movies.forEach(m => {
+        const div = document.createElement('div');
+        div.innerHTML = `<b>${m.title}</b> (${m.year || ''})
+          <button style="margin-left:1rem;background:#c00;color:#fff;border:none;padding:4px 8px;border-radius:5px;"
+          onclick="deleteMovie(${m.id})">Delete</button>`;
+        list.appendChild(div);
+      });
+    }
+
+    async function deleteMovie(id) {
+      if (!confirm('Delete this movie?')) return;
+      const res = await fetch(API + '/movies/' + id, {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer ' + adminToken }
+      });
+      const data = await res.json();
+      if (!data.ok) return alert('Error deleting');
+      loadAdminMovies();
+      fetchMovies();
     }
 
     document.addEventListener('keydown', e => {
-      if (e.key === 'Escape') {
-        closeAdmin();
-        closePlayer();
-      }
+      if (e.key === 'Escape') { closeAdmin(); closePlayer(); }
     });
 
     fetchMovies();
