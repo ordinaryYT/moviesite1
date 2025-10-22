@@ -112,15 +112,18 @@
   </div>
 
   <script>
+    // CONFIG
     const PROXY = 'https://api.codetabs.com/v1/proxy?quest=';
     const EMBED_BASE = 'https://multiembed.mov/?video_id=';
 
+    // ELEMENTS
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
     const movieGrid = document.getElementById('movieGrid');
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
+    // PLAY MOVIE WITH PROXY + AD/TAB KILLER
     async function playMovie(imdbId) {
       const url = `${EMBED_BASE}${imdbId}`;
       const proxyUrl = PROXY + encodeURIComponent(url);
@@ -176,6 +179,7 @@
       }
     }
 
+    // SEARCH MOVIES
     async function searchMovies() {
       const q = searchInput.value.trim();
       if (!q) return;
@@ -197,6 +201,7 @@
       }
     }
 
+    // DISPLAY MOVIE CARDS
     function displayMovies(movies) {
       movieGrid.innerHTML = '';
       movies.forEach(m => {
@@ -217,11 +222,13 @@
       });
     }
 
+    // CLOSE PLAYER
     function closePlayer() {
       playerContainer.classList.remove('active');
       playerIframe.src = '';
     }
 
+    // EVENT LISTENERS
     searchBtn.onclick = searchMovies;
     searchInput.addEventListener('keypress', e => e.key === 'Enter' && searchMovies());
     document.addEventListener('keydown', e => e.key === 'Escape' && closePlayer());
