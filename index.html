@@ -1,163 +1,183 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Movie Player</title>
-  <style>
-    body { background: #000; color: #fff; font-family: Arial, sans-serif; margin:0; }
-    header { text-align:center; padding:2rem; }
-    h1 { color:#e50914; font-size:2.5rem; }
-    button { cursor:pointer; }
-
-    #movieGrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
-      gap:1.5rem; padding:2rem; max-width:1400px; margin:auto; }
-    .movie-card { background:#1a1a1a; border-radius:12px; overflow:hidden; transition:.3s; cursor:pointer; }
-    .movie-card:hover { transform:scale(1.05); box-shadow:0 0 20px rgba(229,9,20,.5); }
-    .movie-card img { width:100%; height:300px; object-fit:cover; }
-    .movie-info { padding:1rem; text-align:center; }
-
-    .player-container { display:none; position:fixed; inset:0; background:#000; z-index:9999; }
-    .player-container.active { display:block; }
-    .close-btn { position:absolute; top:20px; right:20px; background:rgba(0,0,0,.7);
-      color:white; border:none; width:50px; height:50px; border-radius:50%; font-size:2rem; }
-
-    #adminPanel { display:none; position:fixed; inset:0; background:rgba(30,30,30,.97);
-      z-index:10000; justify-content:center; align-items:center; }
-    #adminPanel.active { display:flex; }
-    #adminPanelInner { background:#111; padding:2rem; border-radius:12px; width:90%; max-width:450px; }
-    #adminPanel input, #adminPanel button { width:100%; margin:.5rem 0; padding:.7rem; border:none; border-radius:6px; font-size:1rem; }
-    #adminPanel input { background:#222; color:#fff; }
-    #adminPanel button { background:#e50914; color:white; font-weight:bold; }
-    #adminPanel button:hover { background:#c00; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Movie Player</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;color:#fff;font-family:Arial,sans-serif}
+header{text-align:center;padding:2rem}
+h1{color:#e50914;font-size:2.5rem}
+#movieGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+gap:1.5rem;padding:2rem;max-width:1400px;margin:auto}
+.movie-card{cursor:pointer;border-radius:12px;overflow:hidden;background:#1a1a1a;transition:.3s}
+.movie-card:hover{transform:scale(1.05);box-shadow:0 0 20px rgba(229,9,20,.5)}
+.movie-card img{width:100%;height:300px;object-fit:cover}
+.movie-info{padding:1rem;text-align:center}
+.movie-info h3{font-size:1.1rem}
+.movie-info p{color:#aaa;font-size:.9rem}
+.player-container{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:9999}
+.player-container.active{display:block}
+.close-btn{position:absolute;top:20px;right:20px;background:rgba(0,0,0,.7);color:white;border:none;width:50px;height:50px;border-radius:50%;font-size:2rem;cursor:pointer;z-index:10000}
+#adminPanel{display:none;position:fixed;inset:0;background:rgba(30,30,30,.97);z-index:10000;justify-content:center;align-items:center}
+#adminPanel.active{display:flex}
+#adminPanelInner{background:#111;padding:2rem;border-radius:12px;width:90%;max-width:450px}
+#adminPanel input,#adminPanel button{width:100%;margin:.5rem 0;padding:.7rem;border:none;border-radius:6px;font-size:1rem}
+#adminPanel input{background:#222;color:#fff}
+#adminPanel button{background:#e50914;color:#fff;font-weight:bold}
+#adminPanel button:hover{background:#c00}
+</style>
 </head>
 <body>
-  <header>
-    <h1>🎬 Movie Player</h1>
-    <button onclick="openAdmin()">Admin Panel</button>
-  </header>
+<header>
+  <h1>🎬 Movie Player</h1>
+  <button onclick="openAdmin()">Admin Panel</button>
+</header>
 
-  <main><div id="movieGrid"></div></main>
+<main><div id="movieGrid"></div></main>
 
-  <div id="playerContainer" class="player-container">
-    <button class="close-btn" onclick="closePlayer()">X</button>
-    <iframe id="playerIframe" style="width:100%;height:100%;border:none;" allowfullscreen allow="autoplay;fullscreen"></iframe>
-  </div>
+<div id="playerContainer" class="player-container">
+  <button class="close-btn" onclick="closePlayer()">X</button>
+  <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen"
+          referrerpolicy="no-referrer" style="width:100%;height:100%;border:none"></iframe>
+</div>
 
-  <div id="adminPanel">
-    <div id="adminPanelInner">
-      <h2 style="text-align:center;color:#e50914;">Admin Panel</h2>
-      <div id="adminLogin">
-        <input type="password" id="adminPass" placeholder="Admin password">
-        <button onclick="adminLogin()">Login</button>
-      </div>
-
-      <div id="adminControls" style="display:none;">
-        <h3>Add Movie</h3>
-        <input type="text" id="movieName" placeholder="Movie name (optional if using IMDb ID)">
-        <input type="text" id="movieId" placeholder="IMDb ID (optional)">
-        <input type="text" id="moviePass" placeholder="Password for this movie">
-        <button onclick="addMovie()">Add Movie</button>
-        <div id="addStatus" style="color:#0f0;"></div>
-        <hr style="margin:1rem 0;">
-        <h3>Manage Movies</h3>
-        <div id="adminMovieList"></div>
-        <button onclick="closeAdmin()">Close</button>
-      </div>
+<div id="adminPanel">
+  <div id="adminPanelInner">
+    <h2 style="text-align:center;color:#e50914;">Admin Panel</h2>
+    <div id="adminLogin">
+      <input type="password" id="adminPass" placeholder="Admin password">
+      <button onclick="adminLogin()">Login</button>
+    </div>
+    <div id="adminControls" style="display:none">
+      <input type="text" id="movieName" placeholder="Movie name (optional)">
+      <input type="text" id="movieId" placeholder="IMDb ID (optional)">
+      <input type="text" id="moviePass" placeholder="Password for this movie">
+      <button onclick="addMovie()">Add Movie</button>
+      <div id="addStatus" style="color:#0f0;text-align:center"></div>
+      <hr style="margin:1rem 0">
+      <h3>Manage Movies</h3>
+      <div id="adminMovieList"></div>
+      <button onclick="closeAdmin()">Close</button>
     </div>
   </div>
+</div>
 
-  <script>
-    const API = location.origin + '/api';
-    const movieGrid = document.getElementById('movieGrid');
-    const playerContainer = document.getElementById('playerContainer');
-    const playerIframe = document.getElementById('playerIframe');
-    let adminToken = null;
+<script>
+const API = location.origin + '/api';
+const EMBED_BASE = 'https://multiembed.mov/?video_id=';
+const movieGrid = document.getElementById('movieGrid');
+const playerContainer = document.getElementById('playerContainer');
+const playerIframe = document.getElementById('playerIframe');
+let adminToken = null;
 
-    async function fetchMovies() {
-      const res = await fetch(API + '/movies');
-      const data = await res.json();
-      if (!data.ok) return alert('Error fetching movies');
-      movieGrid.innerHTML = '';
-      data.movies.forEach(m => {
-        const card = document.createElement('div');
-        card.className = 'movie-card';
-        card.innerHTML = `<img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}">
-                          <div class='movie-info'><h3>${m.title}</h3><p>${m.year||''}</p></div>`;
-        card.onclick = () => playMovie(m.id);
-        movieGrid.appendChild(card);
-      });
-    }
+// ---------- Fake popup blocker (your logic) ----------
+function fakePopup(){
+  setTimeout(()=>{
+    try{
+      const win=playerIframe.contentWindow;
+      if(!win)return;
+      const fakeWindow={closed:false,close:()=>{fakeWindow.closed=true}};
+      win.open=function(){return fakeWindow};
+      const script=win.document.createElement('script');
+      script.textContent=`(function(){window.open=function(){return {closed:false,close:function(){}}}})();`;
+      win.document.head.appendChild(script);
+    }catch(e){}
+  },1500);
+}
 
-    async function playMovie(id) {
-      const pw = prompt('Enter password for this movie:');
-      if (!pw) return;
-      const authRes = await fetch(`${API}/movies/${id}/authorize`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({password:pw})
-      });
-      const authData = await authRes.json();
-      if (!authData.ok) return alert('Wrong password.');
-      const embedRes = await fetch(`${API}/movies/${id}/embed`, {
-        headers:{Authorization:'Bearer '+authData.token}
-      });
-      const embedData = await embedRes.json();
-      if (!embedData.ok) return alert('Error loading player');
-      playerIframe.src = embedData.url;
-      playerContainer.classList.add('active');
-    }
-    function closePlayer(){playerContainer.classList.remove('active');playerIframe.src='';}
+// ---------- PUBLIC MOVIES ----------
+async function fetchMovies(){
+  const res=await fetch(API+'/movies');
+  const data=await res.json();
+  if(!data.ok)return alert('Error loading movies');
+  movieGrid.innerHTML='';
+  data.movies.forEach(m=>{
+    const card=document.createElement('div');
+    card.className='movie-card';
+    card.innerHTML=`
+      <img src="${m.image||'https://via.placeholder.com/300x450/222/fff?text=No+Image'}">
+      <div class="movie-info"><h3>${m.title}</h3><p>${m.year||''}</p></div>`;
+    card.onclick=()=>playMovie(m.id);
+    movieGrid.appendChild(card);
+  });
+}
 
-    function openAdmin(){document.getElementById('adminPanel').classList.add('active');}
-    function closeAdmin(){document.getElementById('adminPanel').classList.remove('active');}
+async function playMovie(id){
+  const pw=prompt('Enter password for this movie:');
+  if(!pw)return;
+  const authRes=await fetch(`${API}/movies/${id}/authorize`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({password:pw})
+  });
+  const authData=await authRes.json();
+  if(!authData.ok)return alert('Wrong password.');
+  const embedRes=await fetch(`${API}/movies/${id}/embed`,{
+    headers:{Authorization:'Bearer '+authData.token}
+  });
+  const embedData=await embedRes.json();
+  if(!embedData.ok)return alert('Error loading player');
+  playerIframe.src=embedData.url;
+  playerContainer.classList.add('active');
+  playerIframe.onload=fakePopup;
+}
 
-    async function adminLogin(){
-      const pw=document.getElementById('adminPass').value;
-      const res=await fetch(API+'/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
-      const data=await res.json();
-      if(!data.ok)return alert('Invalid password');
-      adminToken=data.token;
-      document.getElementById('adminLogin').style.display='none';
-      document.getElementById('adminControls').style.display='block';
-      loadAdminMovies();
-    }
+function closePlayer(){playerContainer.classList.remove('active');playerIframe.src='';}
 
-    async function addMovie(){
-      const name=document.getElementById('movieName').value.trim();
-      const imdbId=document.getElementById('movieId').value.trim();
-      const moviePassword=document.getElementById('moviePass').value.trim();
-      if(!name && !imdbId)return alert('Enter a name or IMDb ID');
-      if(!moviePassword)return alert('Enter movie password');
-      const res=await fetch(API+'/movies',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+adminToken},body:JSON.stringify({name,imdbId,moviePassword})});
-      const data=await res.json();
-      if(!data.ok)return alert('Error: '+data.error);
-      document.getElementById('addStatus').textContent=`✅ Added: ${data.movie.title}`;
-      fetchMovies(); loadAdminMovies();
-    }
+// ---------- ADMIN ----------
+function openAdmin(){document.getElementById('adminPanel').classList.add('active');}
+function closeAdmin(){document.getElementById('adminPanel').classList.remove('active');}
 
-    async function loadAdminMovies(){
-      const res=await fetch(API+'/movies'); const data=await res.json();
-      const list=document.getElementById('adminMovieList'); list.innerHTML='';
-      data.movies.forEach(m=>{
-        const div=document.createElement('div');
-        div.innerHTML=`<b>${m.title}</b> (${m.year||''}) 
-          <button style="margin-left:1rem;background:#c00;color:#fff;border:none;padding:4px 8px;border-radius:5px;"
-          onclick="deleteMovie(${m.id})">Delete</button>`;
-        list.appendChild(div);
-      });
-    }
+async function adminLogin(){
+  const pw=document.getElementById('adminPass').value;
+  const res=await fetch(API+'/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+  const data=await res.json();
+  if(!data.ok)return alert('Invalid admin password');
+  adminToken=data.token;
+  document.getElementById('adminLogin').style.display='none';
+  document.getElementById('adminControls').style.display='block';
+  loadAdminMovies();
+}
 
-    async function deleteMovie(id){
-      if(!confirm('Delete this movie?'))return;
-      const res=await fetch(API+'/movies/'+id,{method:'DELETE',headers:{Authorization:'Bearer '+adminToken}});
-      const data=await res.json();
-      if(!data.ok)return alert('Delete failed');
-      loadAdminMovies(); fetchMovies();
-    }
+async function addMovie(){
+  const name=document.getElementById('movieName').value.trim();
+  const imdbId=document.getElementById('movieId').value.trim();
+  const moviePassword=document.getElementById('moviePass').value.trim();
+  if(!name && !imdbId)return alert('Enter name or IMDb ID');
+  if(!moviePassword)return alert('Enter movie password');
+  const res=await fetch(API+'/movies',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+adminToken},body:JSON.stringify({name,imdbId,moviePassword})});
+  const data=await res.json();
+  if(!data.ok)return alert('Error: '+data.error);
+  document.getElementById('addStatus').textContent=`✅ Added: ${data.movie.title}`;
+  fetchMovies();loadAdminMovies();
+}
 
-    document.addEventListener('keydown',e=>{if(e.key==='Escape'){closePlayer();closeAdmin();}});
-    fetchMovies();
-  </script>
+async function loadAdminMovies(){
+  const res=await fetch(API+'/movies');
+  const data=await res.json();
+  if(!data.ok)return;
+  const list=document.getElementById('adminMovieList');
+  list.innerHTML='';
+  data.movies.forEach(m=>{
+    const div=document.createElement('div');
+    div.innerHTML=`<b>${m.title}</b> (${m.year||''})
+      <button style="margin-left:1rem;background:#c00;color:#fff;border:none;padding:4px 8px;border-radius:5px;"
+        onclick="deleteMovie(${m.id})">Delete</button>`;
+    list.appendChild(div);
+  });
+}
+
+async function deleteMovie(id){
+  if(!confirm('Delete this movie?'))return;
+  const res=await fetch(API+'/movies/'+id,{method:'DELETE',headers:{Authorization:'Bearer '+adminToken}});
+  const data=await res.json();
+  if(!data.ok)return alert('Delete failed');
+  loadAdminMovies();fetchMovies();
+}
+
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closePlayer();closeAdmin();}});
+fetchMovies();
+</script>
 </body>
 </html>
