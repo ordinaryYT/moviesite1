@@ -26,7 +26,7 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-// --- Auto-create table if missing ---
+// --- Auto-create table with category ---
 async function ensureTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS movies (
@@ -36,10 +36,11 @@ async function ensureTable() {
       password_hash TEXT NOT NULL,
       year TEXT,
       image TEXT,
+      category TEXT DEFAULT 'movie',
       created_at TIMESTAMP DEFAULT NOW()
     );
   `);
-  console.log('✅ Movies table ready');
+  console.log('Movies table ready (with category)');
 }
 ensureTable().catch(console.error);
 
@@ -64,7 +65,7 @@ async function searchImdb(title) {
 // --- Public: list movies ---
 app.get('/api/movies', async (_, res) => {
   try {
-    const result = await pool.query('SELECT id, title, year, image FROM movies ORDER BY created_at DESC');
+    const result = await pool.query('SELECT id, title, year, image, category FROM movies ORDER BY created_at DESC');
     res.json({ ok: true, movies: result.rows });
   } catch (err) {
     console.error(err);
@@ -94,10 +95,10 @@ function requireAdmin(req, res, next) {
   }
 }
 
-// --- Add Movie (optional IMDb ID) ---
+// --- Add Movie ---
 app.post('/api/movies', requireAdmin, async (req, res) => {
   try {
-    const { name, imdbId, moviePassword } = req.body;
+    const { name, imdbId, moviePassword, category = 'movie' } = req.body;
     if ((!name && !imdbId) || !moviePassword)
       return res.status(400).json({ ok: false, error: 'Provide movie name or IMDb ID and password' });
 
@@ -117,12 +118,45 @@ app.post('/api/movies', requireAdmin, async (req, res) => {
 
     const hash = await bcrypt.hash(moviePassword, 10);
     const result = await pool.query(
-      `INSERT INTO movies (title, imdb_id, password_hash, year, image)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (imdb_id) DO UPDATE SET title=EXCLUDED.title RETURNING *`,
-      [movieData.title, movieData.imdb_id, hash, movieData.year, movieData.image]
+      `INSERT INTO movies (title, imdb_id, password_hash, year, image, category)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (imdb_id) DO UPDATE SET 
+         title=EXCLUDED.title, 
+         year=EXCLUDED.year, 
+         image=EXCLUDED.image,
+         category=EXCLUDED.category
+       RETURNING *`,
+      [movieData.title, movieData.imdb_id, hash, movieData.year, movieData.image, category]
     );
 
+    res.json({ ok: true, movie: result.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+// --- Edit Movie (PUT) ---
+app.put('/api/movies/:id', requireAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { name, imdbId, moviePassword, category } = req.body;
+
+    let set = [], vals = [], i = 1;
+    if (name) { set.push(`title=$${i++}`); vals.push(name); }
+    if (imdbId) { set.push(`imdb_id=$${i++}`); vals.push(imdbId.startsWith('tt') ? imdbId : 'tt' + imdbId); }
+    if (moviePassword) { const h = await bcrypt.hash(moviePassword, 10); set.push(`password_hash=$${i++}`); vals.push(h); }
+    if (category) { set.push(`category=$${i++}`); vals.push(category); }
+
+    if (set.length === 0) return res.status(400).json({ ok: false, error: 'Nothing to update' });
+
+    vals.push(id);
+    const result = await pool.query(
+      `UPDATE movies SET ${set.join(', ')} WHERE id=$${i} RETURNING *`,
+      vals
+    );
+
+    if (!result.rowCount) return res.status(404).json({ ok: false, error: 'Movie not found' });
     res.json({ ok: true, movie: result.rows[0] });
   } catch (err) {
     console.error(err);
@@ -155,7 +189,7 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   res.json({ ok: true, token });
 });
 
-// --- Get embed (requires valid token) ---
+// --- Get embed ---
 app.get('/api/movies/:id/embed', async (req, res) => {
   try {
     const auth = req.headers.authorization || '';
@@ -171,4 +205,4 @@ app.get('/api/movies/:id/embed', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
