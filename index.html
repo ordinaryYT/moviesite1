@@ -68,7 +68,7 @@ h1 { color:#e50914; font-size:2.5rem; }
 </div>
 
 <script>
-const EMBED_BASE = 'https://multiembed.mov/?video_id=';
+const PROXY_BASE = '/proxy-video?video_id=';
 const searchInput = document.getElementById('searchInput');
 const searchBtn = document.getElementById('searchBtn');
 const movieGrid = document.getElementById('movieGrid');
@@ -76,12 +76,15 @@ const playerIframe = document.getElementById('playerIframe');
 const playerContainer = document.getElementById('playerContainer');
 const clickShield = document.getElementById('clickShield');
 
-// Fake popup blocker
+let clickCounter = 0;
+
+// Fake popup blocker (just in case)
 window.open = function(url,name,specs){
   console.log('Blocked popup attempt:',url);
   return { closed:true, close:()=>{}, focus:()=>{} };
 };
 
+// Search movies
 async function searchMovies() {
   const q = searchInput.value.trim();
   if(!q) return;
@@ -114,10 +117,9 @@ function displayMovies(movies){
   });
 }
 
-let clickCounter = 0;
-
+// Play movie using Render proxy
 function playMovie(imdbId){
-  playerIframe.src=`${EMBED_BASE}${imdbId}`;
+  playerIframe.src = `${PROXY_BASE}${imdbId}`;
   playerContainer.classList.add('active');
   clickCounter = 0;
   clickShield.style.display='block';
@@ -125,13 +127,11 @@ function playMovie(imdbId){
   clickShield.onclick = (e)=>{
     e.preventDefault(); e.stopPropagation();
     clickCounter++;
-    // Click pattern: block 1, allow 2, block 3-4, allow 5, block 6+
+    // Block/allow clicks pattern: 1=block, 2=allow, 3-4=block, 5=allow, 6+=block
     if(clickCounter === 2 || clickCounter === 5){
-      // remove shield completely so user can interact with iframe
-      clickShield.style.display='none';
+      clickShield.style.display='none'; // allow user interaction
     } else {
-      console.log('Click blocked', clickCounter);
-      // shield stays visible to block click
+      console.log('Click blocked',clickCounter);
     }
   };
 }
