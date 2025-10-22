@@ -145,23 +145,9 @@
       user-select: none;
       border-radius: 8px;
     }
-
-    /* HIDDEN IFRAME — ACTS AS POPUP TARGET */
-    #hiddenFrame {
-      position: fixed;
-      left: -9999px;
-      top: -9999px;
-      width: 1px;
-      height: 1px;
-      border: none;
-      z-index: -1;
-    }
   </style>
 </head>
 <body>
-
-  <!-- HIDDEN IFRAME — ALL POPUPS GO HERE -->
-  <iframe id="hiddenFrame" name="hiddenPopup"></iframe>
 
   <header>
     <h1>Movie Player</h1>
@@ -185,6 +171,7 @@
         allowfullscreen
         allow="autoplay; fullscreen"
         referrerpolicy="no-referrer"
+        sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-modals"
       ></iframe>
       <div class="iframe-overlay">ogmovie</div>
     </div>
@@ -199,42 +186,40 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // LET POPUPS OPEN — BUT IN HIDDEN IFRAME (NO VISIBLE TABS)
-    function redirectPopupsToHiddenFrame() {
+    // FAKE POPUP — NO TABS
+    function fakePopup() {
       setTimeout(() => {
         try {
           const win = playerIframe.contentWindow;
           if (!win) return;
 
-          // Override window.open to use hidden iframe
-          win.open = function(url, name, specs) {
-            const iframe = document.getElementById('hiddenFrame');
-            iframe.src = 'about:blank'; // Clear first
-            setTimeout(() => {
-              iframe.src = url || 'about:blank';
-            }, 10);
-            return iframe.contentWindow;
+          const fakeWindow = {
+            closed: false,
+            close: () => { fakeWindow.closed = true; },
+            focus: () => {},
+            blur: () => {},
+            document: { write: () => {}, close: () => {} },
+            location: { href: 'about:blank' }
           };
 
-          // Force all _blank links to hidden iframe
-          const script = win.document.createElement('script');
+          win.open = function() {
+            return fakeWindow;
+          };
+
+          const script = playerIframe.contentDocument.createElement('script');
           script.textContent = `
             (function() {
-              document.querySelectorAll('a[target="_blank"]').forEach(a => {
-                a.target = 'hiddenPopup';
-                a.rel = 'noopener';
-              });
-              document.addEventListener('click', function(e) {
-                if (e.target.tagName === 'A' && e.target.href) {
-                  e.preventDefault();
-                  window.open(e.target.href, 'hiddenPopup');
-                }
+              window.open = function() { return { closed: false, close: function() {}, focus: function() {} }; };
+              document.body.onclick = null;
+              document.querySelectorAll('a').forEach(a => {
+                if (a.target === '_blank') a.target = '_self';
+                a.onclick = function(e) { e.preventDefault(); };
               });
             })();
           `;
-          win.document.head.appendChild(script);
+          playerIframe.contentDocument.head.appendChild(script);
         } catch (e) {}
-      }, 1000);
+      }, 1500);
     }
 
     async function searchMovies() {
@@ -281,7 +266,7 @@
     function playMovie(imdbId) {
       playerIframe.src = `${EMBED_BASE}${imdbId}`;
       playerContainer.classList.add('active');
-      playerIframe.onload = redirectPopupsToHiddenFrame;
+      playerIframe.onload = fakePopup;
     }
 
     function closePlayer() {
