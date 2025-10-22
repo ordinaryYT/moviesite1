@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Movie Player</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OGMovie Player</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { background:#000; color:#fff; font-family:Arial,sans-serif; }
@@ -47,7 +47,7 @@ h1 { color:#e50914; font-size:2.5rem; }
 <body>
 
 <header>
-  <h1>Movie Player</h1>
+  <h1>OGMovie Player</h1>
   <div class="search-box">
     <input type="text" id="searchInput" placeholder="Search any movie..." />
     <button id="searchBtn">GO</button>
@@ -78,13 +78,12 @@ const clickShield = document.getElementById('clickShield');
 
 let clickCounter = 0;
 
-// Fake popup blocker (just in case)
+// Block popups
 window.open = function(url,name,specs){
   console.log('Blocked popup attempt:',url);
   return { closed:true, close:()=>{}, focus:()=>{} };
 };
 
-// Search movies
 async function searchMovies() {
   const q = searchInput.value.trim();
   if(!q) return;
@@ -117,19 +116,16 @@ function displayMovies(movies){
   });
 }
 
-// Play movie using Render proxy
 function playMovie(imdbId){
   playerIframe.src = `${PROXY_BASE}${imdbId}`;
   playerContainer.classList.add('active');
   clickCounter = 0;
   clickShield.style.display='block';
-
   clickShield.onclick = (e)=>{
     e.preventDefault(); e.stopPropagation();
     clickCounter++;
-    // Block/allow clicks pattern: 1=block, 2=allow, 3-4=block, 5=allow, 6+=block
     if(clickCounter === 2 || clickCounter === 5){
-      clickShield.style.display='none'; // allow user interaction
+      clickShield.style.display='none'; // allow interaction
     } else {
       console.log('Click blocked',clickCounter);
     }
@@ -147,5 +143,6 @@ searchBtn.onclick = searchMovies;
 searchInput.addEventListener('keypress', e=> e.key==='Enter' && searchMovies());
 document.addEventListener('keydown', e=> e.key==='Escape' && closePlayer());
 </script>
+
 </body>
 </html>
