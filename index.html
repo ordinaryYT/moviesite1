@@ -66,7 +66,6 @@
     .player-wrapper { position: relative; width: 100%; height: 100%; }
     #playerIframe { width: 100%; height: 100%; border: none; }
 
-    /* OGMOVIE OVERLAY */
     .iframe-overlay {
       position: absolute;
       top: 5px;
@@ -106,21 +105,13 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-
     <div class="player-wrapper">
-      <iframe 
-        id="playerIframe" 
-        src="" 
-        allowfullscreen
-        allow="autoplay; fullscreen"
-        referrerpolicy="no-referrer"
-      ></iframe>
+      <iframe id="playerIframe" src="" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
       <div class="iframe-overlay">ogmovie</div>
     </div>
   </div>
 
   <script>
-    // CORS PROXY (PUBLIC, RELIABLE)
     const PROXY = 'https://api.codetabs.com/v1/proxy?quest=';
     const EMBED_BASE = 'https://multiembed.mov/?video_id=';
 
@@ -130,7 +121,6 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // KILL TABS & ADS VIA PROXY
     async function playMovie(imdbId) {
       const url = `${EMBED_BASE}${imdbId}`;
       const proxyUrl = PROXY + encodeURIComponent(url);
@@ -139,10 +129,8 @@
         const res = await fetch(proxyUrl);
         let html = await res.text();
 
-        // INJECT KILLER SCRIPT
         const killScript = `
           <script>
-            // KILL ALL POPUPS
             window.open = () => null;
             document.addEventListener('click', e => {
               e.stopPropagation();
@@ -153,35 +141,34 @@
               el.removeAttribute('onclick');
               if (el.tagName === 'A') el.href = 'javascript:void(0)';
             });
-            // REMOVE ADS
             setTimeout(() => {
               document.querySelectorAll('div, iframe, script').forEach(el => {
                 const src = (el.src || '').toLowerCase();
                 const id = (el.id || '').toLowerCase();
                 const cls = (el.className || '').toLowerCase();
-                if (src.includes('ad') || id.includes('ad') || cls.includes('ad') || src.includes('pop')) {
+                if (src.includes('ad') || id.includes('ad') || cls.includes('ad') || src.includes('pop') || src.includes('click')) {
                   el.remove();
                 }
               });
-              // FORCE PLAY
-              document.querySelectorAll('video').forEach(v => v.play());
+              document.querySelectorAll('video').forEach(v => v.play().catch(() => {}));
             }, 500);
           </script>
         `;
 
-        // INJECT BEFORE </head>
-        html = html.replace('</head>', killScript + '</head>');
+        if (html.includes('</head>')) {
+          html = html.replace('</head>', killScript + '</head>');
+        } else {
+          html = html.replace('<body', killScript + '<body');
+        }
 
-        // LOAD IN IFRAME
-        const blob = new Blob([html], { type: 'text/html' });
+        const blob = new Blob([ aye], { type: 'text/html' });
         const blobUrl = URL.createObjectURL(blob);
         playerIframe.src = blobUrl;
         playerContainer.classList.add('active');
 
-        // CLEAN UP
         playerIframe.onload = () => URL.revokeObjectURL(blobUrl);
       } catch (e) {
-        playerIframe.src = url; // fallback
+        playerIframe.src = url;
         playerContainer.classList.add('active');
       }
     }
