@@ -174,20 +174,8 @@ function displayMovies(movies) {
   }
   
   movies.forEach(movie => {
-    const card = createMovieCard(movie);
-    movieGrid.appendChild(card);
+    createMovieCard(movie);
   });
-}
-
-function createMovieCard(movie) {
-  const card = document.createElement('div');
-  card.className = 'movie-card';
-  card.innerHTML = `
-    <img src="${movie.image || 'https://via.placeholder.com/300x450/333/fff?text=No+Poster'}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
-    <div class="movie-info"><h3>${movie.title}</h3><p>${movie.year || 'N/A'}</p></div>
-  `;
-  card.onclick = () => requestMoviePassword(movie.id, movie.title);
-  return card;
 }
 
 // === Free Image Search Function ===
@@ -218,6 +206,41 @@ async function getMoviePoster(movieTitle, year = '') {
   
   // Final fallback: Use a placeholder with the movie title
   return `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(movieTitle.substring(0, 20))}`;
+}
+
+async function createMovieCard(movie) {
+  try {
+    let img = movie.image;
+    let year = movie.year || 'N/A';
+    
+    // Always try to get a better image
+    const poster = await getMoviePoster(movie.title, movie.year);
+    
+    // Use the new poster if we got one, otherwise use existing image or placeholder
+    if (!poster.includes('placeholder.com')) {
+      img = poster;
+    } else if (!img || img.includes('placeholder.com')) {
+      img = poster;
+    }
+    
+    const card = document.createElement('div');
+    card.className = 'movie-card';
+    card.innerHTML = `
+      <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+      <div class="movie-info"><h3>${movie.title}</h3><p>${year}</p></div>`;
+    card.onclick = () => requestMoviePassword(movie.id, movie.title);
+    movieGrid.appendChild(card);
+  } catch (e) {
+    console.error('Movie card render failed for', movie.title, e);
+    // Fallback with placeholder
+    const card = document.createElement('div');
+    card.className = 'movie-card';
+    card.innerHTML = `
+      <img src="https://via.placeholder.com/300x450/333/fff?text=No+Poster">
+      <div class="movie-info"><h3>${movie.title}</h3><p>${movie.year || 'N/A'}</p></div>`;
+    card.onclick = () => requestMoviePassword(movie.id, movie.title);
+    movieGrid.appendChild(card);
+  }
 }
 
 // === Admin Functions ===
