@@ -43,7 +43,7 @@
   .player-container.active{display:block}
   .close-btn{position:absolute;top:20px;right:20px;background:rgba(0,0,0,.7);color:white;border:none;width:50px;height:50px;border-radius:50%;font-size:2rem;cursor:pointer;z-index:10000}
   .player-wrapper{position:relative;width:100%;height:100%}
-  #playerIframe{width:100%;height:100%;border:none;pointer-events:none} /* Disable clicks initially */
+  #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
   
   /* Loading Screen Styles */
@@ -52,9 +52,6 @@
   .loading-spinner{width:60px;height:60px;border:5px solid #333;border-top:5px solid #e50914;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:1rem}
   .loading-text{color:#fff;font-size:1.2rem;text-align:center}
   @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
-  
-  /* Click Catcher Overlay */
-  .click-catcher{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;cursor:pointer}
 </style>
 </head>
 <body>
@@ -126,7 +123,6 @@
 <div id="playerContainer" class="player-container">
   <button class="close-btn" onclick="closePlayer()">X</button>
   <div class="player-wrapper">
-    <div id="clickCatcher" class="click-catcher"></div>
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
   </div>
@@ -144,13 +140,12 @@ const loginModal = document.getElementById('loginModal');
 const addMovieModal = document.getElementById('addMovieModal');
 const passwordModal = document.getElementById('passwordModal');
 const loadingScreen = document.getElementById('loadingScreen');
-const clickCatcher = document.getElementById('clickCatcher');
 
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
 let loadingTimer = null;
-let currentEmbedUrl = '';
+let hasShownLoading = false;
 
 // === Admin Functions ===
 function openAdminPanel() {
@@ -345,17 +340,37 @@ async function verifyMoviePassword() {
 }
 
 function showPlayer(embedUrl) {
-  currentEmbedUrl = embedUrl;
+  // Reset loading state
+  hasShownLoading = false;
   
-  // Set iframe source but disable clicks initially
+  // Set iframe source
   playerIframe.src = embedUrl;
-  playerIframe.style.pointerEvents = 'none'; // Disable clicks
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
-  // Show click catcher overlay
-  clickCatcher.style.display = 'block';
+  // Listen for focus/blur events to detect when user interacts with iframe
+  let interactionDetected = false;
+  
+  const handleFocus = () => {
+    if (!interactionDetected && !hasShownLoading) {
+      interactionDetected = true;
+      showLoadingScreen();
+    }
+  };
+  
+  const handleBlur = () => {
+    // When iframe loses focus, it means user clicked inside it
+    if (!hasShownLoading) {
+      hasShownLoading = true;
+      showLoadingScreen();
+    }
+  };
+  
+  // Add event listeners to detect when user interacts with iframe
+  window.addEventListener('blur', handleBlur);
+  playerIframe.addEventListener('mouseenter', handleFocus);
+  playerContainer.addEventListener('click', handleFocus);
   
   // Security measure to prevent popups
   playerIframe.onload = () => {
@@ -373,24 +388,28 @@ function showPlayer(embedUrl) {
       } catch (e) {}
     }, 1000);
   };
-}
-
-function handlePlayerClick() {
-  // Hide click catcher
-  clickCatcher.style.display = 'none';
   
-  // Show loading screen for exactly 5 seconds
-  showLoadingScreen();
+  // Clean up event listeners when player closes
+  const cleanUp = () => {
+    window.removeEventListener('blur', handleBlur);
+    playerIframe.removeEventListener('mouseenter', handleFocus);
+    playerContainer.removeEventListener('click', handleFocus);
+  };
   
-  // Enable clicks on iframe after loading
-  setTimeout(() => {
-    playerIframe.style.pointerEvents = 'auto';
-    hideLoadingScreen();
-  }, 5000);
+  // Store clean up function for when player closes
+  playerContainer._cleanUp = cleanUp;
 }
 
 function showLoadingScreen() {
+  if (hasShownLoading) return;
+  
+  hasShownLoading = true;
   loadingScreen.classList.add('active');
+  
+  // Hide loading screen after exactly 5 seconds
+  loadingTimer = setTimeout(() => {
+    hideLoadingScreen();
+  }, 5000);
 }
 
 function hideLoadingScreen() {
@@ -400,10 +419,12 @@ function hideLoadingScreen() {
 function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
-  playerIframe.style.pointerEvents = 'none';
-  clickCatcher.style.display = 'block';
   hideLoadingScreen();
-  currentEmbedUrl = '';
+  
+  // Clean up event listeners
+  if (playerContainer._cleanUp) {
+    playerContainer._cleanUp();
+  }
 }
 
 // === Public Movie Loading ===
@@ -465,7 +486,6 @@ async function renderMovieCard(movie) {
 
 // Event Listeners
 adminBtn.addEventListener('click', openAdminPanel);
-clickCatcher.addEventListener('click', handlePlayerClick);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closePlayer();
