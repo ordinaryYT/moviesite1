@@ -123,16 +123,16 @@
       border: none;
     }
 
-    /* OVERLAY: BLOCKS TABS + MORE LEFT + BIGGER + SOLID */
+    /* OVERLAY: BIGGER, MORE LEFT, SOLID, BLOCKS CLICKS */
     .iframe-overlay {
       position: absolute;
       top: 5px;
-      left: 0px;              /* FLUSH TO LEFT EDGE */
-      width: 160px;           /* +20px wider */
-      height: 55px;           /* +5px taller */
+      left: 0px;              /* FLUSH TO LEFT */
+      width: 160px;
+      height: 55px;
       background: #000;       /* SOLID BLACK */
       z-index: 3;
-      pointer-events: auto;   /* BLOCKS CLICKS */
+      pointer-events: auto;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -185,13 +185,14 @@
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
 
-    // FAKE POPUP — NO TABS
+    // RESTORED: ORIGINAL WORKING TAB BLOCKER
     function fakePopup() {
       setTimeout(() => {
         try {
           const win = playerIframe.contentWindow;
           if (!win) return;
 
+          // Fake window object
           const fakeWindow = {
             closed: false,
             close: () => { fakeWindow.closed = true; },
@@ -201,10 +202,13 @@
             location: { href: 'about:blank' }
           };
 
-          win.open = function() {
+          // Override window.open
+          win.open = function(url, name, specs) {
+            console.log('Blocked popup:', url);
             return fakeWindow;
           };
 
+          // Inject script to kill popups & links
           const script = win.document.createElement('script');
           script.textContent = `
             (function() {
