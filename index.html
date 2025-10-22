@@ -60,7 +60,6 @@
       z-index: 10000;
     }
 
-    /* BLOCK ALL CLICKS ON VIDEO (EXCEPT PLAY BUTTON) */
     .click-blocker {
       position: absolute;
       top: 0; left: 0;
@@ -70,7 +69,7 @@
       pointer-events: auto;
     }
     .click-blocker.active {
-      pointer-events: none; /* Let play button work */
+      pointer-events: none;
     }
   </style>
 </head>
@@ -80,7 +79,7 @@
     <h1>Movie Player</h1>
     <div class="search-box">
       <input type="text" id="searchInput" placeholder="Search any movie..." />
-      <button id="searchBtn ’>GO</button>
+      <button id="searchBtn">GO</button>
     </div>
   </header>
 
@@ -90,7 +89,6 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- OVERLAY TO BLOCK AD CLICKS -->
     <div id="clickBlocker" class="click-blocker"></div>
     <iframe 
       id="playerIframe" 
@@ -111,31 +109,76 @@
     const playerContainer = document.getElementById('playerContainer');
     const clickBlocker = document.getElementById('clickBlocker');
 
-    // INJECT JS TO KILL POPUPS & CLICKS
+    // NEW WORKING SEARCH API (2025)
+    async function searchMovies() {
+      const q = searchInput.value.trim();
+      if (!q) return;
+      movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">Loading...</p>';
+
+      try {
+        const res = await fetch(`https://v3.sg.media-imdb.com/suggestion/x/${encodeURIComponent(q)}.json`);
+        const data = await res.json();
+        const results = data.d || [];
+
+        const movies = results
+          .filter(m => m.id && m.id.startsWith('tt') && m.q === 'feature')
+          .slice(0, 10);
+
+        if (!movies.length) {
+          movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results.</p>';
+          return;
+        }
+
+        displayMovies(movies);
+      } catch {
+        movieGrid.innerHTML = '<p style="color:red; text-align:center;">Error. Try again.</p>';
+      }
+    }
+
+    function displayMovies(movies) {
+      movieGrid.innerHTML = '';
+      movies.forEach(m => {
+        const id = m.id;
+        const title = m.l || 'Unknown';
+        const year = m.y || 'N/A';
+        const img = m.i ? m.i.imageUrl : 'https://via.placeholder.com/300x450/222/fff?text=No+Image';
+
+        const card = document.createElement('div');
+        card.className = 'movie-card';
+        card.innerHTML = `
+          <img src="${img}" 
+               onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
+          <div class="movie-info">
+            <h3>${title}</h3>
+            <p>${year}</p>
+          </div>
+        `;
+        card.onclick = () => playMovie(id);
+        movieGrid.appendChild(card);
+      });
+    }
+
+    // BLOCK POPUPS & CLICKS IN IFRAME
     function injectAdBlocker() {
       setTimeout(() => {
         if (!playerIframe.contentWindow) return;
         const script = playerIframe.contentDocument.createElement('script');
         script.textContent = `
           (function() {
-            // Kill window.open
             window.open = function() { return null; };
-            // Kill all onclick popups
             document.body.onclick = null;
             document.querySelectorAll('*').forEach(el => {
               el.onclick = null;
               el.removeAttribute('onclick');
             });
-            // Kill _blank links
             document.addEventListener('click', e => {
               if (e.target.closest('a') && e.target.closest('a').target === '_blank') {
                 e.preventDefault();
                 e.stopPropagation();
               }
             }, true);
-            // Kill redirects
             setInterval(() => {
-              if (location.href !== '${EMBED_BASE}' + location.search.split('=')[1]) {
+              if (location.href !== location.href.split('?')[0] + location.search) {
                 history.back();
               }
             }, 100);
@@ -145,60 +188,17 @@
       }, 1500);
     }
 
-    // ALLOW PLAY BUTTON TO WORK
     function enablePlayButton() {
       setTimeout(() => {
         clickBlocker.classList.add('active');
-      }, 3000); // Wait for player to load
-    }
-
-    async function searchMovies() {
-      const q = searchInput.value.trim();
-      if (!q) return;
-      movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">Loading...</p>';
-
-      try {
-        const res = await fetch(`https://search.imdbot.workers.dev/?q=${encodeURIComponent(q)}`);
-        const data = await res.json();
-        const results = data.description || [];
-
-        if (!results.length) {
-          movieGrid.innerHTML = '<p style="text-align:center; color:#aaa;">No results.</p>';
-          return;
-        }
-
-        displayMovies(results.slice(0, 10));
-      } catch {
-        movieGrid.innerHTML = '<p style="color:red; text-align:center;">Error. Try again.</p>';
-      }
-    }
-
-    function displayMovies(movies) {
-      movieGrid.innerHTML = '';
-      movies.forEach(m => {
-        if (!m['#IMDB_ID']) return;
-        const id = m['#IMDB_ID'].startsWith('tt') ? m['#IMDB_ID'] : 'tt' + m['#IMDB_ID'];
-        const card = document.createElement('div');
-        card.className = 'movie-card';
-        card.innerHTML = `
-          <img src="${m.image || 'https://via.placeholder.com/300x450/222/fff?text=No+Image'}" 
-               onerror="this.src='https://via.placeholder.com/300x450/222/fff?text=No+Image'">
-          <div class="movie-info">
-            <h3>${m['#TITLE']}</h3>
-            <p>${m['#YEAR'] || 'N/A'}</p>
-          </div>
-        `;
-        card.onclick = () => playMovie(id);
-        movieGrid.appendChild(card);
-      });
+      }, 3000);
     }
 
     function playMovie(imdbId) {
       playerIframe.src = `${EMBED_BASE}${imdbId}`;
       playerContainer.classList.add('active');
-      clickBlocker.classList.remove('active'); // Block all clicks first
+      clickBlocker.classList.remove('active');
 
-      // Re-enable play button after load
       playerIframe.onload = () => {
         injectAdBlocker();
         enablePlayButton();
