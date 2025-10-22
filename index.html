@@ -9,7 +9,8 @@
     body {
       background: #000;
       color: #fff;
-      font-family: Arial, sans-serif;
+      font-family: Aria
+l, sans-serif;
     }
     header {
       text-align: center;
@@ -17,7 +18,7 @@
     }
     h1 {
       color: #e50914;
-      font-size: 2.5rem;
+      font-size: 1.5rem;
     }
     .search-box {
       max-width: 600px;
@@ -114,19 +115,6 @@
       cursor: pointer;
       z-index: 10000;
     }
-
-    /* BLOCK ALL CLICKS ON VIDEO (except play button after load) */
-    .click-blocker {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      z-index: 9998;
-      background: transparent;
-      pointer-events: auto;
-    }
-    .click-blocker.active {
-      pointer-events: none; /* Let play button work */
-    }
   </style>
 </head>
 <body>
@@ -145,14 +133,14 @@
 
   <div id="playerContainer" class="player-container">
     <button class="close-btn" onclick="closePlayer()">X</button>
-    <!-- BLOCK AD CLICKS -->
-    <div id="clickBlocker" class="click-blocker"></div>
+    <!-- SANDBOX: BLOCKS POPUPS, ALLOWS SCRIPTS SO VIDEO PLAYS -->
     <iframe 
       id="playerIframe" 
       src="" 
       allowfullscreen
       allow="autoplay; fullscreen"
       referrerpolicy="no-referrer"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-popups-to-escape-sandbox"
     ></iframe>
   </div>
 
@@ -161,39 +149,43 @@
 
     const searchInput = document.getElementById('searchInput');
     const searchBtn = document.getElementById('searchBtn');
-    const movieGrid = document.getElementById('movieGrid');
+   /K const movieGrid = document.getElementById('movieGrid');
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
-    const clickBlocker = document.getElementById('clickBlocker');
 
-    // BLOCK POPUPS IN IFRAME — YOUR ORIGINAL CODE
-    function blockPopupsInIframe() {
+    // INJECT JS TO KILL POPUPS (DOUBLE PROTECTION)
+    function injectPopupKiller() {
       setTimeout(() => {
-        if (playerIframe.contentWindow) {
-          const script = playerIframe.contentDocument.createElement('script');
+        try {
+          const doc = playerIframe.contentDocument || playerIframe.contentWindow.document;
+          if (!doc) return;
+          const script = doc.createElement('script');
           script.textContent = `
-            // Block window.open
-            window.open = function() { return null; };
-            // Block _blank links
-            document.addEventListener('click', function(e) {
-              if (e.target.tagName === 'A' && e.target.target === '_blank') {
-                e.preventDefault();
-              }
-            });
-            // Block redirects
-            let currentUrl = location.href;
-            setInterval(() => {
-              if (location.href !== currentUrl) {
-                history.back();
-              }
-            }, 100);
+            (function() {
+              // Kill ALL popups
+              window.open = function() { return null; };
+              window.alert = function() {};
+              window.confirm = function() { return false; };
+              // Kill _blank links
+              document.addEventListener('click', function(e) {
+                if (e.target.closest && e.target.closest('a')) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }, true);
+              // Kill onclick
+              document.body.onclick = null;
+              document.querySelectorAll('*').forEach(el => {
+                el.onclick = null;
+                el.removeAttribute('onclick');
+              });
+            })();
           `;
-          playerIframe.contentDocument.head.appendChild(script);
-        }
-      }, 1000);
+          doc.head.appendChild(script);
+        } catch (e) {}
+      }, 1500);
     }
 
-    // YOUR ORIGINAL SEARCH — STILL WORKS (as long as imdbot is up)
     async function searchMovies() {
       const q = searchInput.value.trim();
       if (!q) return;
@@ -235,26 +227,15 @@
       });
     }
 
-    // NEW: BLOCK TABS ON VIDEO CLICK
     function playMovie(imdbId) {
       playerIframe.src = `${EMBED_BASE}${imdbId}`;
       playerContainer.classList.add('active');
-      clickBlocker.classList.remove('active'); // Block all clicks first
-
-      playerIframe.onload = () => {
-        blockPopupsInIframe();
-
-        // Allow play button after 3 seconds
-        setTimeout(() => {
-          clickBlocker.classList.add('active');
-        }, 3000);
-      };
+      playerIframe.onload = injectPopupKiller;
     }
 
     function closePlayer() {
       playerContainer.classList.remove('active');
       playerIframe.src = '';
-      clickBlocker.classList.remove('active');
     }
 
     searchBtn.onclick = searchMovies;
