@@ -44,31 +44,189 @@ function verifyAdminToken(req, res, next) {
   }
 }
 
-// Initialize database table
+// Comprehensive database initialization with migration
 async function initDB() {
+  let client;
   try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS movies (
-        id SERIAL PRIMARY KEY,
-        title VARCHAR(255) NOT NULL,
-        year VARCHAR(10),
-        imdb_id VARCHAR(20),
-        image TEXT,
-        movie_password_hash TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
+    client = await pool.connect();
+    console.log('Connected to database, running initialization...');
+
+    // Step 1: Check if movies table exists
+    const tableCheck = await client.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'movies'
+      );
     `);
-    console.log('Database initialized');
+
+    if (!tableCheck.rows[0].exists) {
+      // Create table if it doesn't exist
+      console.log('Creating movies table...');
+      await client.query(`
+        CREATE TABLE movies (
+          id SERIAL PRIMARY KEY,
+          title VARCHAR(255) NOT NULL,
+          year VARCHAR(10),
+          imdb_id VARCHAR(20),
+          image TEXT,
+          movie_password_hash TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      console.log('✅ Movies table created successfully');
+    } else {
+      console.log('✅ Movies table already exists');
+    }
+
+    // Step 2: Check and add missing columns
+    const columnsToCheck = [
+      'title', 'year', 'imdb_id', 'image', 'movie_password_hash', 'created_at'
+    ];
+
+    for (const column of columnsToCheck) {
+      const columnCheck = await client.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'movies' 
+        AND column_name = $1
+      `, [column]);
+
+      if (columnCheck.rows.length === 0) {
+        console.log(`Adding missing column: ${column}...`);
+        
+        switch (column) {
+          case 'title':
+            await client.query('ALTER TABLE movies ADD COLUMN title VARCHAR(255) NOT NULL DEFAULT \'Unknown Movie\'');
+            break;
+          case 'year':
+            await client.query('ALTER TABLE movies ADD COLUMN year VARCHAR(10)');
+            break;
+          case 'imdb_id':
+            await client.query('ALTER TABLE movies ADD COLUMN imdb_id VARCHAR(20)');
+            break;
+          case 'image':
+            await client.query('ALTER TABLE movies ADD COLUMN image TEXT');
+            break;
+          case 'movie_password_hash':
+            await client.query('ALTER TABLE movies ADD COLUMN movie_password_hash TEXT NOT NULL DEFAULT $1', 
+              [await bcrypt.hash('defaultpassword', 10)]);
+            break;
+          case 'created_at':
+            await client.query('ALTER TABLE movies ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
+            break;
+        }
+        console.log(`✅ Column ${column} added successfully`);
+      }
+    }
+
+    // Step 3: Verify the table structure
+    const finalCheck = await client.query(`
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns 
+      WHERE table_name = 'movies' 
+      ORDER BY ordinal_position
+    `);
+
+    console.log('📊 Final table structure:');
+    finalCheck.rows.forEach(row => {
+      console.log(`   ${row.column_name} (${row.data_type}) - nullable: ${row.is_nullable}`);
+    });
+
+    console.log('✅ Database initialization completed successfully');
+
   } catch (error) {
-    console.error('Database initialization failed:', error);
+    console.error('❌ Database initialization failed:', error);
+    
+    // Try a simpler approach if the complex one fails
+    try {
+      console.log('🔄 Trying alternative initialization...');
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS movies (
+          id SERIAL PRIMARY KEY,
+          title VARCHAR(255) NOT NULL DEFAULT 'Unknown Movie',
+          year VARCHAR(10),
+          imdb_id VARCHAR(20),
+          image TEXT,
+          movie_password_hash TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      console.log('✅ Alternative initialization successful');
+    } catch (altError) {
+      console.error('❌ Alternative initialization also failed:', altError);
+      throw altError;
+    }
+  } finally {
+    if (client) client.release();
   }
 }
+
+// Force database migration endpoint (for manual fixes)
+app.post('/api/admin/migrate', async (req, res) => {
+  try {
+    await initDB();
+    res.json({ ok: true, message: 'Database migration completed' });
+  } catch (error) {
+    console.error('Migration error:', error);
+    res.json({ ok: false, error: 'Migration failed: ' + error.message });
+  }
+});
 
 // Routes
 
 // Serve main page
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Health check endpoint
+app.get('/api/health', async (req, res) => {
+  try {
+    await pool.query('SELECT 1');
+    res.json({ 
+      ok: true, 
+      message: 'Server and database are running',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.json({ 
+      ok: false, 
+      message: 'Server running but database connection failed',
+      error: error.message 
+    });
+  }
+});
+
+// Database check endpoint
+app.get('/api/debug/db', async (req, res) => {
+  try {
+    const tables = await pool.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public'
+    `);
+    
+    const moviesColumns = await pool.query(`
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns 
+      WHERE table_name = 'movies'
+    `);
+    
+    const movieCount = await pool.query('SELECT COUNT(*) FROM movies');
+    
+    res.json({
+      ok: true,
+      tables: tables.rows,
+      movies_columns: moviesColumns.rows,
+      movie_count: parseInt(movieCount.rows[0].count)
+    });
+  } catch (error) {
+    res.json({ 
+      ok: false, 
+      error: error.message 
+    });
+  }
 });
 
 // Admin login
@@ -176,8 +334,10 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
     return res.json({ ok: false, error: 'Password required' });
   }
   
+  let client;
   try {
-    const result = await pool.query('SELECT movie_password_hash FROM movies WHERE id = $1', [id]);
+    client = await pool.connect();
+    const result = await client.query('SELECT movie_password_hash FROM movies WHERE id = $1', [id]);
     
     if (result.rows.length === 0) {
       return res.json({ ok: false, error: 'Movie not found' });
@@ -194,6 +354,8 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   } catch (error) {
     console.error('Authorization error:', error);
     res.json({ ok: false, error: 'Authorization failed' });
+  } finally {
+    if (client) client.release();
   }
 });
 
@@ -234,6 +396,14 @@ app.get('/api/movies/:id/embed', async (req, res) => {
 
 // Start server
 app.listen(PORT, async () => {
-  await initDB();
-  console.log(`Server running on port ${PORT}`);
+  try {
+    console.log('🚀 Starting server initialization...');
+    await initDB();
+    console.log(`✅ Server running on port ${PORT}`);
+    console.log(`🌐 Health check available at: http://localhost:${PORT}/api/health`);
+    console.log(`🐛 Database debug available at: http://localhost:${PORT}/api/debug/db`);
+  } catch (error) {
+    console.error('❌ Failed to start server:', error);
+    process.exit(1);
+  }
 });
