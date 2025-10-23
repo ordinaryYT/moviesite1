@@ -47,26 +47,7 @@
   .close-btn{position:absolute;top:20px;right:20px;background:rgba(0,0,0,.7);color:white;border:none;width:50px;height:50px;border-radius:50%;font-size:2rem;cursor:pointer;z-index:10000}
   .player-wrapper{position:relative;width:100%;height:100%}
   #playerIframe{width:100%;height:100%;border:none}
-  
-  /* Top-left Watermark Overlay */
-  .iframe-overlay {
-    position: absolute;
-    top: 5px;
-    left: 0;
-    width: 160px;
-    height: 55px;
-    background: #000; /* Solid black background */
-    color: #fff; /* Solid white text */
-    z-index: 3;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    border-radius: 8px;
-    border: 2px solid #e50914; /* Solid red border */
-  }
+  .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
   
   /* Second Watermark Overlay */
   .second-watermark {
@@ -87,13 +68,6 @@
     pointer-events: none;
     border: 3px solid #e50914; /* Solid red border */
     box-shadow: 0 0 30px rgba(229, 9, 20, 0.5);
-    animation: pulse 2s infinite;
-  }
-  
-  @keyframes pulse {
-    0% { opacity: 0.8; }
-    50% { opacity: 1; }
-    100% { opacity: 0.8; }
   }
 </style>
 </head>
@@ -186,111 +160,43 @@ const secondWatermark = document.querySelector('.second-watermark');
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
-let audioInterval = null;
-let isMonitoring = false;
-let audioDetected = false;
+let checkInterval = null;
 
-// === Improved Audio Detection for Second Watermark ===
-function startAudioDetection() {
-  console.log('🎵 Starting audio detection for watermark...');
-  stopAudioDetection();
-  isMonitoring = true;
-  audioDetected = false;
+// === Simple Audio Detection ===
+function startAudioCheck() {
+  console.log('🎵 Starting audio check...');
+  stopAudioCheck();
   
-  // Show second watermark immediately
+  // Show watermark immediately
   showSecondWatermark();
   
-  let audioContext = null;
-  let analyser = null;
-  let microphone = null;
+  // Check every second if audio is playing
+  checkInterval = setInterval(() => {
+    if (!playerContainer.classList.contains('active')) {
+      stopAudioCheck();
+      return;
+    }
+    
+    // Simple approach: wait 5 seconds then remove watermark
+    // This assumes the movie starts playing within 5 seconds
+  }, 1000);
   
-  try {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 512; // Increased for better detection
-    analyser.smoothingTimeConstant = 0.8;
-    
-    navigator.mediaDevices.getUserMedia({ 
-      audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false
-      } 
-    })
-    .then(function(stream) {
-      console.log('🎤 Microphone access granted');
-      microphone = audioContext.createMediaStreamSource(stream);
-      microphone.connect(analyser);
-      
-      const bufferLength = analyser.frequencyBinCount;
-      const dataArray = new Uint8Array(bufferLength);
-      
-      audioInterval = setInterval(() => {
-        if (!playerContainer.classList.contains('active') || !isMonitoring) {
-          stopAudioDetection();
-          return;
-        }
-        
-        analyser.getByteFrequencyData(dataArray);
-        
-        // Calculate volume more accurately
-        let sum = 0;
-        for (let i = 0; i < bufferLength; i++) {
-          sum += dataArray[i];
-        }
-        const average = sum / bufferLength;
-        
-        // More sensitive audio detection
-        if (average > 5 && !audioDetected) { // Lowered threshold
-          audioDetected = true;
-          console.log('🔊 AUDIO DETECTED - Average volume:', average, '- Removing second watermark');
-          hideSecondWatermark();
-          
-          // Stop monitoring after detection to save resources
-          stopAudioDetection();
-        }
-        
-        // Debug logging (uncomment to see volume levels)
-        // console.log('Volume level:', average);
-        
-      }, 100); // Check more frequently
-    })
-    .catch(function(err) {
-      console.log('❌ Microphone access denied - second watermark will stay visible');
-      console.log('Error:', err);
-      
-      // Fallback: hide watermark after 10 seconds if no mic access
-      setTimeout(() => {
-        if (isMonitoring && !audioDetected) {
-          console.log('⏰ Fallback timeout - hiding watermark');
-          hideSecondWatermark();
-          stopAudioDetection();
-        }
-      }, 10000);
-    });
-  } catch (error) {
-    console.log('❌ Audio context failed - second watermark will stay visible');
-    console.log('Error:', error);
-    
-    // Fallback: hide watermark after 10 seconds if audio context fails
-    setTimeout(() => {
-      if (isMonitoring && !audioDetected) {
-        console.log('⏰ Fallback timeout - hiding watermark');
-        hideSecondWatermark();
-        stopAudioDetection();
-      }
-    }, 10000);
-  }
+  // Remove watermark after 5 seconds (when audio should be playing)
+  setTimeout(() => {
+    if (playerContainer.classList.contains('active')) {
+      console.log('⏰ 5 seconds passed - removing watermark');
+      hideSecondWatermark();
+      stopAudioCheck();
+    }
+  }, 5000);
 }
 
-function stopAudioDetection() {
-  isMonitoring = false;
-  audioDetected = false;
-  if (audioInterval) {
-    clearInterval(audioInterval);
-    audioInterval = null;
+function stopAudioCheck() {
+  if (checkInterval) {
+    clearInterval(checkInterval);
+    checkInterval = null;
   }
-  console.log('🛑 Audio detection stopped');
+  console.log('🛑 Audio check stopped');
 }
 
 function showSecondWatermark() {
@@ -573,21 +479,21 @@ async function verifyMoviePassword() {
 
 function showPlayer(embedUrl) {
   // RESET everything when player opens
-  stopAudioDetection();
+  stopAudioCheck();
   
   playerIframe.src = embedUrl;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
-  // Start audio detection for second watermark
-  startAudioDetection();
+  // Start simple audio check
+  startAudioCheck();
 }
 
 function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
-  stopAudioDetection();
+  stopAudioCheck();
 }
 
 // === Public Movie Loading ===
