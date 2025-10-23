@@ -49,12 +49,33 @@
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
   
-  /* Loading Screen Styles */
-  #loadingScreen{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:10002;align-items:center;justify-content:center;flex-direction:column}
-  #loadingScreen.active{display:flex}
-  .loading-spinner{width:60px;height:60px;border:5px solid #333;border-top:5px solid #e50914;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:1rem}
-  .loading-text{color:#fff;font-size:1.2rem;text-align:center}
-  @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+  /* Second Watermark Overlay */
+  .second-watermark {
+    position: absolute;
+    top: 60%; /* 60% from top */
+    left: 50%; /* 50% from left */
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: rgba(255, 255, 255, 0.8);
+    padding: 20px 30px;
+    font-size: 2rem;
+    font-weight: bold;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    border-radius: 12px;
+    z-index: 10001;
+    display: none;
+    pointer-events: none;
+    border: 3px solid rgba(229, 9, 20, 0.5);
+    box-shadow: 0 0 30px rgba(229, 9, 20, 0.3);
+    animation: pulse 2s infinite;
+  }
+  
+  @keyframes pulse {
+    0% { opacity: 0.7; }
+    50% { opacity: 1; }
+    100% { opacity: 0.7; }
+  }
 </style>
 </head>
 <body>
@@ -70,12 +91,6 @@
   <div id="movieGrid"></div>
   <div id="adminPanel" class="admin-panel"></div>
 </main>
-
-<!-- Loading Screen -->
-<div id="loadingScreen" class="loading-screen">
-  <div class="loading-spinner"></div>
-  <div class="loading-text">Loading Player...</div>
-</div>
 
 <!-- Admin Login Modal -->
 <div id="loginModal" class="modal">
@@ -131,6 +146,7 @@
   <div class="player-wrapper">
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
+    <div class="second-watermark">ogmovie</div>
   </div>
 </div>
 
@@ -145,40 +161,35 @@ const adminPanel = document.getElementById('adminPanel');
 const loginModal = document.getElementById('loginModal');
 const addMovieModal = document.getElementById('addMovieModal');
 const passwordModal = document.getElementById('passwordModal');
-const loadingScreen = document.getElementById('loadingScreen');
 const searchInput = document.getElementById('searchInput');
-const watermarkElement = document.querySelector('.iframe-overlay');
+const secondWatermark = document.querySelector('.second-watermark');
 
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
-let loadingTimer = null;
 let audioInterval = null;
 let isMonitoring = false;
 let audioDetected = false;
-let clickDetected = false;
-const LOADING_DURATION = 10000; // 10 seconds
 
-// === Every Click Detection ===
-function startEveryClickDetection() {
-  stopEveryClickDetection();
+// === Audio Detection for Second Watermark ===
+function startAudioDetection() {
+  console.log('🎵 Starting audio detection for watermark...');
+  stopAudioDetection();
   isMonitoring = true;
   audioDetected = false;
-  clickDetected = false;
   
-  console.log('🖱️ Starting EVERY CLICK detection...');
+  // Show second watermark immediately
+  showSecondWatermark();
   
   let audioContext = null;
   let analyser = null;
   let microphone = null;
   
   try {
-    // Create audio context
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     analyser = audioContext.createAnalyser();
     analyser.fftSize = 256;
     
-    // Capture microphone to detect system audio
     navigator.mediaDevices.getUserMedia({ audio: true, video: false })
       .then(function(stream) {
         microphone = audioContext.createMediaStreamSource(stream);
@@ -189,86 +200,55 @@ function startEveryClickDetection() {
         
         audioInterval = setInterval(() => {
           if (!playerContainer.classList.contains('active') || !isMonitoring) {
-            stopEveryClickDetection();
+            stopAudioDetection();
             return;
           }
           
           analyser.getByteFrequencyData(dataArray);
-          
-          // Calculate average volume
           let sum = 0;
           for (let i = 0; i < bufferLength; i++) {
             sum += dataArray[i];
           }
           const average = sum / bufferLength;
           
-          // If audio detected, stop showing loading screens
+          // If audio detected, hide second watermark
           if (average > 10 && !audioDetected) {
             audioDetected = true;
-            console.log('🔊 AUDIO DETECTED - Stopping loading screens');
-            hideLoadingScreen();
+            console.log('🔊 AUDIO DETECTED - Removing second watermark');
+            hideSecondWatermark();
           }
-          
-        }, 200); // Check every 200ms
-        
+        }, 200);
       })
       .catch(function(err) {
-        console.log('Microphone access denied, using click-only (no audio detection)');
-        // Continue without audio detection - clicks will always trigger loading
+        console.log('Microphone access denied - second watermark will stay visible');
       });
-      
   } catch (error) {
-    console.log('Audio context failed, using click-only (no audio detection)');
-    // Continue without audio detection - clicks will always trigger loading
+    console.log('Audio context failed - second watermark will stay visible');
   }
 }
 
-function stopEveryClickDetection() {
+function stopAudioDetection() {
   isMonitoring = false;
   audioDetected = false;
-  clickDetected = false;
   if (audioInterval) {
     clearInterval(audioInterval);
     audioInterval = null;
   }
-  if (loadingTimer) {
-    clearTimeout(loadingTimer);
-    loadingTimer = null;
-  }
-  console.log('🛑 Every click detection stopped');
+  hideSecondWatermark();
+  console.log('🛑 Audio detection stopped');
 }
 
-function handlePlayerClick() {
-  if (!isMonitoring) return;
-  
-  // If audio hasn't been detected yet, show loading screen on EVERY click
-  if (!audioDetected) {
-    console.log('🖱️ CLICK detected - Showing loading screen for 10 seconds');
-    showLoadingScreen();
-    
-    // Auto-hide after 10 seconds (unless audio is detected)
-    if (loadingTimer) {
-      clearTimeout(loadingTimer);
-    }
-    loadingTimer = setTimeout(() => {
-      if (isMonitoring && !audioDetected) {
-        hideLoadingScreen();
-      }
-    }, LOADING_DURATION);
+function showSecondWatermark() {
+  if (secondWatermark.style.display !== 'block') {
+    secondWatermark.style.display = 'block';
+    console.log('💧 Second watermark shown');
   }
 }
 
-function showLoadingScreen() {
-  if (!loadingScreen.classList.contains('active')) {
-    loadingScreen.classList.add('active');
-    console.log('📺 Loading screen shown');
-  }
-}
-
-function hideLoadingScreen() {
-  if (loadingScreen.classList.contains('active')) {
-    loadingScreen.classList.remove('active');
-    console.log('📺 Loading screen hidden');
+function hideSecondWatermark() {
+  if (secondWatermark.style.display !== 'none') {
+    secondWatermark.style.display = 'none';
+    console.log('💧 Second watermark hidden');
   }
 }
 
@@ -538,47 +518,21 @@ async function verifyMoviePassword() {
 
 function showPlayer(embedUrl) {
   // RESET everything when player opens
-  stopEveryClickDetection();
+  stopAudioDetection();
   
   playerIframe.src = embedUrl;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
-  // Start fresh detection
-  startEveryClickDetection();
-  
-  let interactionDetected = false;
-  const handleInteraction = () => {
-    if (!interactionDetected) {
-      interactionDetected = true;
-      handlePlayerClick(); // Trigger loading screen on EVERY click
-      setTimeout(() => {
-        interactionDetected = false;
-      }, 1000);
-    }
-  };
-  
-  window.addEventListener('blur', handleInteraction);
-  playerContainer.addEventListener('click', handleInteraction);
-  playerContainer.addEventListener('mousedown', handleInteraction);
-  
-  playerContainer._cleanUp = () => {
-    window.removeEventListener('blur', handleInteraction);
-    playerContainer.removeEventListener('click', handleInteraction);
-    playerContainer.removeEventListener('mousedown', handleInteraction);
-  };
+  // Start audio detection for second watermark
+  startAudioDetection();
 }
 
 function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
-  hideLoadingScreen();
-  stopEveryClickDetection();
-  
-  if (playerContainer._cleanUp) {
-    playerContainer._cleanUp();
-  }
+  stopAudioDetection();
 }
 
 // === Public Movie Loading ===
