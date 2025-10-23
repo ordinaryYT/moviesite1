@@ -79,44 +79,68 @@ async function initDB() {
       console.log('✅ Movies table already exists');
     }
 
-    // Step 2: Check and add missing columns
-    const columnsToCheck = [
-      'title', 'year', 'imdb_id', 'image', 'movie_password_hash', 'created_at'
-    ];
-
-    for (const column of columnsToCheck) {
-      const columnCheck = await client.query(`
+    // Step 2: Check and add missing columns one by one with proper error handling
+    console.log('Checking for missing columns...');
+    
+    // Check and add movie_password_hash column
+    try {
+      const passwordHashCheck = await client.query(`
         SELECT column_name 
         FROM information_schema.columns 
         WHERE table_name = 'movies' 
-        AND column_name = $1
-      `, [column]);
+        AND column_name = 'movie_password_hash'
+      `);
 
-      if (columnCheck.rows.length === 0) {
-        console.log(`Adding missing column: ${column}...`);
+      if (passwordHashCheck.rows.length === 0) {
+        console.log('Adding missing column: movie_password_hash...');
         
-        switch (column) {
-          case 'title':
-            await client.query('ALTER TABLE movies ADD COLUMN title VARCHAR(255) NOT NULL DEFAULT \'Unknown Movie\'');
-            break;
-          case 'year':
-            await client.query('ALTER TABLE movies ADD COLUMN year VARCHAR(10)');
-            break;
-          case 'imdb_id':
-            await client.query('ALTER TABLE movies ADD COLUMN imdb_id VARCHAR(20)');
-            break;
-          case 'image':
-            await client.query('ALTER TABLE movies ADD COLUMN image TEXT');
-            break;
-          case 'movie_password_hash':
-            await client.query('ALTER TABLE movies ADD COLUMN movie_password_hash TEXT NOT NULL DEFAULT $1', 
-              [await bcrypt.hash('defaultpassword', 10)]);
-            break;
-          case 'created_at':
-            await client.query('ALTER TABLE movies ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP');
-            break;
+        // First add the column with a temporary default value
+        await client.query(`
+          ALTER TABLE movies 
+          ADD COLUMN movie_password_hash TEXT NOT NULL DEFAULT 'temp_default_hash_123'
+        `);
+        
+        // Then update existing rows with proper hashes
+        const defaultHash = await bcrypt.hash('defaultpassword', 10);
+        await client.query(`
+          UPDATE movies 
+          SET movie_password_hash = $1 
+          WHERE movie_password_hash = 'temp_default_hash_123'
+        `, [defaultHash]);
+        
+        console.log('✅ movie_password_hash column added successfully');
+      } else {
+        console.log('✅ movie_password_hash column already exists');
+      }
+    } catch (columnError) {
+      console.log('⚠️ movie_password_hash column might already exist, continuing...');
+    }
+
+    // Check and add other columns if needed
+    const otherColumns = [
+      { name: 'title', type: 'VARCHAR(255) NOT NULL DEFAULT \'Unknown Movie\'' },
+      { name: 'year', type: 'VARCHAR(10)' },
+      { name: 'imdb_id', type: 'VARCHAR(20)' },
+      { name: 'image', type: 'TEXT' },
+      { name: 'created_at', type: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP' }
+    ];
+
+    for (const column of otherColumns) {
+      try {
+        const columnCheck = await client.query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'movies' 
+          AND column_name = $1
+        `, [column.name]);
+
+        if (columnCheck.rows.length === 0) {
+          console.log(`Adding missing column: ${column.name}...`);
+          await client.query(`ALTER TABLE movies ADD COLUMN ${column.name} ${column.type}`);
+          console.log(`✅ Column ${column.name} added successfully`);
         }
-        console.log(`✅ Column ${column} added successfully`);
+      } catch (error) {
+        console.log(`⚠️ Column ${column.name} might already exist, continuing...`);
       }
     }
 
@@ -162,6 +186,37 @@ async function initDB() {
   }
 }
 
+// Simple database reset function (use with caution)
+async function resetDatabase() {
+  let client;
+  try {
+    client = await pool.connect();
+    console.log('🔄 Resetting database...');
+    
+    await client.query('DROP TABLE IF EXISTS movies');
+    
+    await client.query(`
+      CREATE TABLE movies (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        year VARCHAR(10),
+        imdb_id VARCHAR(20),
+        image TEXT,
+        movie_password_hash TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    console.log('✅ Database reset successfully');
+    return true;
+  } catch (error) {
+    console.error('❌ Database reset failed:', error);
+    return false;
+  } finally {
+    if (client) client.release();
+  }
+}
+
 // Force database migration endpoint (for manual fixes)
 app.post('/api/admin/migrate', async (req, res) => {
   try {
@@ -170,6 +225,30 @@ app.post('/api/admin/migrate', async (req, res) => {
   } catch (error) {
     console.error('Migration error:', error);
     res.json({ ok: false, error: 'Migration failed: ' + error.message });
+  }
+});
+
+// Database reset endpoint (use with caution - will delete all data)
+app.post('/api/admin/reset-db', async (req, res) => {
+  const { confirm } = req.body;
+  
+  if (confirm !== 'YES_DELETE_EVERYTHING') {
+    return res.json({ 
+      ok: false, 
+      error: 'Safety confirmation required. Send confirm: "YES_DELETE_EVERYTHING" to reset database.' 
+    });
+  }
+  
+  try {
+    const success = await resetDatabase();
+    if (success) {
+      res.json({ ok: true, message: 'Database reset completed successfully' });
+    } else {
+      res.json({ ok: false, error: 'Database reset failed' });
+    }
+  } catch (error) {
+    console.error('Reset error:', error);
+    res.json({ ok: false, error: 'Reset failed: ' + error.message });
   }
 });
 
