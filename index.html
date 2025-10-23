@@ -153,70 +153,112 @@ let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
 let loadingTimer = null;
-let clickCount = 0;
-let detectionInterval = null;
+let audioInterval = null;
 let isMonitoring = false;
-const MAX_LOADING_CLICKS = 5;
-const LOADING_DURATION = 8000; // 8 seconds
+let audioDetected = false;
+const LOADING_DURATION = 10000; // 10 seconds
 
-// === First Click Detection ===
-function startFirstClickDetection() {
-  stopFirstClickDetection();
+// === Every Click Detection ===
+function startEveryClickDetection() {
+  stopEveryClickDetection();
   isMonitoring = true;
-  clickCount = 0;
+  audioDetected = false;
   
-  console.log('🖱️ Starting FIRST CLICK detection...');
+  console.log('🖱️ Starting EVERY CLICK detection...');
   
-  let firstClickTime = 0;
-  let clickDetected = false;
+  let audioContext = null;
+  let analyser = null;
+  let microphone = null;
   
-  detectionInterval = setInterval(() => {
-    if (!playerContainer.classList.contains('active') || !isMonitoring) {
-      stopFirstClickDetection();
-      return;
-    }
+  try {
+    // Create audio context
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
     
-    // Show loading screen immediately on FIRST click
-    if (clickCount > 0 && !clickDetected) {
-      clickDetected = true;
-      firstClickTime = Date.now();
-      console.log('🎯 FIRST CLICK DETECTED - Showing loading screen immediately');
+    // Capture microphone to detect system audio
+    navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      .then(function(stream) {
+        microphone = audioContext.createMediaStreamSource(stream);
+        microphone.connect(analyser);
+        
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        
+        audioInterval = setInterval(() => {
+          if (!playerContainer.classList.contains('active') || !isMonitoring) {
+            stopEveryClickDetection();
+            return;
+          }
+          
+          analyser.getByteFrequencyData(dataArray);
+          
+          // Calculate average volume
+          let sum = 0;
+          for (let i = 0; i < bufferLength; i++) {
+            sum += dataArray[i];
+          }
+          const average = sum / bufferLength;
+          
+          // If audio detected, stop showing loading screens
+          if (average > 10 && !audioDetected) {
+            audioDetected = true;
+            console.log('🔊 AUDIO DETECTED - Stopping loading screens');
+            hideLoadingScreen();
+          }
+          
+        }, 200); // Check every 200ms
+        
+      })
+      .catch(function(err) {
+        console.log('Microphone access denied, using click-only (no audio detection)');
+        // Continue without audio detection - clicks will always trigger loading
+      });
       
-      if (!loadingScreen.classList.contains('active')) {
-        showLoadingScreen();
-      }
-      
-      // Keep loading screen up for 8 seconds to cover watermark period
-      setTimeout(() => {
-        if (isMonitoring) {
-          hideLoadingScreen();
-          clickDetected = false;
-          clickCount = 0; // Reset for next sequence
-        }
-      }, LOADING_DURATION);
-    }
-    
-  }, 100); // Check every 100ms for fast response
+  } catch (error) {
+    console.log('Audio context failed, using click-only (no audio detection)');
+    // Continue without audio detection - clicks will always trigger loading
+  }
 }
 
-function stopFirstClickDetection() {
+function stopEveryClickDetection() {
   isMonitoring = false;
-  clickCount = 0;
-  if (detectionInterval) {
-    clearInterval(detectionInterval);
-    detectionInterval = null;
+  audioDetected = false;
+  if (audioInterval) {
+    clearInterval(audioInterval);
+    audioInterval = null;
   }
   if (loadingTimer) {
     clearTimeout(loadingTimer);
     loadingTimer = null;
   }
-  console.log('🛑 First click detection stopped');
+  console.log('🛑 Every click detection stopped');
+}
+
+function handlePlayerClick() {
+  if (!isMonitoring) return;
+  
+  // If audio hasn't been detected yet, show loading screen on EVERY click
+  if (!audioDetected) {
+    console.log('🖱️ CLICK detected - Showing loading screen for 10 seconds');
+    showLoadingScreen();
+    
+    // Auto-hide after 10 seconds (unless audio is detected)
+    if (loadingTimer) {
+      clearTimeout(loadingTimer);
+    }
+    loadingTimer = setTimeout(() => {
+      if (isMonitoring && !audioDetected) {
+        hideLoadingScreen();
+      }
+    }, LOADING_DURATION);
+  }
 }
 
 function showLoadingScreen() {
   if (!loadingScreen.classList.contains('active')) {
     loadingScreen.classList.add('active');
-    console.log('📺 Loading screen shown - covering FIRST watermark');
+    console.log('📺 Loading screen shown');
   }
 }
 
@@ -492,22 +534,19 @@ async function verifyMoviePassword() {
 }
 
 function showPlayer(embedUrl) {
-  clickCount = 0;
-  
   playerIframe.src = embedUrl;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
-  // Start FIRST CLICK detection immediately
-  startFirstClickDetection();
+  // Start every click detection immediately
+  startEveryClickDetection();
   
   let interactionDetected = false;
   const handleInteraction = () => {
     if (!interactionDetected) {
       interactionDetected = true;
-      clickCount++;
-      console.log(`🖱️ Click detected (${clickCount})`);
+      handlePlayerClick(); // Trigger loading screen on EVERY click
       setTimeout(() => {
         interactionDetected = false;
       }, 1000);
@@ -529,7 +568,7 @@ function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
   hideLoadingScreen();
-  stopFirstClickDetection();
+  stopEveryClickDetection();
   
   if (playerContainer._cleanUp) {
     playerContainer._cleanUp();
