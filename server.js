@@ -1,239 +1,178 @@
-// server.js - Backend Server
+// server.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { Pool } = require('pg');
 const path = require('path');
-const fetch = require('node-fetch');
+
+// Render Node 18 has fetch built in, fallback if not
+const fetch = global.fetch || ((...args) => import('node-fetch').then(({ default: f }) => f(...args)));
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-// Database connection
+const PORT = process.env.PORT || 3000;
+const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'boughton5';
+const EMBED_BASE = 'https://multiembed.mov/?video_id=';
+
+// --- PostgreSQL ---
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-// JWT Secret
-const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-key-change-in-production';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+// --- Auto-create table if missing (using your original schema) ---
+async function ensureTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS movies (
+      id SERIAL PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      year VARCHAR(10),
+      imdb_id VARCHAR(20),
+      image TEXT,
+      movie_password_hash TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  console.log('✅ Movies table ready');
+}
+ensureTable().catch(console.error);
 
-// Helper function to verify admin token
-function verifyAdminToken(req, res, next) {
-  const token = req.headers['authorization']?.split(' ')[1];
-  if (!token) {
-    return res.json({ ok: false, error: 'No token provided' });
-  }
-  
+// --- IMDb Search Helper ---
+async function searchImdb(title) {
+  const q = encodeURIComponent(title);
+  const url = `https://search.imdbot.workers.dev/?q=${q}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('IMDb search failed');
+  const data = await res.json();
+  const hit = (data.description || []).find(h => h['#IMDB_ID']);
+  if (!hit) return null;
+  const imdb_id = hit['#IMDB_ID'].startsWith('tt') ? hit['#IMDB_ID'] : 'tt' + hit['#IMDB_ID'];
+  return {
+    imdb_id,
+    title: hit['#TITLE'] || title,
+    year: hit['#YEAR'] || null,
+    image: hit.image || null
+  };
+}
+
+// --- Public: list movies ---
+app.get('/api/movies', async (_, res) => {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.role !== 'admin') {
-      return res.json({ ok: false, error: 'Invalid token' });
-    }
+    const result = await pool.query('SELECT id, title, year, image FROM movies ORDER BY created_at DESC');
+    res.json({ ok: true, movies: result.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: 'DB error' });
+  }
+});
+
+// --- Admin login ---
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body;
+  if (password !== ADMIN_PASSWORD) return res.status(401).json({ ok: false, error: 'Invalid admin password' });
+  const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '12h' });
+  res.json({ ok: true, token });
+});
+
+function requireAdmin(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth) return res.status(401).json({ ok: false, error: 'Missing auth' });
+  const [type, token] = auth.split(' ');
+  if (type !== 'Bearer') return res.status(401).json({ ok: false, error: 'Bad header' });
+  try {
+    const data = jwt.verify(token, JWT_SECRET);
+    if (data.role !== 'admin') throw new Error();
     next();
-  } catch (error) {
-    return res.json({ ok: false, error: 'Invalid token' });
+  } catch {
+    res.status(401).json({ ok: false, error: 'Invalid token' });
   }
 }
 
-// Original database initialization from your working version
-async function initDB() {
+// --- Add Movie (optional IMDb ID) ---
+app.post('/api/movies', requireAdmin, async (req, res) => {
   try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS movies (
-        id SERIAL PRIMARY KEY,
-        title VARCHAR(255) NOT NULL,
-        year VARCHAR(10),
-        imdb_id VARCHAR(20),
-        image TEXT,
-        movie_password_hash TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    console.log('Database initialized');
-  } catch (error) {
-    console.error('Database initialization failed:', error);
-  }
-}
+    const { name, imdbId, moviePassword } = req.body;
+    if ((!name && !imdbId) || !moviePassword)
+      return res.status(400).json({ ok: false, error: 'Provide movie name or IMDb ID and password' });
 
-// Routes
-
-// Serve main page
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-// Admin login
-app.post('/api/admin/login', async (req, res) => {
-  const { password } = req.body;
-  
-  if (!password) {
-    return res.json({ ok: false, error: 'Password required' });
-  }
-  
-  try {
-    if (password === ADMIN_PASSWORD) {
-      const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '24h' });
-      return res.json({ ok: true, token });
-    } else {
-      return res.json({ ok: false, error: 'Invalid password' });
-    }
-  } catch (error) {
-    console.error('Login error:', error);
-    return res.json({ ok: false, error: 'Login failed' });
-  }
-});
-
-// Get all movies
-app.get('/api/movies', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT id, title, year, imdb_id, image FROM movies ORDER BY title');
-    res.json({ 
-      ok: true, 
-      movies: result.rows.map(movie => ({
-        id: movie.id,
-        title: movie.title,
-        year: movie.year,
-        imdbId: movie.imdb_id,
-        image: movie.image
-      }))
-    });
-  } catch (error) {
-    console.error('Get movies error:', error);
-    res.json({ ok: false, error: 'Failed to fetch movies' });
-  }
-});
-
-// Add new movie
-app.post('/api/movies', verifyAdminToken, async (req, res) => {
-  const { name, imdbId, moviePassword } = req.body;
-  
-  if ((!name && !imdbId) || !moviePassword) {
-    return res.json({ ok: false, error: 'Movie title or IMDb ID and password required' });
-  }
-  
-  try {
-    let movieData = { title: name, year: null, image: null };
-    
-    // Try to fetch movie data from OMDB if IMDb ID provided
+    let movieData;
     if (imdbId) {
-      try {
-        const omdbResponse = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${process.env.OMDB_API_KEY || 'demo'}`);
-        const omdbData = await omdbResponse.json();
-        
-        if (omdbData.Response === 'True') {
-          movieData.title = omdbData.Title;
-          movieData.year = omdbData.Year;
-          movieData.image = omdbData.Poster !== 'N/A' ? omdbData.Poster : null;
-        }
-      } catch (omdbError) {
-        console.log('OMDB fetch failed, using provided data');
-      }
-    }
-    
-    // Hash movie password
-    const passwordHash = await bcrypt.hash(moviePassword, 10);
-    
-    const result = await pool.query(
-      'INSERT INTO movies (title, year, imdb_id, image, movie_password_hash) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [movieData.title, movieData.year, imdbId, movieData.image, passwordHash]
-    );
-    
-    res.json({ ok: true, movieId: result.rows[0].id });
-  } catch (error) {
-    console.error('Add movie error:', error);
-    res.json({ ok: false, error: 'Failed to add movie' });
-  }
-});
-
-// Delete movie
-app.delete('/api/movies/:id', verifyAdminToken, async (req, res) => {
-  const { id } = req.params;
-  
-  try {
-    await pool.query('DELETE FROM movies WHERE id = $1', [id]);
-    res.json({ ok: true });
-  } catch (error) {
-    console.error('Delete movie error:', error);
-    res.json({ ok: false, error: 'Failed to delete movie' });
-  }
-});
-
-// Authorize movie access
-app.post('/api/movies/:id/authorize', async (req, res) => {
-  const { id } = req.params;
-  const { password } = req.body;
-  
-  if (!password) {
-    return res.json({ ok: false, error: 'Password required' });
-  }
-  
-  try {
-    const result = await pool.query('SELECT movie_password_hash FROM movies WHERE id = $1', [id]);
-    
-    if (result.rows.length === 0) {
-      return res.json({ ok: false, error: 'Movie not found' });
-    }
-    
-    const isValid = await bcrypt.compare(password, result.rows[0].movie_password_hash);
-    
-    if (isValid) {
-      const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
-      return res.json({ ok: true, token });
+      movieData = {
+        imdb_id: imdbId.startsWith('tt') ? imdbId : 'tt' + imdbId,
+        title: name || imdbId,
+        year: null,
+        image: null
+      };
     } else {
-      return res.json({ ok: false, error: 'Wrong password' });
+      const search = await searchImdb(name);
+      if (!search) return res.status(404).json({ ok: false, error: 'No IMDb match found' });
+      movieData = search;
     }
-  } catch (error) {
-    console.error('Authorization error:', error);
-    res.json({ ok: false, error: 'Authorization failed' });
+
+    const hash = await bcrypt.hash(moviePassword, 10);
+    const result = await pool.query(
+      `INSERT INTO movies (title, imdb_id, movie_password_hash, year, image)
+       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+      [movieData.title, movieData.imdb_id, hash, movieData.year, movieData.image]
+    );
+
+    res.json({ ok: true, movieId: result.rows[0].id });
+  } catch (err) {
+    console.error('Add movie error:', err);
+    res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
 
-// Get movie embed URL
-app.get('/api/movies/:id/embed', async (req, res) => {
-  const { id } = req.params;
-  const token = req.headers['authorization']?.split(' ')[1];
-  
-  if (!token) {
-    return res.json({ ok: false, error: 'No token provided' });
-  }
-  
+// --- Delete movie ---
+app.delete('/api/movies/:id', requireAdmin, async (req, res) => {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded.movieId !== id) {
-      return res.json({ ok: false, error: 'Invalid token' });
-    }
-    
-    const result = await pool.query('SELECT imdb_id FROM movies WHERE id = $1', [id]);
-    
-    if (result.rows.length === 0) {
-      return res.json({ ok: false, error: 'Movie not found' });
-    }
-    
-    const imdbId = result.rows[0].imdb_id;
-    
-    if (!imdbId) {
-      return res.json({ ok: false, error: 'No IMDb ID for this movie' });
-    }
-    
-    const embedUrl = `https://multiembed.mov/?video_id=${imdbId}`;
-    res.json({ ok: true, url: embedUrl });
-  } catch (error) {
-    console.error('Embed error:', error);
-    res.json({ ok: false, error: 'Failed to get embed URL' });
+    const id = req.params.id;
+    const r = await pool.query('DELETE FROM movies WHERE id=$1 RETURNING id', [id]);
+    if (!r.rowCount) return res.status(404).json({ ok: false, error: 'Movie not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: 'DB error' });
   }
 });
 
-// Start server
-app.listen(PORT, async () => {
-  await initDB();
-  console.log(`Server running on port ${PORT}`);
+// --- Authorize viewer ---
+app.post('/api/movies/:id/authorize', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { password } = req.body;
+    const r = await pool.query('SELECT movie_password_hash FROM movies WHERE id=$1', [id]);
+    if (!r.rowCount) return res.status(404).json({ ok: false, error: 'Movie not found' });
+    const match = await bcrypt.compare(password, r.rows[0].movie_password_hash);
+    if (!match) return res.status(401).json({ ok: false, error: 'Wrong password' });
+    const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
+    res.json({ ok: true, token });
+  } catch (err) {
+    console.error('Authorization error:', err);
+    res.status(500).json({ ok: false, error: 'Authorization failed' });
+  }
 });
+
+// --- Get embed (requires valid token) ---
+app.get('/api/movies/:id/embed', async (req, res) => {
+  try {
+    const auth = req.headers.authorization || '';
+    const [type, token] = auth.split(' ');
+    if (type !== 'Bearer') return res.status(401).json({ ok: false, error: 'Missing token' });
+    const data = jwt.verify(token, JWT_SECRET);
+    const movieId = data.movieId;
+    const r = await pool.query('SELECT imdb_id FROM movies WHERE id=$1', [movieId]);
+    if (!r.rowCount) return res.status(404).json({ ok: false, error: 'Movie not found' });
+    res.json({ ok: true, url: EMBED_BASE + r.rows[0].imdb_id });
+  } catch {
+    res.status(401).json({ ok: false, error: 'Invalid token' });
+  }
+});
+
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
