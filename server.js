@@ -1,179 +1,481 @@
-// server.js
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const { Pool } = require('pg');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const path = require('path');
-
-// Render Node 18 has fetch built in, fallback if not
-const fetch = global.fetch || ((...args) => import('node-fetch').then(({ default: f }) => f(...args)));
-
-const app = express();
-app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname)));
-
-const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'boughton5';
+const API = location.origin + '/api';
 const EMBED_BASE = 'https://multiembed.mov/?video_id=';
+const movieGrid = document.getElementById('movieGrid');
+const playerIframe = document.getElementById('playerIframe');
+const playerContainer = document.getElementById('playerContainer');
+const adminBtn = document.getElementById('adminBtn');
+const adminPanel = document.getElementById('adminPanel');
+const loginModal = document.getElementById('loginModal');
+const addMovieModal = document.getElementById('addMovieModal');
+const passwordModal = document.getElementById('passwordModal');
+const loadingScreen = document.getElementById('loadingScreen');
+const searchInput = document.getElementById('searchInput');
+const watermarkElement = document.querySelector('.iframe-overlay');
 
-// --- PostgreSQL ---
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-});
+let adminToken = null;
+let currentMovies = [];
+let selectedMovieId = null;
+let loadingTimer = null;
+let audioInterval = null;
+let isMonitoring = false;
+let audioDetected = false;
+let clickDetected = false;
+const LOADING_DURATION = 10000; // 10 seconds
 
-// --- Auto-create table if missing ---
-async function ensureTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS movies (
-      id SERIAL PRIMARY KEY,
-      title TEXT NOT NULL,
-      imdb_id TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      year TEXT,
-      image TEXT,
-      created_at TIMESTAMP DEFAULT NOW()
-    );
-  `);
-  console.log('✅ Movies table ready');
+// === Every Click Detection ===
+function startEveryClickDetection() {
+  stopEveryClickDetection();
+  isMonitoring = true;
+  audioDetected = false;
+  clickDetected = false;
+  
+  console.log('🖱️ Starting EVERY CLICK detection...');
+  
+  let audioContext = null;
+  let analyser = null;
+  let microphone = null;
+  
+  try {
+    // Create audio context
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    
+    // Capture microphone to detect system audio
+    navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      .then(function(stream) {
+        microphone = audioContext.createMediaStreamSource(stream);
+        microphone.connect(analyser);
+        
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        
+        audioInterval = setInterval(() => {
+          if (!playerContainer.classList.contains('active') || !isMonitoring) {
+            stopEveryClickDetection();
+            return;
+          }
+          
+          analyser.getByteFrequencyData(dataArray);
+          
+          // Calculate average volume
+          let sum = 0;
+          for (let i = 0; i < bufferLength; i++) {
+            sum += dataArray[i];
+          }
+          const average = sum / bufferLength;
+          
+          // If audio detected, stop showing loading screens
+          if (average > 10 && !audioDetected) {
+            audioDetected = true;
+            console.log('🔊 AUDIO DETECTED - Stopping loading screens');
+            hideLoadingScreen();
+          }
+          
+        }, 200); // Check every 200ms
+        
+      })
+      .catch(function(err) {
+        console.log('Microphone access denied, using click-only (no audio detection)');
+        // Continue without audio detection - clicks will always trigger loading
+      });
+      
+  } catch (error) {
+    console.log('Audio context failed, using click-only (no audio detection)');
+    // Continue without audio detection - clicks will always trigger loading
+  }
 }
-ensureTable().catch(console.error);
 
-// --- IMDb Search Helper ---
-async function searchImdb(title) {
-  const q = encodeURIComponent(title);
-  const url = `https://search.imdbot.workers.dev/?q=${q}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('IMDb search failed');
-  const data = await res.json();
-  const hit = (data.description || []).find(h => h['#IMDB_ID']);
-  if (!hit) return null;
-  const imdb_id = hit['#IMDB_ID'].startsWith('tt') ? hit['#IMDB_ID'] : 'tt' + hit['#IMDB_ID'];
-  return {
-    imdb_id,
-    title: hit['#TITLE'] || title,
-    year: hit['#YEAR'] || null,
-    image: hit.image || null
+function stopEveryClickDetection() {
+  isMonitoring = false;
+  audioDetected = false;
+  clickDetected = false;
+  if (audioInterval) {
+    clearInterval(audioInterval);
+    audioInterval = null;
+  }
+  if (loadingTimer) {
+    clearTimeout(loadingTimer);
+    loadingTimer = null;
+  }
+  console.log('🛑 Every click detection stopped');
+}
+
+function handlePlayerClick() {
+  if (!isMonitoring) return;
+  
+  // If audio hasn't been detected yet, show loading screen on EVERY click
+  if (!audioDetected) {
+    console.log('🖱️ CLICK detected - Showing loading screen for 10 seconds');
+    showLoadingScreen();
+    
+    // Auto-hide after 10 seconds (unless audio is detected)
+    if (loadingTimer) {
+      clearTimeout(loadingTimer);
+    }
+    loadingTimer = setTimeout(() => {
+      if (isMonitoring && !audioDetected) {
+        hideLoadingScreen();
+      }
+    }, LOADING_DURATION);
+  }
+}
+
+function showLoadingScreen() {
+  if (!loadingScreen.classList.contains('active')) {
+    loadingScreen.classList.add('active');
+    console.log('📺 Loading screen shown');
+  }
+}
+
+function hideLoadingScreen() {
+  if (loadingScreen.classList.contains('active')) {
+    loadingScreen.classList.remove('active');
+    console.log('📺 Loading screen hidden');
+  }
+}
+
+// === Search Functionality ===
+function filterMovies(searchTerm) {
+  const filteredMovies = currentMovies.filter(movie => 
+    movie.title.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  displayMovies(filteredMovies);
+}
+
+function displayMovies(movies) {
+  movieGrid.innerHTML = '';
+  if (movies.length === 0) {
+    movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
+    return;
+  }
+  movies.forEach(movie => {
+    createMovieCard(movie);
+  });
+}
+
+async function getMoviePoster(movieTitle, year = '') {
+  try {
+    const response = await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(movieTitle)}`);
+    const data = await response.json();
+    if (data.length > 0 && data[0].show.image && data[0].show.image.medium) {
+      return data[0].show.image.medium;
+    }
+  } catch (error) {
+    console.log('TVMaze search failed');
+  }
+  
+  try {
+    const wikiResponse = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(movieTitle.replace(/ /g, '_'))}`);
+    const wikiData = await wikiResponse.json();
+    if (wikiData.thumbnail && wikiData.thumbnail.source) {
+      return wikiData.thumbnail.source;
+    }
+  } catch (error) {
+    console.log('Wikipedia search failed');
+  }
+  
+  return `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(movieTitle.substring(0, 20))}`;
+}
+
+async function createMovieCard(movie) {
+  try {
+    let img = movie.image;
+    let year = movie.year || 'N/A';
+    const poster = await getMoviePoster(movie.title, movie.year);
+    if (!poster.includes('placeholder.com')) {
+      img = poster;
+    } else if (!img || img.includes('placeholder.com')) {
+      img = poster;
+    }
+    
+    const card = document.createElement('div');
+    card.className = 'movie-card';
+    card.innerHTML = `
+      <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+      <div class="movie-info"><h3>${movie.title}</h3><p>${year}</p></div>`;
+    card.onclick = () => requestMoviePassword(movie.id, movie.title);
+    movieGrid.appendChild(card);
+  } catch (e) {
+    console.error('Movie card render failed for', movie.title, e);
+    const card = document.createElement('div');
+    card.className = 'movie-card';
+    card.innerHTML = `
+      <img src="https://via.placeholder.com/300x450/333/fff?text=No+Poster">
+      <div class="movie-info"><h3>${movie.title}</h3><p>${movie.year || 'N/A'}</p></div>`;
+    card.onclick = () => requestMoviePassword(movie.id, movie.title);
+    movieGrid.appendChild(card);
+  }
+}
+
+// === Admin Functions ===
+function openAdminPanel() {
+  loginModal.classList.add('active');
+}
+
+function closeLoginModal() {
+  loginModal.classList.remove('active');
+}
+
+function closeAddMovieModal() {
+  addMovieModal.classList.remove('active');
+}
+
+async function adminLogin() {
+  const password = document.getElementById('adminPassword').value;
+  if (!password) return alert('Please enter password');
+  
+  try {
+    const res = await fetch(API + '/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      adminToken = data.token;
+      loginModal.classList.remove('active');
+      showAdminPanel();
+      loadAdminMovies();
+    } else {
+      alert('Invalid password');
+    }
+  } catch (e) {
+    console.error('Login failed', e);
+    alert('Login failed');
+  }
+}
+
+function showAdminPanel() {
+  movieGrid.style.display = 'none';
+  adminPanel.classList.add('active');
+  adminPanel.innerHTML = `
+    <h2>Admin Panel</h2>
+    <div class="admin-actions">
+      <button class="admin-btn" onclick="openAddMovieModal()">Add Movie</button>
+      <button class="admin-btn" onclick="exitAdmin()">Exit Admin</button>
+    </div>
+    <div class="movie-list-admin" id="movieListAdmin"></div>
+  `;
+}
+
+function exitAdmin() {
+  adminToken = null;
+  adminPanel.classList.remove('active');
+  movieGrid.style.display = 'grid';
+}
+
+function openAddMovieModal() {
+  addMovieModal.classList.add('active');
+}
+
+async function addMovie() {
+  const title = document.getElementById('movieTitle').value;
+  const imdbId = document.getElementById('movieImdbId').value;
+  const password = document.getElementById('moviePassword').value;
+  
+  if ((!title && !imdbId) || !password) {
+    return alert('Please provide movie title or IMDb ID and password');
+  }
+  
+  try {
+    const res = await fetch(API + '/movies', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ 
+        name: title, 
+        imdbId: imdbId, 
+        moviePassword: password 
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      alert('Movie added successfully');
+      closeAddMovieModal();
+      loadAdminMovies();
+      loadMovies();
+    } else {
+      alert('Error: ' + data.error);
+    }
+  } catch (e) {
+    console.error('Add movie failed', e);
+    alert('Failed to add movie');
+  }
+}
+
+async function loadAdminMovies() {
+  try {
+    const res = await fetch(API + '/movies');
+    const data = await res.json();
+    if (data.ok) {
+      currentMovies = data.movies;
+      const movieListAdmin = document.getElementById('movieListAdmin');
+      movieListAdmin.innerHTML = '<h3>Movies</h3>';
+      
+      data.movies.forEach(movie => {
+        const movieItem = document.createElement('div');
+        movieItem.className = 'movie-item-admin';
+        movieItem.innerHTML = `
+          <div>
+            <strong>${movie.title}</strong> ${movie.year ? `(${movie.year})` : ''}
+          </div>
+          <button onclick="deleteMovie(${movie.id})">Delete</button>
+        `;
+        movieListAdmin.appendChild(movieItem);
+      });
+    }
+  } catch (e) {
+    console.error('Failed to load admin movies', e);
+  }
+}
+
+async function deleteMovie(id) {
+  if (!confirm('Are you sure you want to delete this movie?')) return;
+  
+  try {
+    const res = await fetch(API + '/movies/' + id, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${adminToken}`
+      }
+    });
+    const data = await res.json();
+    if (data.ok) {
+      loadAdminMovies();
+      loadMovies();
+    } else {
+      alert('Error: ' + data.error);
+    }
+  } catch (e) {
+    console.error('Delete failed', e);
+    alert('Failed to delete movie');
+  }
+}
+
+// === Movie Playback ===
+function requestMoviePassword(movieId, movieTitle) {
+  selectedMovieId = movieId;
+  document.getElementById('passwordMovieTitle').textContent = movieTitle;
+  passwordModal.classList.add('active');
+}
+
+function closePasswordModal() {
+  passwordModal.classList.remove('active');
+  selectedMovieId = null;
+}
+
+async function verifyMoviePassword() {
+  const password = document.getElementById('moviePasswordInput').value;
+  if (!password) return alert('Please enter password');
+  
+  try {
+    const res = await fetch(API + '/movies/' + selectedMovieId + '/authorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
+        headers: {
+          'Authorization': `Bearer ${data.token}`
+        }
+      });
+      const embedData = await embedRes.json();
+      if (embedData.ok) {
+        showPlayer(embedData.url);
+      } else {
+        alert('Error: ' + embedData.error);
+      }
+    } else {
+      alert('Wrong password');
+    }
+  } catch (e) {
+    console.error('Password verification failed', e);
+    alert('Error verifying password');
+  }
+}
+
+function showPlayer(embedUrl) {
+  // RESET everything when player opens
+  stopEveryClickDetection();
+  
+  playerIframe.src = embedUrl;
+  playerContainer.classList.add('active');
+  passwordModal.classList.remove('active');
+  document.getElementById('moviePasswordInput').value = '';
+  
+  // Start fresh detection
+  startEveryClickDetection();
+  
+  let interactionDetected = false;
+  const handleInteraction = () => {
+    if (!interactionDetected) {
+      interactionDetected = true;
+      handlePlayerClick(); // Trigger loading screen on EVERY click
+      setTimeout(() => {
+        interactionDetected = false;
+      }, 1000);
+    }
+  };
+  
+  window.addEventListener('blur', handleInteraction);
+  playerContainer.addEventListener('click', handleInteraction);
+  playerContainer.addEventListener('mousedown', handleInteraction);
+  
+  playerContainer._cleanUp = () => {
+    window.removeEventListener('blur', handleInteraction);
+    playerContainer.removeEventListener('click', handleInteraction);
+    playerContainer.removeEventListener('mousedown', handleInteraction);
   };
 }
 
-// --- Public: list movies ---
-app.get('/api/movies', async (_, res) => {
-  try {
-    const result = await pool.query('SELECT id, title, year, image FROM movies ORDER BY created_at DESC');
-    res.json({ ok: true, movies: result.rows });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: 'DB error' });
-  }
-});
-
-// --- Admin login ---
-app.post('/api/admin/login', (req, res) => {
-  const { password } = req.body;
-  if (password !== ADMIN_PASSWORD) return res.status(401).json({ ok: false, error: 'Invalid admin password' });
-  const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '12h' });
-  res.json({ ok: true, token });
-});
-
-function requireAdmin(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth) return res.status(401).json({ ok: false, error: 'Missing auth' });
-  const [type, token] = auth.split(' ');
-  if (type !== 'Bearer') return res.status(401).json({ ok: false, error: 'Bad header' });
-  try {
-    const data = jwt.verify(token, JWT_SECRET);
-    if (data.role !== 'admin') throw new Error();
-    next();
-  } catch {
-    res.status(401).json({ ok: false, error: 'Invalid token' });
+function closePlayer() {
+  playerContainer.classList.remove('active');
+  playerIframe.src = '';
+  hideLoadingScreen();
+  stopEveryClickDetection();
+  
+  if (playerContainer._cleanUp) {
+    playerContainer._cleanUp();
   }
 }
 
-// --- Add Movie (optional IMDb ID) ---
-app.post('/api/movies', requireAdmin, async (req, res) => {
+// === Public Movie Loading ===
+async function loadMovies() {
+  movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">Loading...</p>';
   try {
-    const { name, imdbId, moviePassword } = req.body;
-    if ((!name && !imdbId) || !moviePassword)
-      return res.status(400).json({ ok: false, error: 'Provide movie name or IMDb ID and password' });
-
-    let movieData;
-    if (imdbId) {
-      movieData = {
-        imdb_id: imdbId.startsWith('tt') ? imdbId : 'tt' + imdbId,
-        title: name || imdbId,
-        year: null,
-        image: null
-      };
-    } else {
-      const search = await searchImdb(name);
-      if (!search) return res.status(404).json({ ok: false, error: 'No IMDb match found' });
-      movieData = search;
+    const res = await fetch(API + '/movies');
+    const data = await res.json();
+    if (!data.ok || !data.movies.length) {
+      movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">No movies found.</p>';
+      return;
     }
+    movieGrid.innerHTML = '';
+    currentMovies = data.movies;
+    displayMovies(currentMovies);
+  } catch (e) {
+    console.error('Backend fetch failed', e);
+    movieGrid.innerHTML = '<p style="color:red;text-align:center;">Error loading movies.</p>';
+  }
+}
 
-    const hash = await bcrypt.hash(moviePassword, 10);
-    const result = await pool.query(
-      `INSERT INTO movies (title, imdb_id, password_hash, year, image)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (imdb_id) DO UPDATE SET title=EXCLUDED.title RETURNING *`,
-      [movieData.title, movieData.imdb_id, hash, movieData.year, movieData.image]
-    );
-
-    res.json({ ok: true, movie: result.rows[0] });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: 'Server error' });
+// Event Listeners
+adminBtn.addEventListener('click', openAdminPanel);
+searchInput.addEventListener('input', (e) => {
+  filterMovies(e.target.value);
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closePlayer();
+    closeLoginModal();
+    closeAddMovieModal();
+    closePasswordModal();
   }
 });
 
-// --- Delete movie ---
-app.delete('/api/movies/:id', requireAdmin, async (req, res) => {
-  try {
-    const id = req.params.id;
-    const r = await pool.query('DELETE FROM movies WHERE id=$1 RETURNING id', [id]);
-    if (!r.rowCount) return res.status(404).json({ ok: false, error: 'Movie not found' });
-    res.json({ ok: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: 'DB error' });
-  }
-});
-
-// --- Authorize viewer ---
-app.post('/api/movies/:id/authorize', async (req, res) => {
-  const id = req.params.id;
-  const { password } = req.body;
-  const r = await pool.query('SELECT password_hash FROM movies WHERE id=$1', [id]);
-  if (!r.rowCount) return res.status(404).json({ ok: false, error: 'Movie not found' });
-  const match = await bcrypt.compare(password, r.rows[0].password_hash);
-  if (!match) return res.status(401).json({ ok: false, error: 'Wrong password' });
-  const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '10m' });
-  res.json({ ok: true, token });
-});
-
-// --- Get embed (requires valid token) ---
-app.get('/api/movies/:id/embed', async (req, res) => {
-  try {
-    const auth = req.headers.authorization || '';
-    const [type, token] = auth.split(' ');
-    if (type !== 'Bearer') return res.status(401).json({ ok: false, error: 'Missing token' });
-    const data = jwt.verify(token, JWT_SECRET);
-    const movieId = data.movieId;
-    const r = await pool.query('SELECT imdb_id FROM movies WHERE id=$1', [movieId]);
-    if (!r.rowCount) return res.status(404).json({ ok: false, error: 'Movie not found' });
-    res.json({ ok: true, url: EMBED_BASE + r.rows[0].imdb_id });
-  } catch {
-    res.status(401).json({ ok: false, error: 'Invalid token' });
-  }
-});
-
-// Serve the HTML file
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+// Initialize
+loadMovies();
