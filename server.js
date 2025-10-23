@@ -26,17 +26,17 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-// --- Auto-create table if missing (using your original schema) ---
+// --- Auto-create table if missing (using EXACT schema from your database) ---
 async function ensureTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS movies (
       id SERIAL PRIMARY KEY,
-      title VARCHAR(255) NOT NULL,
-      year VARCHAR(10),
-      imdb_id VARCHAR(20),
+      title TEXT NOT NULL,
+      imdb_id TEXT,
+      password_hash TEXT NOT NULL,
+      year TEXT,
       image TEXT,
-      movie_password_hash TEXT NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP DEFAULT NOW()
     )
   `);
   console.log('✅ Movies table ready');
@@ -117,7 +117,7 @@ app.post('/api/movies', requireAdmin, async (req, res) => {
 
     const hash = await bcrypt.hash(moviePassword, 10);
     const result = await pool.query(
-      `INSERT INTO movies (title, imdb_id, movie_password_hash, year, image)
+      `INSERT INTO movies (title, imdb_id, password_hash, year, image)
        VALUES ($1, $2, $3, $4, $5) RETURNING id`,
       [movieData.title, movieData.imdb_id, hash, movieData.year, movieData.image]
     );
@@ -147,9 +147,9 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   try {
     const id = req.params.id;
     const { password } = req.body;
-    const r = await pool.query('SELECT movie_password_hash FROM movies WHERE id=$1', [id]);
+    const r = await pool.query('SELECT password_hash FROM movies WHERE id=$1', [id]);
     if (!r.rowCount) return res.status(404).json({ ok: false, error: 'Movie not found' });
-    const match = await bcrypt.compare(password, r.rows[0].movie_password_hash);
+    const match = await bcrypt.compare(password, r.rows[0].password_hash);
     if (!match) return res.status(401).json({ ok: false, error: 'Wrong password' });
     const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
     res.json({ ok: true, token });
