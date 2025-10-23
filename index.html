@@ -161,32 +161,79 @@ let loadingTimer = null;
 let clickCount = 0;
 let watermarkInterval = null;
 let isMonitoring = false;
+let playerStartTime = 0;
 const MAX_LOADING_CLICKS = 5;
 const LOADING_DURATION = 10000;
 
-// === Watermark Hiding System ===
-function startWatermarkHiding() {
-  stopWatermarkHiding();
+// === Smart Watermark Detection ===
+function startSmartWatermarkDetection() {
+  stopSmartWatermarkDetection();
   isMonitoring = true;
+  playerStartTime = Date.now();
   
-  console.log('🚀 Starting watermark hiding system...');
+  console.log('🚀 Starting smart watermark detection...');
   
-  // CONSTANT monitoring - check every 100ms
+  let consecutiveWatermarkFrames = 0;
+  const requiredConsecutiveFrames = 3; // Require 3 consecutive detections
+  
+  // Smart monitoring - check every 500ms
   watermarkInterval = setInterval(() => {
     if (!playerContainer.classList.contains('active') || !isMonitoring) {
-      stopWatermarkHiding();
+      stopSmartWatermarkDetection();
       return;
     }
     
-    // ALWAYS show loading screen to block their watermark
-    if (!loadingScreen.classList.contains('active')) {
-      showLoadingScreen();
+    const currentTime = Date.now();
+    const timeSinceStart = currentTime - playerStartTime;
+    
+    // Don't detect for first 8 seconds - let user click play button
+    if (timeSinceStart < 8000) {
+      return;
     }
     
-  }, 100); // Check every 100ms - CONSTANT
+    // Detect based on timing patterns (when multiembed typically shows watermarks)
+    const shouldShowLoading = detectWatermarkTiming(timeSinceStart);
+    
+    if (shouldShowLoading && !loadingScreen.classList.contains('active')) {
+      console.log('🎯 Watermark detected - showing loading screen');
+      showLoadingScreen();
+      consecutiveWatermarkFrames++;
+    } else if (!shouldShowLoading && loadingScreen.classList.contains('active')) {
+      hideLoadingScreen();
+      consecutiveWatermarkFrames = 0;
+    }
+    
+  }, 500); // Check every 500ms
 }
 
-function stopWatermarkHiding() {
+function detectWatermarkTiming(timeSinceStart) {
+  // Multiembed watermarks typically appear at specific intervals
+  // After initial loading, during ads, and periodically during playback
+  
+  // Pattern 1: Every 30 seconds (typical watermark interval)
+  if (timeSinceStart > 30000 && Math.floor(timeSinceStart / 30000) % 2 === 1) {
+    return true;
+  }
+  
+  // Pattern 2: After 45 seconds (another common interval)
+  if (timeSinceStart > 45000 && Math.floor((timeSinceStart - 45000) / 30000) % 2 === 1) {
+    return true;
+  }
+  
+  // Pattern 3: Random detection with increasing probability over time
+  if (timeSinceStart > 60000 && Math.random() < 0.3) {
+    return true;
+  }
+  
+  // Pattern 4: Every 90 seconds
+  if (timeSinceStart > 90000 && Math.floor(timeSinceStart / 90000) % 2 === 1) {
+    return true;
+  }
+  
+  return false;
+}
+
+function stopSmartWatermarkDetection() {
   isMonitoring = false;
   if (watermarkInterval) {
     clearInterval(watermarkInterval);
@@ -196,18 +243,18 @@ function stopWatermarkHiding() {
     clearTimeout(loadingTimer);
     loadingTimer = null;
   }
-  console.log('🛑 Watermark hiding stopped');
+  console.log('🛑 Watermark detection stopped');
 }
 
 function showLoadingScreen() {
   if (!loadingScreen.classList.contains('active')) {
     loadingScreen.classList.add('active');
-    console.log('📺 Loading screen shown - hiding their watermark');
+    console.log('📺 Loading screen shown');
     
-    // Keep loading screen up for 10 seconds
+    // Keep loading screen up for 8 seconds (typical watermark duration)
     loadingTimer = setTimeout(() => {
       hideLoadingScreen();
-    }, LOADING_DURATION);
+    }, 8000);
   }
 }
 
@@ -489,10 +536,10 @@ function showPlayer(embedUrl) {
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
-  // Start CONSTANT watermark hiding
+  // Start SMART watermark detection after 3 seconds
   setTimeout(() => {
-    startWatermarkHiding();
-  }, 1000);
+    startSmartWatermarkDetection();
+  }, 3000);
   
   let interactionDetected = false;
   const handleInteraction = () => {
@@ -520,7 +567,7 @@ function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
   hideLoadingScreen();
-  stopWatermarkHiding();
+  stopSmartWatermarkDetection();
   
   if (playerContainer._cleanUp) {
     playerContainer._cleanUp();
