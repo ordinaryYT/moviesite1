@@ -50,11 +50,14 @@
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
   
   /* Loading Screen Styles */
-  #loadingScreen{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:10001;align-items:center;justify-content:center;flex-direction:column}
+  #loadingScreen{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:10002;align-items:center;justify-content:center;flex-direction:column}
   #loadingScreen.active{display:flex}
   .loading-spinner{width:60px;height:60px;border:5px solid #333;border-top:5px solid #e50914;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:1rem}
   .loading-text{color:#fff;font-size:1.2rem;text-align:center}
   @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
+
+  /* Watermark Blocker */
+  .watermark-blocker{position:absolute;bottom:10px;right:10px;width:160px;height:55px;background:#000;z-index:10001;pointer-events:none}
 </style>
 </head>
 <body>
@@ -131,6 +134,7 @@
   <div class="player-wrapper">
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
+    <div class="watermark-blocker"></div>
   </div>
 </div>
 
@@ -147,44 +151,96 @@ const addMovieModal = document.getElementById('addMovieModal');
 const passwordModal = document.getElementById('passwordModal');
 const loadingScreen = document.getElementById('loadingScreen');
 const searchInput = document.getElementById('searchInput');
+const watermarkElement = document.querySelector('.iframe-overlay');
+const watermarkBlocker = document.querySelector('.watermark-blocker');
 
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
 let loadingTimer = null;
 let clickCount = 0;
+let watermarkInterval = null;
+let isMonitoring = false;
 const MAX_LOADING_CLICKS = 5;
-const LOADING_DURATION = 10000; // 10 seconds
+const LOADING_DURATION = 10000;
+
+// === Watermark Hiding System ===
+function startWatermarkHiding() {
+  stopWatermarkHiding();
+  isMonitoring = true;
+  
+  console.log('🚀 Starting watermark hiding system...');
+  
+  // CONSTANT monitoring - check every 100ms
+  watermarkInterval = setInterval(() => {
+    if (!playerContainer.classList.contains('active') || !isMonitoring) {
+      stopWatermarkHiding();
+      return;
+    }
+    
+    // ALWAYS show loading screen to block their watermark
+    if (!loadingScreen.classList.contains('active')) {
+      showLoadingScreen();
+    }
+    
+  }, 100); // Check every 100ms - CONSTANT
+}
+
+function stopWatermarkHiding() {
+  isMonitoring = false;
+  if (watermarkInterval) {
+    clearInterval(watermarkInterval);
+    watermarkInterval = null;
+  }
+  if (loadingTimer) {
+    clearTimeout(loadingTimer);
+    loadingTimer = null;
+  }
+  console.log('🛑 Watermark hiding stopped');
+}
+
+function showLoadingScreen() {
+  if (!loadingScreen.classList.contains('active')) {
+    loadingScreen.classList.add('active');
+    console.log('📺 Loading screen shown - hiding their watermark');
+    
+    // Keep loading screen up for 10 seconds
+    loadingTimer = setTimeout(() => {
+      hideLoadingScreen();
+    }, LOADING_DURATION);
+  }
+}
+
+function hideLoadingScreen() {
+  if (loadingScreen.classList.contains('active')) {
+    loadingScreen.classList.remove('active');
+    console.log('📺 Loading screen hidden');
+  }
+}
 
 // === Search Functionality ===
 function filterMovies(searchTerm) {
   const filteredMovies = currentMovies.filter(movie => 
     movie.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
-  
   displayMovies(filteredMovies);
 }
 
 function displayMovies(movies) {
   movieGrid.innerHTML = '';
-  
   if (movies.length === 0) {
     movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
     return;
   }
-  
   movies.forEach(movie => {
     createMovieCard(movie);
   });
 }
 
-// === Free Image Search Function ===
 async function getMoviePoster(movieTitle, year = '') {
   try {
-    // Use TVMaze API - completely free and reliable
     const response = await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(movieTitle)}`);
     const data = await response.json();
-    
     if (data.length > 0 && data[0].show.image && data[0].show.image.medium) {
       return data[0].show.image.medium;
     }
@@ -193,10 +249,8 @@ async function getMoviePoster(movieTitle, year = '') {
   }
   
   try {
-    // Fallback to Wikipedia API for movie images
     const wikiResponse = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(movieTitle.replace(/ /g, '_'))}`);
     const wikiData = await wikiResponse.json();
-    
     if (wikiData.thumbnail && wikiData.thumbnail.source) {
       return wikiData.thumbnail.source;
     }
@@ -204,7 +258,6 @@ async function getMoviePoster(movieTitle, year = '') {
     console.log('Wikipedia search failed');
   }
   
-  // Final fallback: Use a placeholder with the movie title
   return `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(movieTitle.substring(0, 20))}`;
 }
 
@@ -212,11 +265,7 @@ async function createMovieCard(movie) {
   try {
     let img = movie.image;
     let year = movie.year || 'N/A';
-    
-    // Always try to get a better image
     const poster = await getMoviePoster(movie.title, movie.year);
-    
-    // Use the new poster if we got one, otherwise use existing image or placeholder
     if (!poster.includes('placeholder.com')) {
       img = poster;
     } else if (!img || img.includes('placeholder.com')) {
@@ -232,7 +281,6 @@ async function createMovieCard(movie) {
     movieGrid.appendChild(card);
   } catch (e) {
     console.error('Movie card render failed for', movie.title, e);
-    // Fallback with placeholder
     const card = document.createElement('div');
     card.className = 'movie-card';
     card.innerHTML = `
@@ -331,7 +379,7 @@ async function addMovie() {
       alert('Movie added successfully');
       closeAddMovieModal();
       loadAdminMovies();
-      loadMovies(); // Refresh public view
+      loadMovies();
     } else {
       alert('Error: ' + data.error);
     }
@@ -380,7 +428,7 @@ async function deleteMovie(id) {
     const data = await res.json();
     if (data.ok) {
       loadAdminMovies();
-      loadMovies(); // Refresh public view
+      loadMovies();
     } else {
       alert('Error: ' + data.error);
     }
@@ -390,7 +438,7 @@ async function deleteMovie(id) {
   }
 }
 
-// === Movie Playback with Password Protection ===
+// === Movie Playback ===
 function requestMoviePassword(movieId, movieTitle) {
   selectedMovieId = movieId;
   document.getElementById('passwordMovieTitle').textContent = movieTitle;
@@ -414,7 +462,6 @@ async function verifyMoviePassword() {
     });
     const data = await res.json();
     if (data.ok) {
-      // Get the embed URL and load it
       const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
         headers: {
           'Authorization': `Bearer ${data.token}`
@@ -436,80 +483,45 @@ async function verifyMoviePassword() {
 }
 
 function showPlayer(embedUrl) {
-  // Reset click count for new movie
   clickCount = 0;
-  
-  // Set iframe source
   playerIframe.src = embedUrl;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
-  // Add click listener to detect when user clicks the play button
-  let interactionDetected = false;
+  // Start CONSTANT watermark hiding
+  setTimeout(() => {
+    startWatermarkHiding();
+  }, 1000);
   
+  let interactionDetected = false;
   const handleInteraction = () => {
-    if (!interactionDetected && clickCount < MAX_LOADING_CLICKS) {
+    if (!interactionDetected) {
       interactionDetected = true;
       clickCount++;
-      showLoadingScreen();
-      
-      // Reset interaction detection after a short delay
       setTimeout(() => {
         interactionDetected = false;
       }, 1000);
     }
   };
   
-  // Multiple ways to detect interaction with the player
   window.addEventListener('blur', handleInteraction);
   playerContainer.addEventListener('click', handleInteraction);
   playerContainer.addEventListener('mousedown', handleInteraction);
   
-  // Store cleanup function
   playerContainer._cleanUp = () => {
     window.removeEventListener('blur', handleInteraction);
     playerContainer.removeEventListener('click', handleInteraction);
     playerContainer.removeEventListener('mousedown', handleInteraction);
   };
-  
-  // Security measure to prevent popups
-  playerIframe.onload = () => {
-    setTimeout(() => {
-      try {
-        const win = playerIframe.contentWindow;
-        if (!win) return;
-        win.open = function(url) {
-          const catcher = document.createElement('iframe');
-          catcher.style.display = 'none';
-          catcher.src = url || 'about:blank';
-          document.body.appendChild(catcher);
-          return catcher.contentWindow;
-        };
-      } catch (e) {}
-    }, 1000);
-  };
-}
-
-function showLoadingScreen() {
-  loadingScreen.classList.add('active');
-  
-  // Hide loading screen after exactly 10 seconds
-  loadingTimer = setTimeout(() => {
-    hideLoadingScreen();
-  }, LOADING_DURATION);
-}
-
-function hideLoadingScreen() {
-  loadingScreen.classList.remove('active');
 }
 
 function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
   hideLoadingScreen();
+  stopWatermarkHiding();
   
-  // Clean up event listeners
   if (playerContainer._cleanUp) {
     playerContainer._cleanUp();
   }
