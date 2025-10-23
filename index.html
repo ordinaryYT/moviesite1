@@ -55,9 +55,6 @@
   .loading-spinner{width:60px;height:60px;border:5px solid #333;border-top:5px solid #e50914;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:1rem}
   .loading-text{color:#fff;font-size:1.2rem;text-align:center}
   @keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}
-
-  /* Watermark Blocker */
-  .watermark-blocker{position:absolute;bottom:10px;right:10px;width:160px;height:55px;background:#000;z-index:10001;pointer-events:none}
 </style>
 </head>
 <body>
@@ -134,7 +131,6 @@
   <div class="player-wrapper">
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
-    <div class="watermark-blocker"></div>
   </div>
 </div>
 
@@ -152,112 +148,153 @@ const passwordModal = document.getElementById('passwordModal');
 const loadingScreen = document.getElementById('loadingScreen');
 const searchInput = document.getElementById('searchInput');
 const watermarkElement = document.querySelector('.iframe-overlay');
-const watermarkBlocker = document.querySelector('.watermark-blocker');
 
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
 let loadingTimer = null;
 let clickCount = 0;
-let watermarkInterval = null;
+let audioInterval = null;
 let isMonitoring = false;
+let playClicked = false;
+let silentStartTime = 0;
 const MAX_LOADING_CLICKS = 5;
 const LOADING_DURATION = 8000; // 8 seconds
 
-// === CONSTANT Watermark Detection ===
-function startConstantWatermarkDetection() {
-  stopConstantWatermarkDetection();
+// === Silent Period Detection ===
+function startSilentDetection() {
+  stopSilentDetection();
   isMonitoring = true;
+  playClicked = false;
+  silentStartTime = 0;
   
-  console.log('🚀 Starting CONSTANT watermark detection...');
+  console.log('🔇 Starting SILENT period detection...');
   
-  let detectionCount = 0;
-  let lastDetectionTime = 0;
+  let audioContext = null;
+  let analyser = null;
+  let microphone = null;
   
-  // CONSTANT monitoring - check every 100ms
-  watermarkInterval = setInterval(() => {
+  try {
+    // Create audio context
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    
+    // Capture microphone to detect system audio
+    navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      .then(function(stream) {
+        microphone = audioContext.createMediaStreamSource(stream);
+        microphone.connect(analyser);
+        
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        
+        let silentFrames = 0;
+        let wasSilent = true;
+        
+        audioInterval = setInterval(() => {
+          if (!playerContainer.classList.contains('active') || !isMonitoring) {
+            stopSilentDetection();
+            return;
+          }
+          
+          analyser.getByteFrequencyData(dataArray);
+          
+          // Calculate average volume
+          let sum = 0;
+          for (let i = 0; i < bufferLength; i++) {
+            sum += dataArray[i];
+          }
+          const average = sum / bufferLength;
+          
+          // Detect silent periods AFTER play is clicked
+          if (playClicked) {
+            if (average < 5) { // Very quiet - silent period
+              silentFrames++;
+              
+              // If silent for more than 1 second after clicking play, show loading screen
+              if (silentFrames > 10 && silentStartTime === 0) { // ~2 seconds of silence
+                silentStartTime = Date.now();
+                console.log('🔇 SILENT PERIOD DETECTED - Showing loading screen');
+                if (!loadingScreen.classList.contains('active')) {
+                  showLoadingScreen();
+                }
+              }
+              
+              wasSilent = true;
+            } else { // Audio detected
+              silentFrames = 0;
+              silentStartTime = 0;
+              
+              // If we were just silent and now audio is back, hide loading screen
+              if (wasSilent && loadingScreen.classList.contains('active')) {
+                console.log('🔊 AUDIO BACK - Hiding loading screen');
+                hideLoadingScreen();
+              }
+              wasSilent = false;
+            }
+          }
+          
+        }, 200); // Check every 200ms
+        
+      })
+      .catch(function(err) {
+        console.log('Microphone access denied, using click-based detection');
+        startClickBasedDetection();
+      });
+      
+  } catch (error) {
+    console.log('Audio context failed, using click-based detection');
+    startClickBasedDetection();
+  }
+}
+
+function startClickBasedDetection() {
+  console.log('🖱️ Starting click-based silent detection...');
+  
+  audioInterval = setInterval(() => {
     if (!playerContainer.classList.contains('active') || !isMonitoring) {
-      stopConstantWatermarkDetection();
+      stopSilentDetection();
       return;
     }
     
-    // Detect THEIR watermark patterns (multiembed specific)
-    const hasTheirWatermark = detectMultiembedWatermark();
-    
-    if (hasTheirWatermark) {
-      detectionCount++;
-      lastDetectionTime = Date.now();
-      
-      // Show loading screen immediately when watermark detected
+    // If play was clicked recently and we haven't shown loading screen yet
+    if (playClicked && Date.now() - lastPlayClickTime < 5000) {
       if (!loadingScreen.classList.contains('active')) {
-        console.log('🎯 THEIR WATERMARK DETECTED - Showing loading screen');
+        console.log('🖱️ Play clicked recently - showing loading screen');
         showLoadingScreen();
+        
+        // Auto-hide after 8 seconds (typical watermark duration)
+        setTimeout(() => {
+          hideLoadingScreen();
+        }, LOADING_DURATION);
       }
     }
     
-  }, 100); // Check every 100ms - CONSTANT
+  }, 500);
 }
 
-function detectMultiembedWatermark() {
-  const currentTime = Date.now();
-  
-  // Multiembed watermarks appear at VERY specific times:
-  
-  // Pattern 1: IMMEDIATELY after player loads (3-5 seconds)
-  if (currentTime - playerStartTime > 3000 && currentTime - playerStartTime < 5000) {
-    return true;
-  }
-  
-  // Pattern 2: After user clicks play (1-3 seconds after first click)
-  if (clickCount > 0 && currentTime - firstClickTime > 1000 && currentTime - firstClickTime < 3000) {
-    return true;
-  }
-  
-  // Pattern 3: Every 25-35 seconds during playback
-  const playbackTime = currentTime - playerStartTime;
-  if (playbackTime > 10000 && Math.floor(playbackTime / 30000) % 2 === 1) {
-    return true;
-  }
-  
-  // Pattern 4: After ads (5-8 seconds after ad finishes)
-  if (currentTime - lastAdTime > 5000 && currentTime - lastAdTime < 8000) {
-    return true;
-  }
-  
-  // Pattern 5: Random quick appearances (multiembed does this)
-  if (Math.random() < 0.02 && playbackTime > 15000) { // 2% chance after 15s
-    return true;
-  }
-  
-  return false;
-}
+let lastPlayClickTime = 0;
 
-let playerStartTime = 0;
-let firstClickTime = 0;
-let lastAdTime = 0;
-
-function stopConstantWatermarkDetection() {
+function stopSilentDetection() {
   isMonitoring = false;
-  if (watermarkInterval) {
-    clearInterval(watermarkInterval);
-    watermarkInterval = null;
+  playClicked = false;
+  silentStartTime = 0;
+  if (audioInterval) {
+    clearInterval(audioInterval);
+    audioInterval = null;
   }
   if (loadingTimer) {
     clearTimeout(loadingTimer);
     loadingTimer = null;
   }
-  console.log('🛑 Watermark detection stopped');
+  console.log('🛑 Silent detection stopped');
 }
 
 function showLoadingScreen() {
   if (!loadingScreen.classList.contains('active')) {
     loadingScreen.classList.add('active');
-    console.log('📺 Loading screen shown - hiding their watermark');
-    
-    // Keep loading screen up for 8 seconds
-    loadingTimer = setTimeout(() => {
-      hideLoadingScreen();
-    }, LOADING_DURATION);
+    console.log('📺 Loading screen shown - covering watermark');
   }
 }
 
@@ -534,26 +571,24 @@ async function verifyMoviePassword() {
 
 function showPlayer(embedUrl) {
   clickCount = 0;
-  playerStartTime = Date.now();
-  firstClickTime = 0;
-  lastAdTime = 0;
+  lastPlayClickTime = 0;
   
   playerIframe.src = embedUrl;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
-  // Start CONSTANT watermark detection IMMEDIATELY
-  startConstantWatermarkDetection();
+  // Start silent detection immediately
+  startSilentDetection();
   
   let interactionDetected = false;
   const handleInteraction = () => {
     if (!interactionDetected) {
       interactionDetected = true;
       clickCount++;
-      if (firstClickTime === 0) {
-        firstClickTime = Date.now();
-      }
+      playClicked = true;
+      lastPlayClickTime = Date.now();
+      console.log('▶️ Play clicked - monitoring for silent period');
       setTimeout(() => {
         interactionDetected = false;
       }, 1000);
@@ -575,7 +610,7 @@ function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
   hideLoadingScreen();
-  stopConstantWatermarkDetection();
+  stopSilentDetection();
   
   if (playerContainer._cleanUp) {
     playerContainer._cleanUp();
