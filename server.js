@@ -1,5 +1,3 @@
-```javascript
-// server.js - Backend Server
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -30,35 +28,35 @@ const pool = new Pool({
 // --- Auto-create table and ensure one_time_password_hash column ---
 async function ensureTable() {
   try {
-    // Create movies table if it doesn't exist
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS movies (
-        id SERIAL PRIMARY KEY,
-        title TEXT NOT NULL,
-        imdb_id TEXT,
-        password_hash TEXT,
-        one_time_password_hash TEXT,
-        year TEXT,
-        image TEXT,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
+    // Create movies table if it doesn't exist (using raw string to avoid parsing issues)
+    await pool.query(
+      'CREATE TABLE IF NOT EXISTS movies (\n' +
+      '  id SERIAL PRIMARY KEY,\n' +
+      '  title TEXT NOT NULL,\n' +
+      '  imdb_id TEXT,\n' +
+      '  password_hash TEXT,\n' +
+      '  one_time_password_hash TEXT,\n' +
+      '  year TEXT,\n' +
+      '  image TEXT,\n' +
+      '  created_at TIMESTAMP DEFAULT NOW()\n' +
+      ')'
+    );
     console.log('✅ Movies table ready');
 
     // Add one_time_password_hash column if it doesn't exist
-    await pool.query(`
-      DO $$ 
-      BEGIN
-        IF NOT EXISTS (
-          SELECT FROM pg_attribute 
-          WHERE attrelid = 'movies'::regclass 
-          AND attname = 'one_time_password_hash'
-        ) THEN
-          ALTER TABLE movies
-          ADD COLUMN one_time_password_hash TEXT;
-        END IF;
-      END $$;
-    `);
+    await pool.query(
+      'DO $$\n' +
+      'BEGIN\n' +
+      '  IF NOT EXISTS (\n' +
+      '    SELECT FROM pg_attribute\n' +
+      '    WHERE attrelid = \'movies\'::regclass\n' +
+      '    AND attname = \'one_time_password_hash\'\n' +
+      '  ) THEN\n' +
+      '    ALTER TABLE movies\n' +
+      '    ADD COLUMN one_time_password_hash TEXT;\n' +
+      '  END IF;\n' +
+      'END $$;'
+    );
     console.log('✅ one_time_password_hash column ensured');
   } catch (err) {
     console.error('Error ensuring table schema:', err);
@@ -143,8 +141,7 @@ app.post('/api/movies', requireAdmin, async (req, res) => {
     const oneTimePasswordHash = oneTimePassword ? await bcrypt.hash(oneTimePassword, 10) : null;
 
     const result = await pool.query(
-      `INSERT INTO movies (title, imdb_id, password_hash, one_time_password_hash, year, image)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      'INSERT INTO movies (title, imdb_id, password_hash, one_time_password_hash, year, image) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
       [movieData.title, movieData.imdb_id, passwordHash, oneTimePasswordHash, movieData.year, movieData.image]
     );
 
@@ -168,35 +165,30 @@ app.delete('/api/movies/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// --- Authorize viewer - FIXED TO ENSURE REGULAR PASSWORD IS REUSABLE ---
+// --- Authorize viewer ---
 app.post('/api/movies/:id/authorize', async (req, res) => {
   try {
     const id = req.params.id;
     const { password } = req.body;
     const r = await pool.query('SELECT password_hash, one_time_password_hash FROM movies WHERE id=$1', [id]);
     if (!r.rowCount) return res.status(404).json({ ok: false, error: 'Movie not found' });
-    
-    const { password_hash, one_time_password_hash } = r.rows[0];
 
-    let isOneTimePasswordUsed = false;
+    const { password_hash, one_time_password_hash } = r.rows[0];
 
     // Check one-time password first
     if (one_time_password_hash && await bcrypt.compare(password, one_time_password_hash)) {
-      // Invalidate one-time password
       await pool.query('UPDATE movies SET one_time_password_hash = NULL WHERE id = $1', [id]);
-      isOneTimePasswordUsed = true;
-    }
-    // Check regular password
-    else if (password_hash && await bcrypt.compare(password, password_hash)) {
-      // Regular password is valid, no need to invalidate
-    }
-    else {
-      return res.status(401).json({ ok: false, error: 'Wrong password' });
+      const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
+      return res.json({ ok: true, token });
     }
 
-    // Issue token only if one of the passwords matched
-    const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
-    res.json({ ok: true, token });
+    // Check regular password
+    if (password_hash && await bcrypt.compare(password, password_hash)) {
+      const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
+      return res.json({ ok: true, token });
+    }
+
+    return res.status(401).json({ ok: false, error: 'Wrong password' });
   } catch (err) {
     console.error('Authorization error:', err);
     res.status(500).json({ ok: false, error: 'Authorization failed' });
@@ -225,4 +217,3 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
-```
