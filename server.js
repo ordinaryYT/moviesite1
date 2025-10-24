@@ -18,7 +18,8 @@ app.use(express.static(path.join(__dirname)));
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'boughton5';
-const EMBED_BASE = 'https://multiembed.mov/?video_id=';
+// UPDATED: Switched to VidSrc for fewer ads (embed format: /embed/movie/{imdb_id})
+const EMBED_BASE = 'https://vidsrc.me/embed/movie/';
 
 // --- PostgreSQL ---
 const pool = new Pool({
