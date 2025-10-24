@@ -26,21 +26,43 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-// --- Auto-create table - ADDED one_time_password_hash ---
+// --- Auto-create table and ensure one_time_password_hash column ---
 async function ensureTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS movies (
-      id SERIAL PRIMARY KEY,
-      title TEXT NOT NULL,
-      imdb_id TEXT,
-      password_hash TEXT,
-      one_time_password_hash TEXT,
-      year TEXT,
-      image TEXT,
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-  console.log('✅ Movies table ready');
+  try {
+    // Create movies table if it doesn't exist
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS movies (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        imdb_id TEXT,
+        password_hash TEXT,
+        one_time_password_hash TEXT,
+        year TEXT,
+        image TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    console.log('✅ Movies table ready');
+
+    // Add one_time_password_hash column if it doesn't exist
+    await pool.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT FROM pg_attribute 
+          WHERE attrelid = 'movies'::regclass 
+          AND attname = 'one_time_password_hash'
+        ) THEN
+          ALTER TABLE movies
+          ADD COLUMN one_time_password_hash TEXT;
+        END IF;
+      END $$;
+    `);
+    console.log('✅ one_time_password_hash column ensured');
+  } catch (err) {
+    console.error('Error ensuring table schema:', err);
+    throw err;
+  }
 }
 ensureTable().catch(console.error);
 
