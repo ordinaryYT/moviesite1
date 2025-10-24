@@ -166,7 +166,7 @@ const secondWatermark = document.querySelector('.second-watermark');
 // Define watermark password from environment (to be injected, e.g., via build process)
 const WATERMARK_PASSWORD = process.env.WATERMARK_PASSWORD || 'defaultpassword123'; // Fallback for testing
 
-// Expose watermark control for potential future Electron use
+// Expose watermark control for potential future use
 window.controlWatermark = {
   show: () => { showSecondWatermark(); },
   hide: () => { hideSecondWatermark(); }
@@ -515,15 +515,16 @@ async function verifyMoviePassword() {
       });
       const embedData = await embedRes.json();
       if (embedData.ok) {
-        showPlayer(embedData.embedUrl);
+        showPlayer(embedData.url);
+      } else {
+        alert('Error: ' + embedData.error);
       }
-      closePasswordModal();
     } else {
-      alert('Incorrect password');
+      alert('Wrong password');
     }
   } catch (e) {
     console.error('Password verification failed', e);
-    alert('Failed to verify password');
+    alert('Error verifying password');
   }
 }
 
@@ -536,7 +537,7 @@ function showPlayer(embedUrl) {
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
-  resetWatermark(); // Reset watermark state on player open
+  // Start simple audio check
   startAudioCheck();
 }
 
@@ -546,37 +547,76 @@ function closePlayer() {
   stopAudioCheck();
 }
 
-// Audio check functions (minimal for website)
-function startAudioCheck() {
-  console.log('🎵 Audio check started');
-  showSecondWatermark();
-}
-
-function stopAudioCheck() {
-  console.log('🛑 Audio check stopped');
-  hideSecondWatermark();
-}
-
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
-  searchInput.addEventListener('input', (e) => filterMovies(e.target.value));
-  adminBtn.addEventListener('click', openAdminPanel);
-  setupWatermarkClick();
-  loadMovies();
-});
-
+// === Public Movie Loading ===
 async function loadMovies() {
+  movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">Loading...</p>';
   try {
     const res = await fetch(API + '/movies');
     const data = await res.json();
-    if (data.ok) {
-      currentMovies = data.movies;
-      displayMovies(currentMovies);
+    if (!data.ok || !data.movies.length) {
+      movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">No movies found.</p>';
+      return;
     }
+    movieGrid.innerHTML = '';
+    currentMovies = data.movies;
+    displayMovies(currentMovies);
   } catch (e) {
-    console.error('Failed to load movies', e);
+    console.error('Backend fetch failed', e);
+    movieGrid.innerHTML = '<p style="color:red;text-align:center;">Error loading movies.</p>';
   }
 }
+
+// Event Listeners
+adminBtn.addEventListener('click', openAdminPanel);
+searchInput.addEventListener('input', (e) => {
+  filterMovies(e.target.value);
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    closePlayer();
+    closeLoginModal();
+    closeAddMovieModal();
+    closePasswordModal();
+  }
+});
+
+// Initialize
+loadMovies();
+
+// Click counter and timer logic
+function resetClickCounter() {
+  clickCount = 0;
+  if (clickTimer) {
+    clearTimeout(clickTimer);
+  }
+  clickTimer = setTimeout(() => {
+    clickCount = 0; // Reset after 30 seconds
+    console.log('Click count reset due to 30-second timeout');
+  }, 30000); // 30 seconds
+}
+
+function setupWatermarkClick() {
+  secondWatermark.addEventListener('click', () => {
+    clickCount++;
+    console.log(`Click count: ${clickCount}`);
+    if (clickCount === 10 && !watermarkPassword) {
+      showWatermarkPasswordModal();
+      resetClickCounter(); // Reset after reaching 10 clicks
+    } else if (clickCount > 10) {
+      clickCount = 10; // Cap at 10
+    }
+  });
+}
+
+function resetWatermark() {
+  watermarkPassword = null; // Reset password on player open
+  showSecondWatermark(); // Ensure overlay is visible
+  resetClickCounter(); // Reset click counter
+}
+
+// Initialize watermark functionality
+setupWatermarkClick();
+resetWatermark();
 </script>
 </body>
 </html>
