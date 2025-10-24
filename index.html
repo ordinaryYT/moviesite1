@@ -144,16 +144,6 @@ let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
 
-// Block right-clicks only
-playerIframe.addEventListener('contextmenu', (e) => {
-  e.preventDefault();
-});
-document.addEventListener('contextmenu', (e) => {
-  if (e.target.closest('#playerContainer')) {
-    e.preventDefault();
-  }
-});
-
 // === Search Functionality ===
 function filterMovies(searchTerm) {
   const filteredMovies = currentMovies.filter(movie => 
