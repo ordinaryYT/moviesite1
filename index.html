@@ -49,6 +49,7 @@
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
   .bottom-left-overlay{position:absolute;bottom:5px;right:75%;width:120px;height:40px;background:#000;z-index:3;border-radius:8px;}
+  .click-blocker{position:absolute;top:0;left:0;width:100%;height:100%;background:transparent;z-index:2;}
 </style>
 </head>
 <body>
@@ -124,6 +125,7 @@
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
     <div class="bottom-left-overlay"></div>
+    <div class="click-blocker"></div>
   </div>
 </div>
 
@@ -139,20 +141,36 @@ const loginModal = document.getElementById('loginModal');
 const addMovieModal = document.getElementById('addMovieModal');
 const passwordModal = document.getElementById('passwordModal');
 const searchInput = document.getElementById('searchInput');
-const playerWrapper = document.querySelector('.player-wrapper');
+const clickBlocker = document.querySelector('.click-blocker');
 
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
 
-// Block right-click on iframe and player wrapper with warning
+// Block right-clicks only
 playerIframe.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+});
+clickBlocker.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   alert('Right-click is disabled for this video player.');
 });
-playerWrapper.addEventListener('contextmenu', (e) => {
-  e.preventDefault();
-  alert('Right-click is disabled for this video player.');
+
+// Allow left-clicks to pass through
+clickBlocker.addEventListener('click', (e) => {
+  // Only allow left-clicks (button 0) to propagate
+  if (e.button === 0) {
+    const iframe = document.getElementById('playerIframe');
+    const rect = iframe.getBoundingClientRect();
+    const clickEvent = new MouseEvent('click', {
+      bubbles: true,
+      cancelable: true,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      button: 0
+    });
+    iframe.dispatchEvent(clickEvent);
+  }
 });
 
 // === Search Functionality ===
