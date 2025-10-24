@@ -48,7 +48,8 @@
   .player-wrapper{position:relative;width:100%;height:100%}
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
-  .bottom-left-overlay{position:absolute;bottom:5px;right:80%;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
+  .bottom-left-overlay{position:absolute;bottom:5px;right:75%;width:120px;height:40px;background:#000;z-index:3;border-radius:8px;}
+  .iframe-blocker{position:absolute;top:0;left:0;width:100%;height:100%;background:transparent;z-index:2;}
 </style>
 </head>
 <body>
@@ -79,7 +80,7 @@
 </div>
 
 <!-- Add Movie Modal -->
-<div id="addMovieModal" class="modal">
+<div id="addMovieModal" class=" modal">
   <div class="modal-content">
     <button class="close-modal" onclick="closeAddMovieModal()">×</button>
     <h2>Add Movie</h2>
@@ -123,7 +124,8 @@
   <div class="player-wrapper">
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
-    <div class="bottom-left-overlay">ogmovie</div>
+    <div class="bottom-left-overlay"></div>
+    <div class="iframe-blocker"></div>
   </div>
 </div>
 
@@ -139,13 +141,17 @@ const loginModal = document.getElementById('loginModal');
 const addMovieModal = document.getElementById('addMovieModal');
 const passwordModal = document.getElementById('passwordModal');
 const searchInput = document.getElementById('searchInput');
+const iframeBlocker = document.querySelector('.iframe-blocker');
 
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
 
-// Block right-click on iframe
+// Block right-click on iframe and blocker overlay
 playerIframe.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+});
+iframeBlocker.addEventListener('contextmenu', (e) => {
   e.preventDefault();
 });
 
