@@ -52,22 +52,28 @@
   /* Second Watermark Overlay */
   .second-watermark {
     position: absolute;
-    top: 60%; /* 60% from top */
-    left: 50%; /* 50% from left */
+    top: 50%; /* Centered vertically */
+    left: 50%; /* Centered horizontally */
     transform: translate(-50%, -50%);
     background: #000; /* Solid black background */
     color: #fff; /* Solid white text */
-    padding: 20px 30px;
-    font-size: 2rem;
+    padding: 10px 15px; /* Reduced size */
+    font-size: 1.5rem; /* Smaller text */
     font-weight: bold;
-    letter-spacing: 4px;
+    letter-spacing: 2px;
     text-transform: uppercase;
-    border-radius: 12px;
-    z-index: 10001;
-    display: none;
-    pointer-events: none;
-    border: 3px solid #e50914; /* Solid red border */
-    box-shadow: 0 0 30px rgba(229, 9, 20, 0.5);
+    border-radius: 8px;
+    z-index: 10001; /* Above iframe content */
+    display: block; /* Permanently visible */
+    pointer-events: auto; /* Allow clicks */
+    border: 2px solid #e50914; /* Thinner red border */
+    box-shadow: 0 0 20px rgba(229, 9, 20, 0.5);
+    cursor: pointer; /* Indicate clickable */
+  }
+
+  /* Watermark Password Modal Styles */
+  .watermark-password-modal .modal-content {
+    max-width: 350px;
   }
 </style>
 </head>
@@ -157,52 +163,28 @@ const passwordModal = document.getElementById('passwordModal');
 const searchInput = document.getElementById('searchInput');
 const secondWatermark = document.querySelector('.second-watermark');
 
+// Define watermark password from environment (to be injected, e.g., via build process)
+const WATERMARK_PASSWORD = process.env.WATERMARK_PASSWORD || 'defaultpassword123'; // Fallback for testing
+
+// Expose watermark control for potential future use
+window.controlWatermark = {
+  show: () => { showSecondWatermark(); },
+  hide: () => { hideSecondWatermark(); }
+};
+
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
-let checkInterval = null;
+let watermarkPassword = null; // Store the password when entered
+let clickCount = 0; // Track clicks on watermark
+let clickTimer = null; // Timer for 30-second window
 
-// === Simple Audio Detection ===
-function startAudioCheck() {
-  console.log('🎵 Starting audio check...');
-  stopAudioCheck();
-  
-  // Show watermark immediately
-  showSecondWatermark();
-  
-  // Check every second if audio is playing
-  checkInterval = setInterval(() => {
-    if (!playerContainer.classList.contains('active')) {
-      stopAudioCheck();
-      return;
-    }
-    
-    // Simple approach: wait 5 seconds then remove watermark
-    // This assumes the movie starts playing within 5 seconds
-  }, 1000);
-  
-  // Remove watermark after 5 seconds (when audio should be playing)
-  setTimeout(() => {
-    if (playerContainer.classList.contains('active')) {
-      console.log('⏰ 5 seconds passed - removing watermark');
-      hideSecondWatermark();
-      stopAudioCheck();
-    }
-  }, 5000);
-}
-
-function stopAudioCheck() {
-  if (checkInterval) {
-    clearInterval(checkInterval);
-    checkInterval = null;
-  }
-  console.log('🛑 Audio check stopped');
-}
-
+// Watermark control functions
 function showSecondWatermark() {
   if (secondWatermark.style.display !== 'block') {
     secondWatermark.style.display = 'block';
     console.log('💧 Second watermark shown');
+    resetClickCounter(); // Reset clicks when shown
   }
 }
 
@@ -211,6 +193,75 @@ function hideSecondWatermark() {
     secondWatermark.style.display = 'none';
     console.log('💧 Second watermark hidden');
   }
+}
+
+// Password modal for watermark removal
+function showWatermarkPasswordModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal watermark-password-modal';
+  modal.innerHTML = `
+    <div class="modal-content">
+      <button class="close-modal" onclick="closeWatermarkPasswordModal()">×</button>
+      <h2>Enter Watermark Password</h2>
+      <div class="form-group">
+        <label for="watermarkPasswordInput">Password:</label>
+        <input type="password" id="watermarkPasswordInput" placeholder="Enter password">
+      </div>
+      <button class="modal-btn" onclick="verifyWatermarkPassword()">Submit</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.classList.add('active');
+}
+
+function closeWatermarkPasswordModal() {
+  const modal = document.querySelector('.watermark-password-modal');
+  if (modal) {
+    modal.classList.remove('active');
+    setTimeout(() => document.body.removeChild(modal), 300); // Allow animation
+  }
+}
+
+function verifyWatermarkPassword() {
+  const password = document.getElementById('watermarkPasswordInput').value;
+  if (password === WATERMARK_PASSWORD) { // Use environment variable
+    watermarkPassword = password;
+    hideSecondWatermark();
+    closeWatermarkPasswordModal();
+  } else {
+    alert('Incorrect password');
+  }
+}
+
+// Click counter and timer logic
+function resetClickCounter() {
+  clickCount = 0;
+  if (clickTimer) {
+    clearTimeout(clickTimer);
+  }
+  clickTimer = setTimeout(() => {
+    clickCount = 0; // Reset after 30 seconds
+    console.log('Click count reset due to 30-second timeout');
+  }, 30000); // 30 seconds
+}
+
+function setupWatermarkClick() {
+  secondWatermark.addEventListener('click', () => {
+    clickCount++;
+    console.log(`Click count: ${clickCount}`);
+    if (clickCount === 10 && !watermarkPassword) {
+      showWatermarkPasswordModal();
+      resetClickCounter(); // Reset after reaching 10 clicks
+    } else if (clickCount > 10) {
+      clickCount = 10; // Cap at 10
+    }
+  });
+}
+
+function resetWatermark() {
+  watermarkPassword = null; // Reset password on player open
+  showSecondWatermark(); // Ensure overlay is visible
+  resetClickCounter(); // Reset click counter
 }
 
 // === Search Functionality ===
@@ -280,7 +331,7 @@ async function createMovieCard(movie) {
     card.className = 'movie-card';
     card.innerHTML = `
       <img src="https://via.placeholder.com/300x450/333/fff?text=No+Poster">
-      <div class="movie-info"><h3>${movie.title}</h3><p>${movie.year || 'N/A'}</p></div>`;
+      <div class="movie-info"><h3>${movie.title}</h3><p>${year}</p></div>`;
     card.onclick = () => requestMoviePassword(movie.id, movie.title);
     movieGrid.appendChild(card);
   }
@@ -531,6 +582,52 @@ document.addEventListener('keydown', e => {
 
 // Initialize
 loadMovies();
+
+// Audio check functions (minimal for website)
+function startAudioCheck() {
+  console.log('🎵 Audio check started');
+  resetWatermark(); // Ensure watermark shows on player open
+}
+
+function stopAudioCheck() {
+  console.log('🛑 Audio check stopped');
+  // No need to hide watermark here; it resets on reopen
+}
+
+// Click counter and timer logic
+function resetClickCounter() {
+  clickCount = 0;
+  if (clickTimer) {
+    clearTimeout(clickTimer);
+  }
+  clickTimer = setTimeout(() => {
+    clickCount = 0; // Reset after 30 seconds
+    console.log('Click count reset due to 30-second timeout');
+  }, 30000); // 30 seconds
+}
+
+function setupWatermarkClick() {
+  secondWatermark.addEventListener('click', () => {
+    clickCount++;
+    console.log(`Click count: ${clickCount}`);
+    if (clickCount === 10 && !watermarkPassword) {
+      showWatermarkPasswordModal();
+      resetClickCounter(); // Reset after reaching 10 clicks
+    } else if (clickCount > 10) {
+      clickCount = 10; // Cap at 10
+    }
+  });
+}
+
+function resetWatermark() {
+  watermarkPassword = null; // Reset password on player open
+  showSecondWatermark(); // Ensure overlay is visible
+  resetClickCounter(); // Reset click counter
+}
+
+// Initialize watermark functionality
+setupWatermarkClick();
+resetWatermark();
 </script>
 </body>
 </html>
