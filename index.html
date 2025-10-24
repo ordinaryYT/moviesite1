@@ -160,45 +160,18 @@ const secondWatermark = document.querySelector('.second-watermark');
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
-let checkInterval = null;
 
-// === Simple Audio Detection ===
-function startAudioCheck() {
-  console.log('🎵 Starting audio check...');
-  stopAudioCheck();
-  
-  // Show watermark immediately
-  showSecondWatermark();
-  
-  // Check every second if audio is playing
-  checkInterval = setInterval(() => {
-    if (!playerContainer.classList.contains('active')) {
-      stopAudioCheck();
-      return;
-    }
-    
-    // Simple approach: wait 5 seconds then remove watermark
-    // This assumes the movie starts playing within 5 seconds
-  }, 1000);
-  
-  // Remove watermark after 5 seconds (when audio should be playing)
-  setTimeout(() => {
-    if (playerContainer.classList.contains('active')) {
-      console.log('⏰ 5 seconds passed - removing watermark');
-      hideSecondWatermark();
-      stopAudioCheck();
-    }
-  }, 5000);
-}
-
-function stopAudioCheck() {
-  if (checkInterval) {
-    clearInterval(checkInterval);
-    checkInterval = null;
+// Expose watermark control for Electron app
+window.controlWatermark = {
+  show: () => {
+    showSecondWatermark();
+  },
+  hide: () => {
+    hideSecondWatermark();
   }
-  console.log('🛑 Audio check stopped');
-}
+};
 
+// Watermark control functions
 function showSecondWatermark() {
   if (secondWatermark.style.display !== 'block') {
     secondWatermark.style.display = 'block';
@@ -211,6 +184,17 @@ function hideSecondWatermark() {
     secondWatermark.style.display = 'none';
     console.log('💧 Second watermark hidden');
   }
+}
+
+// Audio check functions (minimal for website, managed by Electron)
+function startAudioCheck() {
+  console.log('🎵 Audio check started (handled by Electron if in app)');
+  showSecondWatermark();
+}
+
+function stopAudioCheck() {
+  console.log('🛑 Audio check stopped');
+  hideSecondWatermark();
 }
 
 // === Search Functionality ===
@@ -486,7 +470,7 @@ function showPlayer(embedUrl) {
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
-  // Start simple audio check
+  // Start audio check (minimal for website, Electron handles detection)
   startAudioCheck();
 }
 
