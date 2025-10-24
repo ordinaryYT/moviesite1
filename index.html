@@ -57,7 +57,7 @@
     transform: translate(-50%, -50%);
     background: #000;
     color: #fff;
-    padding: 10px 25px; /* WIDER ON SIDES */
+    padding: 10px 35px; /* INCREASED HORIZONTAL PADDING FOR WIDER SIDES */
     font-size: 1.5rem;
     font-weight: bold;
     letter-spacing: 2px;
@@ -130,7 +130,7 @@
   <div class="modal-content">
     <button class="close-modal" onclick="closePasswordModal()">×</button>
     <h2>Enter Password</h2>
-    <p id="passwordMovieTitle" style="margin-bottom:1rem;color:#ccc"></p>
+    <p id="passwordMovieTitle" style="margin-bottom:1rem;color:#ccc;cursor:pointer"></p>
     <div class="form-group">
       <label for="moviePasswordInput">Password:</label>
       <input type="password" id="moviePasswordInput" placeholder="Enter movie password">
@@ -173,27 +173,22 @@ let isPasswordEntered = false;
 
 // === Watermark Click Tracking ===
 function setupWatermarkClick() {
-  document.querySelector('.modal-btn[onclick="verifyMoviePassword()"]').addEventListener('click', () => {
+  const movieTitle = document.getElementById('passwordMovieTitle');
+  movieTitle.addEventListener('click', () => {
     if (!isPasswordEntered) {
       prePasswordClicks++;
-      console.log(`Pre-password click: ${prePasswordClicks}`);
+      console.log(`Pre-password click on movie title: ${prePasswordClicks}`);
+      if (prePasswordClicks >= 10 && postPasswordClicks >= 10) {
+        secondWatermark.style.display = 'none';
+      }
     } else {
       postPasswordClicks++;
-      console.log(`Post-password click: ${postPasswordClicks}`);
-      if (postPasswordClicks >= 10 && prePasswordClicks >= 10) {
+      console.log(`Post-password click on movie title: ${postPasswordClicks}`);
+      if (prePasswordClicks >= 10 && postPasswordClicks >= 10) {
         secondWatermark.style.display = 'none';
       }
     }
   });
-}
-
-function resetWatermark() {
-  prePasswordClicks = 0;
-  postPasswordClicks = 0;
-  isPasswordEntered = false;
-  if (playerContainer.classList.contains('active')) {
-    secondWatermark.style.display = 'block';
-  }
 }
 
 // === Search Functionality ===
@@ -351,7 +346,7 @@ async function addMovie() {
         name: title, 
         imdbId: imdbId, 
         moviePassword: password,
-        oneTimePassword: oneTimePassword || null  // Send 1-time password if provided
+        oneTimePassword: oneTimePassword || null
       })
     });
     const data = await res.json();
@@ -479,6 +474,15 @@ function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
   resetWatermark();
+}
+
+function resetWatermark() {
+  prePasswordClicks = 0;
+  postPasswordClicks = 0;
+  isPasswordEntered = false;
+  if (playerContainer.classList.contains('active')) {
+    secondWatermark.style.display = 'block';
+  }
 }
 
 // === Public Movie Loading ===
