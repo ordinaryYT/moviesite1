@@ -163,6 +163,9 @@ const passwordModal = document.getElementById('passwordModal');
 const searchInput = document.getElementById('searchInput');
 const secondWatermark = document.querySelector('.second-watermark');
 
+// Define watermark password from environment (to be injected, e.g., via build process)
+const WATERMARK_PASSWORD = process.env.WATERMARK_PASSWORD || 'defaultpassword123'; // Fallback for testing
+
 // Expose watermark control for potential future Electron use
 window.controlWatermark = {
   show: () => { showSecondWatermark(); },
@@ -221,7 +224,7 @@ function closeWatermarkPasswordModal() {
 
 function verifyWatermarkPassword() {
   const password = document.getElementById('watermarkPasswordInput').value;
-  if (password === 'yourpassword123') { // Replace with your desired password
+  if (password === WATERMARK_PASSWORD) { // Use environment variable
     watermarkPassword = password;
     hideSecondWatermark();
     closeWatermarkPasswordModal();
