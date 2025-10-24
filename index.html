@@ -49,41 +49,20 @@
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
   
-  /* Loading Overlay */
-  .loading-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: #000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10002;
-    color: #fff;
-    font-size: 2rem;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    border: 2px solid #e50914;
-    border-radius: 8px;
-  }
-  
   /* Second Watermark Overlay */
   .second-watermark {
     position: absolute;
-    top: 50%;
+    top: 55%; /* Moved down slightly from 50% */
     left: 50%;
     transform: translate(-50%, -50%);
     background: #000;
     color: #fff;
-    padding: 10px 15px;
-    font-size: 1.5rem;
+    padding: 15px 20px; /* Slightly larger padding */
+    font-size: 2rem; /* Slightly larger font size */
     font-weight: bold;
     letter-spacing: 2px;
     text-transform: uppercase;
-    border-radius: 8px;
+    border-radius: 10px; /* Slightly larger border radius */
     border: 2px solid #e50914;
     box-shadow: 0 0 20px rgba(229, 9, 20, 0.5);
     z-index: 10001;
@@ -170,7 +149,6 @@
 
 <!-- Player Container -->
 <div id="playerContainer" class="player-container">
-  <div class="loading-overlay" id="loadingOverlay">Loading...</div>
   <button class="close-btn" onclick="closePlayer()">X</button>
   <div class="player-wrapper">
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
@@ -194,7 +172,6 @@ const passwordModal = document.getElementById('passwordModal');
 const watermarkPasswordModal = document.getElementById('watermarkPasswordModal');
 const searchInput = document.getElementById('searchInput');
 const secondWatermark = document.querySelector('.second-watermark');
-const loadingOverlay = document.getElementById('loadingOverlay');
 
 let adminToken = null;
 let currentMovies = [];
@@ -517,17 +494,11 @@ async function verifyMoviePassword() {
 function showPlayer(embedUrl) {
   // RESET everything when player opens
   resetWatermark();
-  loadingOverlay.style.display = 'flex'; // Show loading overlay
   
   playerIframe.src = embedUrl;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
-  
-  // Hide loading overlay once iframe is loaded
-  playerIframe.onload = () => {
-    loadingOverlay.style.display = 'none';
-  };
 }
 
 // === Simple Audio Detection ===
