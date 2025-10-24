@@ -113,8 +113,12 @@
       <input type="text" id="movieImdbId" placeholder="tt1234567">
     </div>
     <div class="form-group">
-      <label for="moviePassword">Movie Password:</label>
-      <input type="password" id="moviePassword" placeholder="Set a password for this movie">
+      <label for="moviePassword">Movie Password (optional):</label>
+      <input type="password" id="moviePassword" placeholder="Set a reusable password for this movie">
+    </div>
+    <div class="form-group">
+      <label for="oneTimePassword">One-Time Password (optional):</label>
+      <input type="password" id="oneTimePassword" placeholder="Set a one-time password for this movie">
     </div>
     <button class="modal-btn" onclick="addMovie()">Add Movie</button>
   </div>
@@ -130,20 +134,7 @@
       <label for="moviePasswordInput">Password:</label>
       <input type="password" id="moviePasswordInput" placeholder="Enter movie password">
     </div>
-    <button class="modal-btn" onclick="verifyMoviePassword()">Watch Movie</button>
-  </div>
-</div>
-
-<!-- Watermark Password Modal -->
-<div id="watermarkPasswordModal" class="modal">
-  <div class="modal-content">
-    <button class="close-modal" onclick="closeWatermarkPasswordModal()">×</button>
-    <h2>Watermark Password</h2>
-    <div class="form-group">
-      <label for="watermarkPasswordInput">Password:</label>
-      <input type="password" id="watermarkPasswordInput" placeholder="Enter watermark password">
-    </div>
-    <button class="modal-btn" onclick="verifyWatermarkPassword()">Submit</button>
+    <button class="modal-btn" id="watchMovieBtn" onclick="verifyMoviePassword()">Watch Movie</button>
   </div>
 </div>
 
@@ -160,7 +151,6 @@
 <script>
 const API = window.location.origin + '/api';
 const EMBED_BASE = 'https://multiembed.mov/?video_id=';
-const WATERMARK_PASSWORD = 'defaultpassword123'; // Fallback password
 const movieGrid = document.getElementById('movieGrid');
 const playerIframe = document.getElementById('playerIframe');
 const playerContainer = document.getElementById('playerContainer');
@@ -169,62 +159,44 @@ const adminPanel = document.getElementById('adminPanel');
 const loginModal = document.getElementById('loginModal');
 const addMovieModal = document.getElementById('addMovieModal');
 const passwordModal = document.getElementById('passwordModal');
-const watermarkPasswordModal = document.getElementById('watermarkPasswordModal');
 const searchInput = document.getElementById('searchInput');
+const watchMovieBtn = document.getElementById('watchMovieBtn');
 const secondWatermark = document.querySelector('.second-watermark');
 
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
 let checkInterval = null;
-let clickCount = 0;
-let clickTimeout = null;
-let watermarkAuthenticated = false;
+let prePasswordClicks = 0; // Clicks before password entry
+let postPasswordClicks = 0; // Clicks after password entry
+let isPasswordEntered = false;
 
-// === Watermark Click Handling ===
+// === Watermark Handling ===
 function setupWatermarkClick() {
-  secondWatermark.addEventListener('click', () => {
-    if (watermarkAuthenticated) return;
-    
-    clickCount = Math.min(clickCount + 1, 10);
-    console.log(`💧 Watermark clicked, count: ${clickCount}`);
-    
-    clearTimeout(clickTimeout);
-    clickTimeout = setTimeout(() => {
-      console.log('⏰ Watermark click count reset due to inactivity');
-      clickCount = 0;
-    }, 30000);
-    
-    if (clickCount >= 10) {
-      watermarkPasswordModal.classList.add('active');
+  watchMovieBtn.addEventListener('click', () => {
+    if (!isPasswordEntered) {
+      prePasswordClicks++;
+      console.log(`💧 Pre-password click count: ${prePasswordClicks}`);
+    } else {
+      postPasswordClicks++;
+      console.log(`💧 Post-password click count: ${postPasswordClicks}`);
+      if (postPasswordClicks >= 10 && prePasswordClicks >= 10) {
+        secondWatermark.style.display = 'none';
+        console.log('✅ Watermark hidden due to 10+ clicks before and after password');
+      } else {
+        secondWatermark.style.display = 'block';
+        console.log('❌ Watermark remains visible');
+      }
     }
   });
 }
 
-function closeWatermarkPasswordModal() {
-  watermarkPasswordModal.classList.remove('active');
-  document.getElementById('watermarkPasswordInput').value = '';
-}
-
-function verifyWatermarkPassword() {
-  const password = document.getElementById('watermarkPasswordInput').value;
-  if (password === WATERMARK_PASSWORD) {
-    watermarkAuthenticated = true;
-    secondWatermark.style.display = 'none';
-    closeWatermarkPasswordModal();
-    console.log('✅ Watermark password verified');
-  } else {
-    alert('Incorrect password');
-    console.log('❌ Watermark password incorrect');
-  }
-}
-
 function resetWatermark() {
-  watermarkAuthenticated = false;
-  clickCount = 0;
-  clearTimeout(clickTimeout);
+  prePasswordClicks = 0;
+  postPasswordClicks = 0;
+  isPasswordEntered = false;
   if (playerContainer.classList.contains('active')) {
-    secondWatermark.style.display = 'block'; // Ensure watermark is visible when player is active
+    secondWatermark.style.display = 'block'; // Show watermark by default
   }
   console.log('🔄 Watermark reset');
 }
@@ -367,9 +339,10 @@ async function addMovie() {
   const title = document.getElementById('movieTitle').value;
   const imdbId = document.getElementById('movieImdbId').value;
   const password = document.getElementById('moviePassword').value;
+  const oneTimePassword = document.getElementById('oneTimePassword').value;
   
-  if ((!title && !imdbId) || !password) {
-    return alert('Please provide movie title or IMDb ID and password');
+  if ((!title && !imdbId) || (!password && !oneTimePassword)) {
+    return alert('Please provide movie title or IMDb ID and at least one password');
   }
   
   try {
@@ -382,7 +355,8 @@ async function addMovie() {
       body: JSON.stringify({ 
         name: title, 
         imdbId: imdbId, 
-        moviePassword: password 
+        moviePassword: password, 
+        oneTimePassword: oneTimePassword 
       })
     });
     const data = await res.json();
@@ -454,11 +428,13 @@ function requestMoviePassword(movieId, movieTitle) {
   selectedMovieId = movieId;
   document.getElementById('passwordMovieTitle').textContent = movieTitle;
   passwordModal.classList.add('active');
+  resetWatermark(); // Reset counts when opening password modal
 }
 
 function closePasswordModal() {
   passwordModal.classList.remove('active');
   selectedMovieId = null;
+  resetWatermark(); // Reset counts when closing password modal
 }
 
 async function verifyMoviePassword() {
@@ -473,6 +449,7 @@ async function verifyMoviePassword() {
     });
     const data = await res.json();
     if (data.ok) {
+      isPasswordEntered = true; // Mark password as entered
       const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
         headers: {
           'Authorization': `Bearer ${data.token}`
@@ -485,7 +462,7 @@ async function verifyMoviePassword() {
         alert('Error: ' + embedData.error);
       }
     } else {
-      alert('Wrong password');
+      alert('Wrong password or one-time password already used');
     }
   } catch (e) {
     console.error('Password verification failed', e);
@@ -501,6 +478,7 @@ function showPlayer(embedUrl) {
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
+  secondWatermark.style.display = 'block'; // Show watermark initially
 }
 
 // === Simple Audio Detection ===
@@ -517,7 +495,7 @@ function stopAudioCheck() {
 function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
-  resetWatermark();
+  resetWatermark(); // Reset counts when closing player
 }
 
 // === Public Movie Loading ===
@@ -550,7 +528,6 @@ document.addEventListener('keydown', e => {
     closeLoginModal();
     closeAddMovieModal();
     closePasswordModal();
-    closeWatermarkPasswordModal();
   }
 });
 
