@@ -153,24 +153,9 @@ playerIframe.addEventListener('contextmenu', (e) => {
 });
 clickBlocker.addEventListener('contextmenu', (e) => {
   e.preventDefault();
-  alert('Right-click is disabled for this video player.');
 });
-
-// Allow left-clicks to pass through
-clickBlocker.addEventListener('click', (e) => {
-  // Only allow left-clicks (button 0) to propagate
-  if (e.button === 0) {
-    const iframe = document.getElementById('playerIframe');
-    const rect = iframe.getBoundingClientRect();
-    const clickEvent = new MouseEvent('click', {
-      bubbles: true,
-      cancelable: true,
-      clientX: e.clientX,
-      clientY: e.clientY,
-      button: 0
-    });
-    iframe.dispatchEvent(clickEvent);
-  }
+playerContainer.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
 });
 
 // === Search Functionality ===
@@ -220,7 +205,7 @@ async function createMovieCard(movie) {
   try {
     let img = movie.image;
     let year = movie.year || 'N/A';
-    const poster = await getMoviePoster(movie.title, movie.year);
+    const poster = await getMoviePoster(movie.title, year);
     if (!poster.includes('placeholder.com')) {
       img = poster;
     } else if (!img || img.includes('placeholder.com')) {
@@ -299,7 +284,7 @@ function showAdminPanel() {
 
 function exitAdmin() {
   adminToken = null;
-  adminPanel.classList.remove('active');
+  adminPanel.className = 'admin-panel';
   movieGrid.style.display = 'grid';
 }
 
