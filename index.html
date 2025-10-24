@@ -48,28 +48,6 @@
   .player-wrapper{position:relative;width:100%;height:100%}
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
-  
-  /* Second Watermark Overlay - WIDER & MOVED DOWN BY ITS HEIGHT */
-  .second-watermark {
-    position: absolute;
-    top: calc(50% + 50px); /* MOVED DOWN BY ITS OWN HEIGHT */
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: #000;
-    color: #fff;
-    padding: 10px 35px; /* INCREASED HORIZONTAL PADDING FOR WIDER SIDES */
-    font-size: 1.5rem;
-    font-weight: bold;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    border-radius: 8px;
-    border: 2px solid #e50914;
-    box-shadow: 0 0 20px rgba(229, 9, 20, 0.5);
-    z-index: 10001;
-    display: none;
-    pointer-events: auto;
-    cursor: pointer;
-  }
 </style>
 </head>
 <body>
@@ -130,7 +108,7 @@
   <div class="modal-content">
     <button class="close-modal" onclick="closePasswordModal()">×</button>
     <h2>Enter Password</h2>
-    <p id="passwordMovieTitle" style="margin-bottom:1rem;color:#ccc;cursor:pointer"></p>
+    <p id="passwordMovieTitle" style="margin-bottom:1rem;color:#ccc"></p>
     <div class="form-group">
       <label for="moviePasswordInput">Password:</label>
       <input type="password" id="moviePasswordInput" placeholder="Enter movie password">
@@ -145,13 +123,14 @@
   <div class="player-wrapper">
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
-    <div class="second-watermark">ogmovie</div>
+    <!-- REMOVED: Second watermark element -->
   </div>
 </div>
 
 <script>
 const API = window.location.origin + '/api';
-const EMBED_BASE = 'https://multiembed.mov/?video_id=';
+// UPDATED: Switched to VidSrc for fewer ads (embed format: /embed/movie/{imdb_id})
+const EMBED_BASE = 'https://vidsrc.me/embed/movie/';
 const movieGrid = document.getElementById('movieGrid');
 const playerIframe = document.getElementById('playerIframe');
 const playerContainer = document.getElementById('playerContainer');
@@ -161,35 +140,12 @@ const loginModal = document.getElementById('loginModal');
 const addMovieModal = document.getElementById('addMovieModal');
 const passwordModal = document.getElementById('passwordModal');
 const searchInput = document.getElementById('searchInput');
-const secondWatermark = document.querySelector('.second-watermark');
 
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
-let checkInterval = null;
-let prePasswordClicks = 0;
-let postPasswordClicks = 0;
-let isPasswordEntered = false;
 
-// === Watermark Click Tracking ===
-function setupWatermarkClick() {
-  const movieTitle = document.getElementById('passwordMovieTitle');
-  movieTitle.addEventListener('click', () => {
-    if (!isPasswordEntered) {
-      prePasswordClicks++;
-      console.log(`Pre-password click on movie title: ${prePasswordClicks}`);
-      if (prePasswordClicks >= 10 && postPasswordClicks >= 10) {
-        secondWatermark.style.display = 'none';
-      }
-    } else {
-      postPasswordClicks++;
-      console.log(`Post-password click on movie title: ${postPasswordClicks}`);
-      if (prePasswordClicks >= 10 && postPasswordClicks >= 10) {
-        secondWatermark.style.display = 'none';
-      }
-    }
-  });
-}
+// REMOVED: All watermark tracking variables and functions
 
 // === Search Functionality ===
 function filterMovies(searchTerm) {
@@ -418,13 +374,13 @@ function requestMoviePassword(movieId, movieTitle) {
   selectedMovieId = movieId;
   document.getElementById('passwordMovieTitle').textContent = movieTitle;
   passwordModal.classList.add('active');
-  resetWatermark();
+  // REMOVED: resetWatermark();
 }
 
 function closePasswordModal() {
   passwordModal.classList.remove('active');
   selectedMovieId = null;
-  resetWatermark();
+  // REMOVED: resetWatermark();
 }
 
 async function verifyMoviePassword() {
@@ -439,7 +395,7 @@ async function verifyMoviePassword() {
     });
     const data = await res.json();
     if (data.ok) {
-      isPasswordEntered = true;
+      // REMOVED: isPasswordEntered = true;
       const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
         headers: {
           'Authorization': `Bearer ${data.token}`
@@ -461,29 +417,22 @@ async function verifyMoviePassword() {
 }
 
 function showPlayer(embedUrl) {
-  resetWatermark();
+  // REMOVED: resetWatermark();
   
   playerIframe.src = embedUrl;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
-  secondWatermark.style.display = 'block';
+  // REMOVED: secondWatermark.style.display = 'block';
 }
 
 function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
-  resetWatermark();
+  // REMOVED: resetWatermark();
 }
 
-function resetWatermark() {
-  prePasswordClicks = 0;
-  postPasswordClicks = 0;
-  isPasswordEntered = false;
-  if (playerContainer.classList.contains('active')) {
-    secondWatermark.style.display = 'block';
-  }
-}
+// REMOVED: resetWatermark function entirely
 
 // === Public Movie Loading ===
 async function loadMovies() {
@@ -520,7 +469,7 @@ document.addEventListener('keydown', e => {
 
 // Initialize
 loadMovies();
-setupWatermarkClick();
+// REMOVED: setupWatermarkClick();
 </script>
 </body>
 </html>
