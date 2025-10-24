@@ -10,7 +10,7 @@
   header{text-align:center;padding:2rem;position:relative}
   h1{color:#e50914;font-size:2.5rem}
   #adminBtn{position:absolute;top:2rem;right:2rem;background:#e50914;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;font-weight:bold}
-  #searchContainer{max-width:500px;margin:0 auto 2rem auto;padding:0 2rem}
+  #searchContainer{max-width:500px;margin:0 auto 2rem auto;padding0 2rem}
   #searchInput{width:100%;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem}
   #searchInput:focus{outline:none;border-color:#e50914}
   #movieGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem;padding:2rem;max-width:1400px;margin:0 auto}
@@ -49,15 +49,15 @@
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
   
-  /* Second Watermark Overlay */
+  /* Second Watermark Overlay - Wider & Moved Down by Its Height */
   .second-watermark {
     position: absolute;
-    top: calc(50% + 50px); /* Move down by approximately the height of the watermark (50px) */
+    top: calc(50% + 50px); /* Moved down by ~its own height */
     left: 50%;
     transform: translate(-50%, -50%);
     background: #000;
     color: #fff;
-    padding: 10px 15px;
+    padding: 10px 25px; /* Wider on sides */
     font-size: 1.5rem;
     font-weight: bold;
     letter-spacing: 2px;
@@ -66,7 +66,7 @@
     border: 2px solid #e50914;
     box-shadow: 0 0 20px rgba(229, 9, 20, 0.5);
     z-index: 10001;
-    display: none; /* Controlled by JavaScript */
+    display: none;
     pointer-events: auto;
     cursor: pointer;
   }
@@ -113,12 +113,12 @@
       <input type="text" id="movieImdbId" placeholder="tt1234567">
     </div>
     <div class="form-group">
-      <label for="moviePassword">Movie Password (optional):</label>
-      <input type="password" id="moviePassword" placeholder="Set a reusable password for this movie">
+      <label for="moviePassword">Movie Password (reusable):</label>
+      <input type="password" id="moviePassword" placeholder="Set reusable password">
     </div>
     <div class="form-group">
-      <label for="oneTimePassword">One-Time Password (optional):</label>
-      <input type="password" id="oneTimePassword" placeholder="Set a one-time password for this movie">
+      <label for="oneTimePassword">One-Time Password:</label>
+      <input type="password" id="oneTimePassword" placeholder="Set one-time password">
     </div>
     <button class="modal-btn" onclick="addMovie()">Add Movie</button>
   </div>
@@ -132,7 +132,7 @@
     <p id="passwordMovieTitle" style="margin-bottom:1rem;color:#ccc"></p>
     <div class="form-group">
       <label for="moviePasswordInput">Password:</label>
-      <input type="password" id="moviePasswordInput" placeholder="Enter movie password">
+      <input type="password" id="moviePasswordInput" placeholder="Enter movie or one-time password">
     </div>
     <button class="modal-btn" id="watchMovieBtn" onclick="verifyMoviePassword()">Watch Movie</button>
   </div>
@@ -166,26 +166,22 @@ const secondWatermark = document.querySelector('.second-watermark');
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
-let checkInterval = null;
-let prePasswordClicks = 0; // Clicks before password entry
-let postPasswordClicks = 0; // Clicks after password entry
+let prePasswordClicks = 0;
+let postPasswordClicks = 0;
 let isPasswordEntered = false;
 
-// === Watermark Handling ===
+// === Watermark Click Tracking ===
 function setupWatermarkClick() {
   watchMovieBtn.addEventListener('click', () => {
     if (!isPasswordEntered) {
       prePasswordClicks++;
-      console.log(`💧 Pre-password click count: ${prePasswordClicks}`);
+      console.log(`Pre-password click: ${prePasswordClicks}`);
     } else {
       postPasswordClicks++;
-      console.log(`💧 Post-password click count: ${postPasswordClicks}`);
+      console.log(`Post-password click: ${postPasswordClicks}`);
       if (postPasswordClicks >= 10 && prePasswordClicks >= 10) {
         secondWatermark.style.display = 'none';
-        console.log('✅ Watermark hidden due to 10+ clicks before and after password');
-      } else {
-        secondWatermark.style.display = 'block';
-        console.log('❌ Watermark remains visible');
+        console.log('Watermark hidden: 10+ clicks before & after password');
       }
     }
   });
@@ -196,101 +192,58 @@ function resetWatermark() {
   postPasswordClicks = 0;
   isPasswordEntered = false;
   if (playerContainer.classList.contains('active')) {
-    secondWatermark.style.display = 'block'; // Show watermark by default
+    secondWatermark.style.display = 'block';
   }
-  console.log('🔄 Watermark reset');
 }
 
-// === Search Functionality ===
-function filterMovies(searchTerm) {
-  const filteredMovies = currentMovies.filter(movie => 
-    movie.title.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-  displayMovies(filteredMovies);
+// === Search & Display ===
+function filterMovies(term) {
+  const filtered = currentMovies.filter(m => m.title.toLowerCase().includes(term.toLowerCase()));
+  displayMovies(filtered);
 }
 
 function displayMovies(movies) {
   movieGrid.innerHTML = '';
-  if (movies.length === 0) {
+  if (!movies.length) {
     movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
     return;
   }
-  movies.forEach(movie => {
-    createMovieCard(movie);
-  });
+  movies.forEach(createMovieCard);
 }
 
-async function getMoviePoster(movieTitle, year = '') {
+async function getMoviePoster(title, year) {
   try {
-    const response = await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(movieTitle)}`);
-    const data = await response.json();
-    if (data.length > 0 && data[0].show.image && data[0].show.image.medium) {
-      return data[0].show.image.medium;
-    }
-  } catch (error) {
-    console.log('TVMaze search failed');
-  }
-  
+    const res = await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(title)}`);
+    const data = await res.json();
+    if (data[0]?.show?.image?.medium) return data[0].show.image.medium;
+  } catch {}
   try {
-    const wikiResponse = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(movieTitle.replace(/ /g, '_'))}`);
-    const wikiData = await wikiResponse.json();
-    if (wikiData.thumbnail && wikiData.thumbnail.source) {
-      return wikiData.thumbnail.source;
-    }
-  } catch (error) {
-    console.log('Wikipedia search failed');
-  }
-  
-  return `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(movieTitle.substring(0, 20))}`;
+    const res = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`);
+    const data = await res.json();
+    if (data.thumbnail?.source) return data.thumbnail.source;
+  } catch {}
+  return `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(title.substring(0,20))}`;
 }
 
 async function createMovieCard(movie) {
-  try {
-    let img = movie.image;
-    let year = movie.year || 'N/A';
-    const poster = await getMoviePoster(movie.title, movie.year);
-    if (!poster.includes('placeholder.com')) {
-      img = poster;
-    } else if (!img || img.includes('placeholder.com')) {
-      img = poster;
-    }
-    
-    const card = document.createElement('div');
-    card.className = 'movie-card';
-    card.innerHTML = `
-      <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
-      <div class="movie-info"><h3>${movie.title}</h3><p>${year}</p></div>`;
-    card.onclick = () => requestMoviePassword(movie.id, movie.title);
-    movieGrid.appendChild(card);
-  } catch (e) {
-    console.error('Movie card render failed for', movie.title, e);
-    const card = document.createElement('div');
-    card.className = 'movie-card';
-    card.innerHTML = `
-      <img src="https://via.placeholder.com/300x450/333/fff?text=No+Poster">
-      <div class="movie-info"><h3>${movie.title}</h3><p>${movie.year || 'N/A'}</p></div>`;
-    card.onclick = () => requestMoviePassword(movie.id, movie.title);
-    movieGrid.appendChild(card);
-  }
+  const img = movie.image || await getMoviePoster(movie.title, movie.year);
+  const card = document.createElement('div');
+  card.className = 'movie-card';
+  card.innerHTML = `
+    <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+    <div class="movie-info"><h3>${movie.title}</h3><p>${movie.year || 'N/A'}</p></div>`;
+  card.onclick = () => requestMoviePassword(movie.id, movie.title);
+  movieGrid.appendChild(card);
 }
 
 // === Admin Functions ===
-function openAdminPanel() {
-  loginModal.classList.add('active');
-}
-
-function closeLoginModal() {
-  loginModal.classList.remove('active');
-}
-
-function closeAddMovieModal() {
-  addMovieModal.classList.remove('active');
-}
+function openAdminPanel() { loginModal.classList.add('active'); }
+function closeLoginModal() { loginModal.classList.remove('active'); }
+function closeAddMovieModal() { addMovieModal.classList.remove('active'); }
 
 async function adminLogin() {
   const password = document.getElementById('adminPassword').value;
-  if (!password) return alert('Please enter password');
-  
+  if (!password) return alert('Enter password');
   try {
     const res = await fetch(API + '/admin/login', {
       method: 'POST',
@@ -303,13 +256,8 @@ async function adminLogin() {
       loginModal.classList.remove('active');
       showAdminPanel();
       loadAdminMovies();
-    } else {
-      alert('Invalid password');
-    }
-  } catch (e) {
-    console.error('Login failed', e);
-    alert('Login failed');
-  }
+    } else alert('Invalid password');
+  } catch { alert('Login failed'); }
 }
 
 function showAdminPanel() {
@@ -321,8 +269,7 @@ function showAdminPanel() {
       <button class="admin-btn" onclick="openAddMovieModal()">Add Movie</button>
       <button class="admin-btn" onclick="exitAdmin()">Exit Admin</button>
     </div>
-    <div class="movie-list-admin" id="movieListAdmin"></div>
-  `;
+    <div class="movie-list-admin" id="movieListAdmin"></div>`;
 }
 
 function exitAdmin() {
@@ -331,20 +278,17 @@ function exitAdmin() {
   movieGrid.style.display = 'grid';
 }
 
-function openAddMovieModal() {
-  addMovieModal.classList.add('active');
-}
+function openAddMovieModal() { addMovieModal.classList.add('active'); }
 
 async function addMovie() {
   const title = document.getElementById('movieTitle').value;
   const imdbId = document.getElementById('movieImdbId').value;
-  const password = document.getElementById('moviePassword').value;
+  const moviePassword = document.getElementById('moviePassword').value;
   const oneTimePassword = document.getElementById('oneTimePassword').value;
-  
-  if ((!title && !imdbId) || (!password && !oneTimePassword)) {
-    return alert('Please provide movie title or IMDb ID and at least one password');
-  }
-  
+
+  if ((!title && !imdbId) || (!moviePassword && !oneTimePassword))
+    return alert('Provide title/IMDb ID and at least one password');
+
   try {
     const res = await fetch(API + '/movies', {
       method: 'POST',
@@ -352,26 +296,16 @@ async function addMovie() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${adminToken}`
       },
-      body: JSON.stringify({ 
-        name: title, 
-        imdbId: imdbId, 
-        moviePassword: password, 
-        oneTimePassword: oneTimePassword 
-      })
+      body: JSON.stringify({ name: title, imdbId, moviePassword, oneTimePassword })
     });
     const data = await res.json();
     if (data.ok) {
-      alert('Movie added successfully');
+      alert('Movie added');
       closeAddMovieModal();
       loadAdminMovies();
       loadMovies();
-    } else {
-      alert('Error: ' + data.error);
-    }
-  } catch (e) {
-    console.error('Add movie failed', e);
-    alert('Failed to add movie');
-  }
+    } else alert('Error: ' + data.error);
+  } catch { alert('Failed to add movie'); }
 }
 
 async function loadAdminMovies() {
@@ -380,67 +314,49 @@ async function loadAdminMovies() {
     const data = await res.json();
     if (data.ok) {
       currentMovies = data.movies;
-      const movieListAdmin = document.getElementById('movieListAdmin');
-      movieListAdmin.innerHTML = '<h3>Movies</h3>';
-      
-      data.movies.forEach(movie => {
-        const movieItem = document.createElement('div');
-        movieItem.className = 'movie-item-admin';
-        movieItem.innerHTML = `
-          <div>
-            <strong>${movie.title}</strong> ${movie.year ? `(${movie.year})` : ''}
-          </div>
-          <button onclick="deleteMovie(${movie.id})">Delete</button>
-        `;
-        movieListAdmin.appendChild(movieItem);
+      const list = document.getElementById('movieListAdmin');
+      list.innerHTML = '<h3>Movies</h3>';
+      data.movies.forEach(m => {
+        const item = document.createElement('div');
+        item.className = 'movie-item-admin';
+        item.innerHTML = `<div><strong>${m.title}</strong> ${m.year ? `(${m.year})` : ''}</div>
+          <button onclick="deleteMovie(${m.id})">Delete</button>`;
+        list.appendChild(item);
       });
     }
-  } catch (e) {
-    console.error('Failed to load admin movies', e);
-  }
+  } catch { console.error('Failed to load admin movies'); }
 }
 
 async function deleteMovie(id) {
-  if (!confirm('Are you sure you want to delete this movie?')) return;
-  
+  if (!confirm('Delete this movie?')) return;
   try {
     const res = await fetch(API + '/movies/' + id, {
       method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${adminToken}`
-      }
+      headers: { 'Authorization': `Bearer ${adminToken}` }
     });
     const data = await res.json();
-    if (data.ok) {
-      loadAdminMovies();
-      loadMovies();
-    } else {
-      alert('Error: ' + data.error);
-    }
-  } catch (e) {
-    console.error('Delete failed', e);
-    alert('Failed to delete movie');
-  }
+    if (data.ok) { loadAdminMovies(); loadMovies(); }
+    else alert('Error: ' + data.error);
+  } catch { alert('Failed to delete'); }
 }
 
 // === Movie Playback ===
-function requestMoviePassword(movieId, movieTitle) {
-  selectedMovieId = movieId;
-  document.getElementById('passwordMovieTitle').textContent = movieTitle;
+function requestMoviePassword(id, title) {
+  selectedMovieId = id;
+  document.getElementById('passwordMovieTitle').textContent = title;
   passwordModal.classList.add('active');
-  resetWatermark(); // Reset counts when opening password modal
+  resetWatermark();
 }
 
 function closePasswordModal() {
   passwordModal.classList.remove('active');
   selectedMovieId = null;
-  resetWatermark(); // Reset counts when closing password modal
+  resetWatermark();
 }
 
 async function verifyMoviePassword() {
   const password = document.getElementById('moviePasswordInput').value;
-  if (!password) return alert('Please enter password');
-  
+  if (!password) return alert('Enter password');
   try {
     const res = await fetch(API + '/movies/' + selectedMovieId + '/authorize', {
       method: 'POST',
@@ -449,56 +365,35 @@ async function verifyMoviePassword() {
     });
     const data = await res.json();
     if (data.ok) {
-      isPasswordEntered = true; // Mark password as entered
+      isPasswordEntered = true;
       const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
-        headers: {
-          'Authorization': `Bearer ${data.token}`
-        }
+        headers: { 'Authorization': `Bearer ${data.token}` }
       });
       const embedData = await embedRes.json();
-      if (embedData.ok) {
-        showPlayer(embedData.url);
-      } else {
-        alert('Error: ' + embedData.error);
-      }
+      if (embedData.ok) showPlayer(embedData.url);
+      else alert('Error: ' + embedData.error);
     } else {
       alert('Wrong password or one-time password already used');
     }
-  } catch (e) {
-    console.error('Password verification failed', e);
-    alert('Error verifying password');
-  }
+  } catch { alert('Error verifying password'); }
 }
 
-function showPlayer(embedUrl) {
-  // RESET everything when player opens
+function showPlayer(url) {
   resetWatermark();
-  
-  playerIframe.src = embedUrl;
+  playerIframe.src = url;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
-  secondWatermark.style.display = 'block'; // Show watermark initially
+  secondWatermark.style.display = 'block';
 }
 
-// === Simple Audio Detection ===
-function startAudioCheck() {
-  console.log('🎵 Starting audio check...');
-  resetWatermark(); // Ensure watermark is shown when player opens
-}
-
-function stopAudioCheck() {
-  console.log('🛑 Audio check stopped');
-}
-
-// === Player Close ===
 function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
-  resetWatermark(); // Reset counts when closing player
+  resetWatermark();
 }
 
-// === Public Movie Loading ===
+// === Load Movies ===
 async function loadMovies() {
   movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">Loading...</p>';
   try {
@@ -511,17 +406,14 @@ async function loadMovies() {
     movieGrid.innerHTML = '';
     currentMovies = data.movies;
     displayMovies(currentMovies);
-  } catch (e) {
-    console.error('Backend fetch failed', e);
+  } catch {
     movieGrid.innerHTML = '<p style="color:red;text-align:center;">Error loading movies.</p>';
   }
 }
 
-// Event Listeners
+// === Event Listeners ===
 adminBtn.addEventListener('click', openAdminPanel);
-searchInput.addEventListener('input', (e) => {
-  filterMovies(e.target.value);
-});
+searchInput.addEventListener('input', e => filterMovies(e.target.value));
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closePlayer();
@@ -531,7 +423,7 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// Initialize
+// === Initialize ===
 loadMovies();
 setupWatermarkClick();
 </script>
