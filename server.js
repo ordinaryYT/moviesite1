@@ -26,14 +26,15 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-// --- Auto-create table if missing (using EXACT schema from your database) ---
+// --- Auto-create table if missing (updated schema with one_time_password_hash) ---
 async function ensureTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS movies (
       id SERIAL PRIMARY KEY,
       title TEXT NOT NULL,
       imdb_id TEXT,
-      password_hash TEXT NOT NULL,
+      password_hash TEXT,
+      one_time_password_hash TEXT,
       year TEXT,
       image TEXT,
       created_at TIMESTAMP DEFAULT NOW()
@@ -94,12 +95,13 @@ function requireAdmin(req, res, next) {
   }
 }
 
-// --- Add Movie (optional IMDb ID) ---
+// --- Add Movie (optional IMDb ID and passwords) ---
 app.post('/api/movies', requireAdmin, async (req, res) => {
   try {
-    const { name, imdbId, moviePassword } = req.body;
-    if ((!name && !imdbId) || !moviePassword)
-      return res.status(400).json({ ok: false, error: 'Provide movie name or IMDb ID and password' });
+    const { name, imdbId, moviePassword, oneTimePassword } = req.body;
+    console.log('Received data:', { name, imdbId, moviePassword, oneTimePassword }); // Debug log
+    if ((!name && !imdbId) || (!moviePassword && !oneTimePassword))
+      return res.status(400).json({ ok: false, error: 'Provide movie name or IMDb ID and at least one password' });
 
     let movieData;
     if (imdbId) {
@@ -115,11 +117,13 @@ app.post('/api/movies', requireAdmin, async (req, res) => {
       movieData = search;
     }
 
-    const hash = await bcrypt.hash(moviePassword, 10);
+    const passwordHash = moviePassword ? await bcrypt.hash(moviePassword, 10) : null;
+    const oneTimePasswordHash = oneTimePassword ? await bcrypt.hash(oneTimePassword, 10) : null;
+
     const result = await pool.query(
-      `INSERT INTO movies (title, imdb_id, password_hash, year, image)
-       VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-      [movieData.title, movieData.imdb_id, hash, movieData.year, movieData.image]
+      `INSERT INTO movies (title, imdb_id, password_hash, one_time_password_hash, year, image)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [movieData.title, movieData.imdb_id, passwordHash, oneTimePasswordHash, movieData.year, movieData.image]
     );
 
     res.json({ ok: true, movieId: result.rows[0].id });
@@ -142,17 +146,29 @@ app.delete('/api/movies/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// --- Authorize viewer ---
+// --- Authorize viewer (updated for one-time password) ---
 app.post('/api/movies/:id/authorize', async (req, res) => {
   try {
     const id = req.params.id;
     const { password } = req.body;
-    const r = await pool.query('SELECT password_hash FROM movies WHERE id=$1', [id]);
+    const r = await pool.query('SELECT password_hash, one_time_password_hash FROM movies WHERE id=$1', [id]);
     if (!r.rowCount) return res.status(404).json({ ok: false, error: 'Movie not found' });
-    const match = await bcrypt.compare(password, r.rows[0].password_hash);
-    if (!match) return res.status(401).json({ ok: false, error: 'Wrong password' });
-    const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
-    res.json({ ok: true, token });
+    const { password_hash, one_time_password_hash } = r.rows[0];
+
+    if (password_hash && await bcrypt.compare(password, password_hash)) {
+      console.log(`✅ Authorized with regular password for movie ${id}`);
+      const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
+      res.json({ ok: true, token });
+    } else if (one_time_password_hash && await bcrypt.compare(password, one_time_password_hash)) {
+      console.log(`✅ Authorized with one-time password for movie ${id}`);
+      // Invalidate one-time password by updating it to NULL
+      await pool.query('UPDATE movies SET one_time_password_hash = NULL WHERE id = $1', [id]);
+      const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
+      res.json({ ok: true, token });
+    } else {
+      console.log(`❌ Authorization failed for movie ${id}: Wrong password or one-time password already used`);
+      res.status(401).json({ ok: false, error: 'Wrong password or one-time password already used' });
+    }
   } catch (err) {
     console.error('Authorization error:', err);
     res.status(500).json({ ok: false, error: 'Authorization failed' });
