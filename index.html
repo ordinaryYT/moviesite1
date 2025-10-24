@@ -48,6 +48,7 @@
   .player-wrapper{position:relative;width:100%;height:100%}
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
+  .bottom-left-overlay{position:absolute;bottom:5px;right:80%;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
 </style>
 </head>
 <body>
@@ -77,7 +78,7 @@
   </div>
 </div>
 
-<!-- Add Movie Modal - ORIGINAL + 1-TIME PASSWORD FIELD -->
+<!-- Add Movie Modal -->
 <div id="addMovieModal" class="modal">
   <div class="modal-content">
     <button class="close-modal" onclick="closeAddMovieModal()">×</button>
@@ -94,7 +95,6 @@
       <label for="moviePassword">Movie Password:</label>
       <input type="password" id="moviePassword" placeholder="Set a password for this movie">
     </div>
-    <!-- NEW 1-TIME PASSWORD FIELD -->
     <div class="form-group">
       <label for="oneTimePassword">One-Time Password (optional):</label>
       <input type="password" id="oneTimePassword" placeholder="Set one-time password">
@@ -103,7 +103,7 @@
   </div>
 </div>
 
-<!-- Password Modal - ORIGINAL -->
+<!-- Password Modal -->
 <div id="passwordModal" class="modal">
   <div class="modal-content">
     <button class="close-modal" onclick="closePasswordModal()">×</button>
@@ -123,13 +123,12 @@
   <div class="player-wrapper">
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
-    <!-- REMOVED: Second watermark element -->
+    <div class="bottom-left-overlay">ogmovie</div>
   </div>
 </div>
 
 <script>
 const API = window.location.origin + '/api';
-// UPDATED: Switched to VidSrc for fewer ads (embed format: /embed/movie/{imdb_id})
 const EMBED_BASE = 'https://vidsrc.me/embed/movie/';
 const movieGrid = document.getElementById('movieGrid');
 const playerIframe = document.getElementById('playerIframe');
@@ -145,7 +144,10 @@ let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
 
-// REMOVED: All watermark tracking variables and functions
+// Block right-click on iframe
+playerIframe.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+});
 
 // === Search Functionality ===
 function filterMovies(searchTerm) {
@@ -374,13 +376,11 @@ function requestMoviePassword(movieId, movieTitle) {
   selectedMovieId = movieId;
   document.getElementById('passwordMovieTitle').textContent = movieTitle;
   passwordModal.classList.add('active');
-  // REMOVED: resetWatermark();
 }
 
 function closePasswordModal() {
   passwordModal.classList.remove('active');
   selectedMovieId = null;
-  // REMOVED: resetWatermark();
 }
 
 async function verifyMoviePassword() {
@@ -395,7 +395,6 @@ async function verifyMoviePassword() {
     });
     const data = await res.json();
     if (data.ok) {
-      // REMOVED: isPasswordEntered = true;
       const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
         headers: {
           'Authorization': `Bearer ${data.token}`
@@ -417,22 +416,16 @@ async function verifyMoviePassword() {
 }
 
 function showPlayer(embedUrl) {
-  // REMOVED: resetWatermark();
-  
   playerIframe.src = embedUrl;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
-  // REMOVED: secondWatermark.style.display = 'block';
 }
 
 function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
-  // REMOVED: resetWatermark();
 }
-
-// REMOVED: resetWatermark function entirely
 
 // === Public Movie Loading ===
 async function loadMovies() {
@@ -469,7 +462,6 @@ document.addEventListener('keydown', e => {
 
 // Initialize
 loadMovies();
-// REMOVED: setupWatermarkClick();
 </script>
 </body>
 </html>
