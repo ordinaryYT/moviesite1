@@ -52,22 +52,28 @@
   /* Second Watermark Overlay */
   .second-watermark {
     position: absolute;
-    top: 60%; /* 60% from top */
-    left: 50%; /* 50% from left */
+    top: 50%; /* Centered vertically */
+    left: 50%; /* Centered horizontally */
     transform: translate(-50%, -50%);
     background: #000; /* Solid black background */
     color: #fff; /* Solid white text */
-    padding: 20px 30px;
-    font-size: 2rem;
+    padding: 10px 15px; /* Reduced size */
+    font-size: 1.5rem; /* Smaller text */
     font-weight: bold;
-    letter-spacing: 4px;
+    letter-spacing: 2px;
     text-transform: uppercase;
-    border-radius: 12px;
-    z-index: 10001;
-    display: none;
-    pointer-events: none;
-    border: 3px solid #e50914; /* Solid red border */
-    box-shadow: 0 0 30px rgba(229, 9, 20, 0.5);
+    border-radius: 8px;
+    z-index: 10001; /* Above iframe content */
+    display: block; /* Permanently visible */
+    pointer-events: auto; /* Allow clicks */
+    border: 2px solid #e50914; /* Thinner red border */
+    box-shadow: 0 0 20px rgba(229, 9, 20, 0.5);
+    cursor: pointer; /* Indicate clickable */
+  }
+
+  /* Watermark Password Modal Styles */
+  .watermark-password-modal .modal-content {
+    max-width: 350px;
   }
 </style>
 </head>
@@ -157,25 +163,25 @@ const passwordModal = document.getElementById('passwordModal');
 const searchInput = document.getElementById('searchInput');
 const secondWatermark = document.querySelector('.second-watermark');
 
+// Expose watermark control for potential future Electron use
+window.controlWatermark = {
+  show: () => { showSecondWatermark(); },
+  hide: () => { hideSecondWatermark(); }
+};
+
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
-
-// Expose watermark control for Electron app
-window.controlWatermark = {
-  show: () => {
-    showSecondWatermark();
-  },
-  hide: () => {
-    hideSecondWatermark();
-  }
-};
+let watermarkPassword = null; // Store the password when entered
+let clickCount = 0; // Track clicks on watermark
+let clickTimer = null; // Timer for 30-second window
 
 // Watermark control functions
 function showSecondWatermark() {
   if (secondWatermark.style.display !== 'block') {
     secondWatermark.style.display = 'block';
     console.log('💧 Second watermark shown');
+    resetClickCounter(); // Reset clicks when shown
   }
 }
 
@@ -186,15 +192,73 @@ function hideSecondWatermark() {
   }
 }
 
-// Audio check functions (minimal for website, managed by Electron)
-function startAudioCheck() {
-  console.log('🎵 Audio check started (handled by Electron if in app)');
-  showSecondWatermark();
+// Password modal for watermark removal
+function showWatermarkPasswordModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal watermark-password-modal';
+  modal.innerHTML = `
+    <div class="modal-content">
+      <button class="close-modal" onclick="closeWatermarkPasswordModal()">×</button>
+      <h2>Enter Watermark Password</h2>
+      <div class="form-group">
+        <label for="watermarkPasswordInput">Password:</label>
+        <input type="password" id="watermarkPasswordInput" placeholder="Enter password">
+      </div>
+      <button class="modal-btn" onclick="verifyWatermarkPassword()">Submit</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.classList.add('active');
 }
 
-function stopAudioCheck() {
-  console.log('🛑 Audio check stopped');
-  hideSecondWatermark();
+function closeWatermarkPasswordModal() {
+  const modal = document.querySelector('.watermark-password-modal');
+  if (modal) {
+    modal.classList.remove('active');
+    setTimeout(() => document.body.removeChild(modal), 300); // Allow animation
+  }
+}
+
+function verifyWatermarkPassword() {
+  const password = document.getElementById('watermarkPasswordInput').value;
+  if (password === 'yourpassword123') { // Replace with your desired password
+    watermarkPassword = password;
+    hideSecondWatermark();
+    closeWatermarkPasswordModal();
+  } else {
+    alert('Incorrect password');
+  }
+}
+
+// Click counter and timer logic
+function resetClickCounter() {
+  clickCount = 0;
+  if (clickTimer) {
+    clearTimeout(clickTimer);
+  }
+  clickTimer = setTimeout(() => {
+    clickCount = 0; // Reset after 30 seconds
+    console.log('Click count reset due to 30-second timeout');
+  }, 30000); // 30 seconds
+}
+
+function setupWatermarkClick() {
+  secondWatermark.addEventListener('click', () => {
+    clickCount++;
+    console.log(`Click count: ${clickCount}`);
+    if (clickCount === 10 && !watermarkPassword) {
+      showWatermarkPasswordModal();
+      resetClickCounter(); // Reset after reaching 10 clicks
+    } else if (clickCount > 10) {
+      clickCount = 10; // Cap at 10
+    }
+  });
+}
+
+function resetWatermark() {
+  watermarkPassword = null; // Reset password on player open
+  showSecondWatermark(); // Ensure overlay is visible
+  resetClickCounter(); // Reset click counter
 }
 
 // === Search Functionality ===
@@ -264,7 +328,7 @@ async function createMovieCard(movie) {
     card.className = 'movie-card';
     card.innerHTML = `
       <img src="https://via.placeholder.com/300x450/333/fff?text=No+Poster">
-      <div class="movie-info"><h3>${movie.title}</h3><p>${movie.year || 'N/A'}</p></div>`;
+      <div class="movie-info"><h3>${movie.title}</h3><p>${year}</p></div>`;
     card.onclick = () => requestMoviePassword(movie.id, movie.title);
     movieGrid.appendChild(card);
   }
@@ -448,16 +512,15 @@ async function verifyMoviePassword() {
       });
       const embedData = await embedRes.json();
       if (embedData.ok) {
-        showPlayer(embedData.url);
-      } else {
-        alert('Error: ' + embedData.error);
+        showPlayer(embedData.embedUrl);
       }
+      closePasswordModal();
     } else {
-      alert('Wrong password');
+      alert('Incorrect password');
     }
   } catch (e) {
     console.error('Password verification failed', e);
-    alert('Error verifying password');
+    alert('Failed to verify password');
   }
 }
 
@@ -470,7 +533,7 @@ function showPlayer(embedUrl) {
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
-  // Start audio check (minimal for website, Electron handles detection)
+  resetWatermark(); // Reset watermark state on player open
   startAudioCheck();
 }
 
@@ -480,41 +543,37 @@ function closePlayer() {
   stopAudioCheck();
 }
 
-// === Public Movie Loading ===
+// Audio check functions (minimal for website)
+function startAudioCheck() {
+  console.log('🎵 Audio check started');
+  showSecondWatermark();
+}
+
+function stopAudioCheck() {
+  console.log('🛑 Audio check stopped');
+  hideSecondWatermark();
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+  searchInput.addEventListener('input', (e) => filterMovies(e.target.value));
+  adminBtn.addEventListener('click', openAdminPanel);
+  setupWatermarkClick();
+  loadMovies();
+});
+
 async function loadMovies() {
-  movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">Loading...</p>';
   try {
     const res = await fetch(API + '/movies');
     const data = await res.json();
-    if (!data.ok || !data.movies.length) {
-      movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">No movies found.</p>';
-      return;
+    if (data.ok) {
+      currentMovies = data.movies;
+      displayMovies(currentMovies);
     }
-    movieGrid.innerHTML = '';
-    currentMovies = data.movies;
-    displayMovies(currentMovies);
   } catch (e) {
-    console.error('Backend fetch failed', e);
-    movieGrid.innerHTML = '<p style="color:red;text-align:center;">Error loading movies.</p>';
+    console.error('Failed to load movies', e);
   }
 }
-
-// Event Listeners
-adminBtn.addEventListener('click', openAdminPanel);
-searchInput.addEventListener('input', (e) => {
-  filterMovies(e.target.value);
-});
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    closePlayer();
-    closeLoginModal();
-    closeAddMovieModal();
-    closePasswordModal();
-  }
-});
-
-// Initialize
-loadMovies();
 </script>
 </body>
 </html>
