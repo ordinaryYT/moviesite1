@@ -26,7 +26,7 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-// --- Auto-create table if missing (updated schema with one_time_password_hash) ---
+// --- Auto-create table - ADDED one_time_password_hash ---
 async function ensureTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS movies (
@@ -95,13 +95,12 @@ function requireAdmin(req, res, next) {
   }
 }
 
-// --- Add Movie (optional IMDb ID and passwords) ---
+// --- Add Movie - ADDED oneTimePassword support ---
 app.post('/api/movies', requireAdmin, async (req, res) => {
   try {
     const { name, imdbId, moviePassword, oneTimePassword } = req.body;
-    console.log('Received data:', { name, imdbId, moviePassword, oneTimePassword }); // Debug log
-    if ((!name && !imdbId) || (!moviePassword && !oneTimePassword))
-      return res.status(400).json({ ok: false, error: 'Provide movie name or IMDb ID and at least one password' });
+    if ((!name && !imdbId) || !moviePassword)
+      return res.status(400).json({ ok: false, error: 'Provide movie name or IMDb ID and password' });
 
     let movieData;
     if (imdbId) {
@@ -117,7 +116,7 @@ app.post('/api/movies', requireAdmin, async (req, res) => {
       movieData = search;
     }
 
-    const passwordHash = moviePassword ? await bcrypt.hash(moviePassword, 10) : null;
+    const passwordHash = await bcrypt.hash(moviePassword, 10);
     const oneTimePasswordHash = oneTimePassword ? await bcrypt.hash(oneTimePassword, 10) : null;
 
     const result = await pool.query(
@@ -146,36 +145,38 @@ app.delete('/api/movies/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// --- Authorize viewer (updated for one-time password) ---
+// --- Authorize viewer - ADDED 1-TIME PASSWORD SUPPORT ---
 app.post('/api/movies/:id/authorize', async (req, res) => {
   try {
     const id = req.params.id;
     const { password } = req.body;
     const r = await pool.query('SELECT password_hash, one_time_password_hash FROM movies WHERE id=$1', [id]);
     if (!r.rowCount) return res.status(404).json({ ok: false, error: 'Movie not found' });
+    
     const { password_hash, one_time_password_hash } = r.rows[0];
 
+    // Check regular password first
     if (password_hash && await bcrypt.compare(password, password_hash)) {
-      console.log(`✅ Authorized with regular password for movie ${id}`);
       const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
-      res.json({ ok: true, token });
-    } else if (one_time_password_hash && await bcrypt.compare(password, one_time_password_hash)) {
-      console.log(`✅ Authorized with one-time password for movie ${id}`);
-      // Invalidate one-time password by updating it to NULL
+      return res.json({ ok: true, token });
+    }
+    
+    // Check one-time password
+    if (one_time_password_hash && await bcrypt.compare(password, one_time_password_hash)) {
+      // Invalidate one-time password
       await pool.query('UPDATE movies SET one_time_password_hash = NULL WHERE id = $1', [id]);
       const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
-      res.json({ ok: true, token });
-    } else {
-      console.log(`❌ Authorization failed for movie ${id}: Wrong password or one-time password already used`);
-      res.status(401).json({ ok: false, error: 'Wrong password or one-time password already used' });
+      return res.json({ ok: true, token });
     }
+    
+    return res.status(401).json({ ok: false, error: 'Wrong password' });
   } catch (err) {
     console.error('Authorization error:', err);
     res.status(500).json({ ok: false, error: 'Authorization failed' });
   }
 });
 
-// --- Get embed (requires valid token) ---
+// --- Get embed ---
 app.get('/api/movies/:id/embed', async (req, res) => {
   try {
     const auth = req.headers.authorization || '';
@@ -191,7 +192,7 @@ app.get('/api/movies/:id/embed', async (req, res) => {
   }
 });
 
-// Serve the main HTML file
+// Serve HTML
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
