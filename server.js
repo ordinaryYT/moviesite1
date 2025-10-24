@@ -1,3 +1,4 @@
+```javascript
 // server.js - Backend Server
 require('dotenv').config();
 const express = require('express');
@@ -18,7 +19,6 @@ app.use(express.static(path.join(__dirname)));
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'boughton5';
-// UPDATED: Switched to VidSrc for fewer ads (embed format: /embed/movie/{imdb_id})
 const EMBED_BASE = 'https://vidsrc.me/embed/movie/';
 
 // --- PostgreSQL ---
@@ -118,7 +118,7 @@ function requireAdmin(req, res, next) {
   }
 }
 
-// --- Add Movie - ADDED oneTimePassword support ---
+// --- Add Movie ---
 app.post('/api/movies', requireAdmin, async (req, res) => {
   try {
     const { name, imdbId, moviePassword, oneTimePassword } = req.body;
@@ -168,7 +168,7 @@ app.delete('/api/movies/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// --- Authorize viewer - ADDED 1-TIME PASSWORD SUPPORT ---
+// --- Authorize viewer - FIXED TO ENSURE REGULAR PASSWORD IS REUSABLE ---
 app.post('/api/movies/:id/authorize', async (req, res) => {
   try {
     const id = req.params.id;
@@ -178,21 +178,25 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
     
     const { password_hash, one_time_password_hash } = r.rows[0];
 
-    // Check regular password first
-    if (password_hash && await bcrypt.compare(password, password_hash)) {
-      const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
-      return res.json({ ok: true, token });
-    }
-    
-    // Check one-time password
+    let isOneTimePasswordUsed = false;
+
+    // Check one-time password first
     if (one_time_password_hash && await bcrypt.compare(password, one_time_password_hash)) {
       // Invalidate one-time password
       await pool.query('UPDATE movies SET one_time_password_hash = NULL WHERE id = $1', [id]);
-      const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
-      return res.json({ ok: true, token });
+      isOneTimePasswordUsed = true;
     }
-    
-    return res.status(401).json({ ok: false, error: 'Wrong password' });
+    // Check regular password
+    else if (password_hash && await bcrypt.compare(password, password_hash)) {
+      // Regular password is valid, no need to invalidate
+    }
+    else {
+      return res.status(401).json({ ok: false, error: 'Wrong password' });
+    }
+
+    // Issue token only if one of the passwords matched
+    const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
+    res.json({ ok: true, token });
   } catch (err) {
     console.error('Authorization error:', err);
     res.status(500).json({ ok: false, error: 'Authorization failed' });
@@ -221,3 +225,4 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+```
