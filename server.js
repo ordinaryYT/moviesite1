@@ -5,6 +5,7 @@ const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const path = require('path');
+const ejs = require('ejs');
 
 // Render Node 18 has fetch built in, fallback if not
 const fetch = global.fetch || ((...args) => import('node-fetch').then(({ default: f }) => f(...args)));
@@ -12,7 +13,9 @@ const fetch = global.fetch || ((...args) => import('node-fetch').then(({ default
 const app = express();
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname, 'public'))); // Serve static files (e.g., minified JS/CSS)
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views')); // EJS templates in 'views' folder
 
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
@@ -28,7 +31,6 @@ const pool = new Pool({
 // --- Auto-create table and ensure one_time_password_hash column ---
 async function ensureTable() {
   try {
-    // Create movies table if it doesn't exist (using raw string to avoid parsing issues)
     await pool.query(
       'CREATE TABLE IF NOT EXISTS movies (\n' +
       '  id SERIAL PRIMARY KEY,\n' +
@@ -43,7 +45,6 @@ async function ensureTable() {
     );
     console.log('✅ Movies table ready');
 
-    // Add one_time_password_hash column if it doesn't exist
     await pool.query(
       'DO $$\n' +
       'BEGIN\n' +
@@ -175,14 +176,12 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
 
     const { password_hash, one_time_password_hash } = r.rows[0];
 
-    // Check one-time password first
     if (one_time_password_hash && await bcrypt.compare(password, one_time_password_hash)) {
       await pool.query('UPDATE movies SET one_time_password_hash = NULL WHERE id = $1', [id]);
       const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
       return res.json({ ok: true, token });
     }
 
-    // Check regular password
     if (password_hash && await bcrypt.compare(password, password_hash)) {
       const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
       return res.json({ ok: true, token });
@@ -211,9 +210,21 @@ app.get('/api/movies/:id/embed', async (req, res) => {
   }
 });
 
-// Serve HTML
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+// --- Serve main page with EJS ---
+app.get('/', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT id, title, year, image FROM movies ORDER BY created_at DESC');
+    res.render('index', { 
+      movies: result.rows,
+      apiBase: process.env.API_BASE || `${req.protocol}://${req.get('host')}/api`
+    });
+  } catch (err) {
+    console.error('Error fetching movies for render:', err);
+    res.render('index', { 
+      movies: [],
+      apiBase: process.env.API_BASE || `${req.protocol}://${req.get('host')}/api`
+    });
+  }
 });
 
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
