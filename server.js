@@ -5,7 +5,6 @@ const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const path = require('path');
-const fs = require('fs');
 
 // Render Node 18 has fetch built in, fallback if not
 const fetch = global.fetch || ((...args) => import('node-fetch').then(({ default: f }) => f(...args)));
@@ -208,36 +207,9 @@ app.get('/api/movies/:id/embed', async (req, res) => {
   }
 });
 
-// --- Serve HTML with injected movie data ---
-app.get('/', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT id, title, year, image FROM movies ORDER BY created_at DESC');
-    const movies = result.rows;
-    
-    // Generate movie grid HTML
-    let movieGridHtml = '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
-    if (movies.length > 0) {
-      movieGridHtml = movies.map(movie => `
-        <div class="movie-card" onclick="requestMoviePassword(${movie.id}, '${movie.title.replace(/'/g, "\\'")}')">
-          <img src="${movie.image || `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(movie.title.substring(0, 20))}`}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
-          <div class="movie-info">
-            <h3>${movie.title}</h3>
-            <p>${movie.year || 'N/A'}</p>
-          </div>
-        </div>
-      `).join('');
-    }
-
-    // Read and modify index.html
-    let html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-    html = html.replace('<!-- MOVIE_GRID -->', movieGridHtml);
-    res.send(html);
-  } catch (err) {
-    console.error('Error rendering index:', err);
-    let html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-    html = html.replace('<!-- MOVIE_GRID -->', '<p style="text-align:center;color:#aaa;grid-column:1/-1;">Error loading movies</p>');
-    res.send(html);
-  }
+// --- Serve static index.html ---
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
