@@ -92,8 +92,8 @@ client.on('messageCreate', async (message) => {
     await message.reply(`Available movies:\n${movieList}`);
   }
 
-  // !ban <user> [reason]
-  if (command === 'ban') {
+  // !block <@user> [reason]
+  if (command === 'block') {
     if (!message.member.roles.cache.some(role => role.name === ADMIN_ROLE)) {
       return message.reply('You need the Admin role to use this command.');
     }
@@ -102,11 +102,11 @@ client.on('messageCreate', async (message) => {
     const reason = args.slice(1).join(' ') || 'No reason provided';
 
     if (!user) {
-      return message.reply('Please mention a user to ban.');
+      return message.reply('Please mention a user to block.');
     }
 
     try {
-      const res = await fetch(`http://localhost:${PORT}/api/discord/ban`, {
+      const res = await fetch(`http://localhost:${PORT}/api/discord/block`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -117,29 +117,29 @@ client.on('messageCreate', async (message) => {
       const data = await res.json();
 
       if (data.ok) {
-        await message.reply(`Banned user <@${user.id}> from generating temp passwords. Reason: ${reason}`);
+        await message.reply(`Blocked user <@${user.id}> from generating temp passwords. Reason: ${reason}`);
       } else {
         await message.reply(`Error: ${data.error}`);
       }
     } catch (err) {
-      console.error('Ban command error:', err);
-      await message.reply('Failed to ban user.');
+      console.error('Block command error:', err);
+      await message.reply('Failed to block user.');
     }
   }
 
-  // !unban <user>
-  if (command === 'unban') {
+  // !unblock <@user>
+  if (command === 'unblock') {
     if (!message.member.roles.cache.some(role => role.name === ADMIN_ROLE)) {
       return message.reply('You need the Admin role to use this command.');
     }
 
     const user = message.mentions.users.first();
     if (!user) {
-      return message.reply('Please mention a user to unban.');
+      return message.reply('Please mention a user to unblock.');
     }
 
     try {
-      const res = await fetch(`http://localhost:${PORT}/api/discord/unban`, {
+      const res = await fetch(`http://localhost:${PORT}/api/discord/unblock`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -150,18 +150,18 @@ client.on('messageCreate', async (message) => {
       const data = await res.json();
 
       if (data.ok) {
-        await message.reply(`Unbanned user <@${user.id}> from generating temp passwords.`);
+        await message.reply(`Unblocked user <@${user.id}> from generating temp passwords.`);
       } else {
         await message.reply(`Error: ${data.error}`);
       }
     } catch (err) {
-      console.error('Unban command error:', err);
-      await message.reply('Failed to unban user.');
+      console.error('Unblock command error:', err);
+      await message.reply('Failed to unblock user.');
     }
   }
 
-  // !toggletemppasswords <on|off>
-  if (command === 'toggletemppasswords') {
+  // !toggle_temp <on/off>
+  if (command === 'toggle_temp') {
     if (!message.member.roles.cache.some(role => role.name === ADMIN_ROLE)) {
       return message.reply('You need the Admin role to use this command.');
     }
@@ -214,13 +214,13 @@ async function ensureTables() {
       )
     `);
     
-    // Discord banned users table
+    // Discord blocked users table
     await pool.query(`
-      CREATE TABLE IF NOT EXISTS discord_bans (
+      CREATE TABLE IF NOT EXISTS discord_blocks (
         id SERIAL PRIMARY KEY,
         discord_id TEXT UNIQUE NOT NULL,
-        banned_by TEXT NOT NULL,
-        banned_at TIMESTAMP DEFAULT NOW(),
+        blocked_by TEXT NOT NULL,
+        blocked_at TIMESTAMP DEFAULT NOW(),
         reason TEXT
       )
     `);
@@ -266,8 +266,8 @@ async function isTempPasswordsEnabled() {
   return result.rows[0]?.value === 'true';
 }
 
-async function isUserBanned(discordId) {
-  const result = await pool.query('SELECT id FROM discord_bans WHERE discord_id = $1', [discordId]);
+async function isUserBlocked(discordId) {
+  const result = await pool.query('SELECT id FROM discord_blocks WHERE discord_id = $1', [discordId]);
   return result.rowCount > 0;
 }
 
@@ -459,8 +459,8 @@ app.post('/api/movies/:id/temp-password', async (req, res) => {
       return res.status(403).json({ ok: false, error: 'Temp password generation disabled' });
     }
 
-    if (await isUserBanned(discord_id)) {
-      return res.status(403).json({ ok: false, error: 'User is banned' });
+    if (await isUserBlocked(discord_id)) {
+      return res.status(403).json({ ok: false, error: 'User is blocked' });
     }
 
     const movieCheck = await pool.query('SELECT id FROM movies WHERE id = $1', [movieId]);
@@ -483,38 +483,38 @@ app.post('/api/movies/:id/temp-password', async (req, res) => {
   }
 });
 
-// --- Ban user ---
-app.post('/api/discord/ban', requireAdmin, async (req, res) => {
+// --- Block user ---
+app.post('/api/discord/block', requireAdmin, async (req, res) => {
   try {
     const { discord_id, reason } = req.body;
     if (!discord_id) return res.status(400).json({ ok: false, error: 'Missing Discord ID' });
 
     await pool.query(
-      'INSERT INTO discord_bans (discord_id, banned_by, reason) VALUES ($1, $2, $3) ON CONFLICT (discord_id) DO NOTHING',
+      'INSERT INTO discord_blocks (discord_id, blocked_by, reason) VALUES ($1, $2, $3) ON CONFLICT (discord_id) DO NOTHING',
       [discord_id, 'admin', reason || 'No reason provided']
     );
 
     res.json({ ok: true });
   } catch (err) {
-    console.error('Ban error:', err);
+    console.error('Block error:', err);
     res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
 
-// --- Unban user ---
-app.post('/api/discord/unban', requireAdmin, async (req, res) => {
+// --- Unblock user ---
+app.post('/api/discord/unblock', requireAdmin, async (req, res) => {
   try {
     const { discord_id } = req.body;
     if (!discord_id) return res.status(400).json({ ok: false, error: 'Missing Discord ID' });
 
-    const result = await pool.query('DELETE FROM discord_bans WHERE discord_id = $1', [discord_id]);
+    const result = await pool.query('DELETE FROM discord_blocks WHERE discord_id = $1', [discord_id]);
     if (!result.rowCount) {
-      return res.status(404).json({ ok: false, error: 'User not banned' });
+      return res.status(404).json({ ok: false, error: 'User not blocked' });
     }
 
     res.json({ ok: true });
   } catch (err) {
-    console.error('Unban error:', err);
+    console.error('Unblock error:', err);
     res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
@@ -545,52 +545,52 @@ app.get('/script.js', (req, res) => {
       const _9_=_0x.getElementById('adminPanel');const _10_=_0x.getElementById('loginModal');
       const _11_=_0x.getElementById('addMovieModal');const _12_=_0x.getElementById('passwordModal');
       const _13_=_0x.getElementById('searchInput');
-      function _14_(_a_){return _3_.filter(_b_=>_b_.title.toLowerCase().includes(_a_.toLowerCase()))}
-      async function _15_(_c_){_5_.innerHTML='';if(_c_.length===0){_5_.innerHTML='<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';return}_c_.forEach(_d_=>_16_(_d_))}
-      async function _16_(_e_){try{let _f_=_e_.image;let _g_=_e_.year||'N/A';const _h_=await _17_(_e_.title,_g_);
-      if(!_h_.includes('placeholder.com')){_f_=_h_}else if(!_f_||_f_.includes('placeholder.com')){_f_=_h_}
-      const _i_=_0x.createElement('div');_i_.className='movie-card';
-      _i_.innerHTML=\`<img src="\${_f_}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'"><div class="movie-info"><h3>\${_e_.title}</h3><p>\${_g_}</p></div>\`;
-      _i_.onclick=() => _18_(_e_.id,_e_.title);_5_.appendChild(_i_)}catch(_j_){console.error('Movie card render failed',_e_.title);const _k_=_0x.createElement('div');
-      _k_.className='movie-card';_k_.innerHTML=\`<img src="https://via.placeholder.com/300x450/333/fff?text=No+Poster"><div class="movie-info"><h3>\${_e_.title}</h3><p>\${_e_.year||'N/A'}</p></div>\`;
-      _k_.onclick=() => _18_(_e_.id,_e_.title);_5_.appendChild(_k_)}}
-      async function _17_(_l_,_m_=''){try{const _n_=await fetch(\`https://api.tvmaze.com/search/shows?q=\${encodeURIComponent(_l_)}\`);
-      const _o_=await _n_.json();if(_o_.length>0&&_o_[0].show.image&&_o_[0].show.image.medium){return _o_[0].show.image.medium}}catch(_p_){console.log('TVMaze search failed')}
-      try{const _q_=await fetch(\`https://en.wikipedia.org/api/rest_v1/page/summary/\${encodeURIComponent(_l_.replace(/ /g,'_'))}\`);
-      const _r_=await _q_.json();if(_r_.thumbnail&&_r_.thumbnail.source){return _r_.thumbnail.source}}catch(_s_){console.log('Wikipedia search failed')}
-      return \`https://via.placeholder.com/300x450/333/fff?text=\${encodeURIComponent(_l_.substring(0,20))}\`;}
-      function _18_(_t_,_u_){_4_=_t_;_0x.getElementById('passwordMovieTitle').textContent=_u_;_12_.classList.add('active')}
+      function _14_(_a_){const _b_=_a_.toLowerCase();const _c_=_3_.filter(_d_=>_d_.title.toLowerCase().includes(_b_));_15_(_c_)}
+      async function _15_(_e_){_5_.innerHTML='';if(_e_.length===0){_5_.innerHTML='<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';return}_e_.forEach(_f_=>_16_(_f_))}
+      async function _16_(_g_){try{let _h_=_g_.image;let _i_=_g_.year||'N/A';const _j_=await _17_(_g_.title,_i_);
+      if(!_j_.includes('placeholder.com')){_h_=_j_}else if(!_h_||_h_.includes('placeholder.com')){_h_=_j_}
+      const _k_=_0x.createElement('div');_k_.className='movie-card';
+      _k_.innerHTML=\`<img src="\${_h_}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'"><div class="movie-info"><h3>\${_g_.title}</h3><p>\${_i_}</p></div>\`;
+      _k_.onclick=() => _18_(_g_.id,_g_.title);_5_.appendChild(_k_)}catch(_l_){console.error('Movie card render failed for',_g_.title,_l_);const _m_=_0x.createElement('div');
+      _m_.className='movie-card';_m_.innerHTML=\`<img src="https://via.placeholder.com/300x450/333/fff?text=No+Poster"><div class="movie-info"><h3>\${_g_.title}</h3><p>\${_g_.year||'N/A'}</p></div>\`;
+      _m_.onclick=() => _18_(_g_.id,_g_.title);_5_.appendChild(_m_)}}
+      async function _17_(_n_,_o_=''){try{const _p_=await fetch(\`https://api.tvmaze.com/search/shows?q=\${encodeURIComponent(_n_)}\`);
+      const _q_=await _p_.json();if(_q_.length>0&&_q_[0].show.image&&_q_[0].show.image.medium){return _q_[0].show.image.medium}}catch(_r_){console.log('TVMaze search failed')}
+      try{const _s_=await fetch(\`https://en.wikipedia.org/api/rest_v1/page/summary/\${encodeURIComponent(_n_.replace(/ /g,'_'))}\`);
+      const _t_=await _s_.json();if(_t_.thumbnail&&_t_.thumbnail.source){return _t_.thumbnail.source}}catch(_u_){console.log('Wikipedia search failed')}
+      return \`https://via.placeholder.com/300x450/333/fff?text=\${encodeURIComponent(_n_.substring(0,20))}\`;}
+      function _18_(_v_,_w_){_4_=_v_;_0x.getElementById('passwordMovieTitle').textContent=_w_;_12_.classList.add('active')}
       function _19_(){_10_.classList.add('active')}function _20_(){_10_.classList.remove('active')}
       function _21_(){_11_.classList.remove('active')}function _22_(){_12_.classList.remove('active');_4_=null}
-      async function _23_(){const _v_=_0x.getElementById('adminPassword').value;
-      if(!_v_)return alert('Please enter password');try{const _w_=await fetch(_1_+'/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:_v_})});
-      const _x_=await _w_.json();if(_x_.ok){_2_=_x_.token;_20_();_24_();_25_()}else{alert('Invalid password')}}catch(_y_){console.error('Login failed');alert('Login failed')}}
+      async function _23_(){const _x_=_0x.getElementById('adminPassword').value;
+      if(!_x_)return alert('Please enter password');try{const _y_=await fetch(_1_+'/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:_x_})});
+      const _z_=await _y_.json();if(_z_.ok){_2_=_z_.token;_20_();_24_();_25_()}else{alert('Invalid password')}}catch(_aa_){console.error('Login failed',_aa_);alert('Login failed')}}
       function _24_(){_5_.style.display='none';_9_.classList.add('active');
       _9_.innerHTML=\`<h2>Admin Panel</h2><div class="admin-actions"><button class="admin-btn" onclick="_26_()">Add Movie</button><button class="admin-btn" onclick="_27_()">Exit Admin</button></div><div class="movie-list-admin" id="movieListAdmin"></div>\`}
       function _27_(){_2_=null;_9_.classList.remove('active');_5_.style.display='grid'}function _26_(){_11_.classList.add('active')}
-      async function _28_(){const _z_=_0x.getElementById('movieTitle').value;const _aa_=_0x.getElementById('movieImdbId').value;
-      const _ab_=_0x.getElementById('moviePassword').value;const _ac_=_0x.getElementById('oneTimePassword').value;
-      if((!_z_&&!_aa_)||!_ab_)return alert('Please provide movie title or IMDb ID and password');
-      try{const _ad_=await fetch(_1_+'/movies',{method:'POST',headers:{'Content-Type':'application/json','Authorization': \`Bearer \${_2_}\`},body:JSON.stringify({name:_z_,imdbId:_aa_,moviePassword:_ab_,oneTimePassword:_ac_||null})});
-      const _ae_=await _ad_.json();if(_ae_.ok){alert('Movie added successfully');_21_();_25_();_29_()}else{alert('Error: '+_ae_.error)}}catch(_af_){console.error('Add movie failed');alert('Failed to add movie')}}
-      async function _25_(){try{const _ag_=await fetch(_1_+'/movies');const _ah_=await _ag_.json();
-      if(_ah_.ok){_3_=_ah_.movies;const _ai_=_0x.getElementById('movieListAdmin');_ai_.innerHTML='<h3>Movies</h3>';
-      _ah_.movies.forEach(_aj_=>{_ai_.innerHTML+=\`<div class="movie-item-admin"><div><strong>\${_aj_.title}</strong> \${_aj_.year? \`(\${_aj_.year})\`:''}</div><button onclick="_30_(\${_aj_.id})">Delete</button></div>\`})}}catch(_ak_){console.error('Failed to load admin movies')}}
-      async function _30_(_al_){if(!confirm('Are you sure you want to delete this movie?'))return;
-      try{const _am_=await fetch(_1_+'/movies/'+_al_,{method:'DELETE',headers:{'Authorization': \`Bearer \${_2_}\`}});
-      const _an_=await _am_.json();if(_an_.ok){_25_();_29_()}else{alert('Error: '+_an_.error)}}catch(_ao_){console.error('Delete failed');alert('Failed to delete movie')}}
-      async function _31_(){const _ap_=_0x.getElementById('moviePasswordInput').value;
-      if(!_ap_)return alert('Please enter password');try{const _aq_=await fetch(_1_+'/movies/'+_4_+'/authorize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:_ap_})});
-      const _ar_=await _aq_.json();if(_ar_.ok){const _as_=await fetch(_1_+'/movies/'+_4_+'/embed',{headers:{'Authorization': \`Bearer \${_ar_.token}\`}});
-      const _at_=await _as_.json();if(_at_.ok){_32_(_at_.url)}else{alert('Error: '+_at_.error)}}else{alert('Wrong password')}}catch(_au_){console.error('Password verification failed');alert('Error verifying password')}}
-      function _32_(_av_){_6_.src=_av_;_7_.classList.add('active');_12_.classList.remove('active');_0x.getElementById('moviePasswordInput').value=''}
+      async function _28_(){const _ab_=_0x.getElementById('movieTitle').value;const _ac_=_0x.getElementById('movieImdbId').value;
+      const _ad_=_0x.getElementById('moviePassword').value;const _ae_=_0x.getElementById('oneTimePassword').value;
+      if((!_ab_&&!_ac_)||!_ad_)return alert('Please provide movie title or IMDb ID and password');
+      try{const _af_=await fetch(_1_+'/movies',{method:'POST',headers:{'Content-Type':'application/json','Authorization': \`Bearer \${_2_}\`},body:JSON.stringify({name:_ab_,imdbId:_ac_,moviePassword:_ad_,oneTimePassword:_ae_||null})});
+      const _ag_=await _af_.json();if(_ag_.ok){alert('Movie added successfully');_21_();_25_();_29_()}else{alert('Error: '+_ag_.error)}}catch(_ah_){console.error('Add movie failed',_ah_);alert('Failed to add movie')}}
+      async function _25_(){try{const _ai_=await fetch(_1_+'/movies');const _aj_=await _ai_.json();
+      if(_aj_.ok){_3_=_aj_.movies;const _ak_=_0x.getElementById('movieListAdmin');_ak_.innerHTML='<h3>Movies</h3>';
+      _aj_.movies.forEach(_al_=>{_ak_.appendChild(_0x.createElement('div')).outerHTML=\`<div class="movie-item-admin"><div><strong>\${_al_.title}</strong> \${_al_.year? \`(\${_al_.year})\`:''}</div><button onclick="_30_(\${_al_.id})">Delete</button></div>\`})}}catch(_am_){console.error('Failed to load admin movies',_am_)}}
+      async function _30_(_an_){if(!confirm('Are you sure you want to delete this movie?'))return;
+      try{const _ao_=await fetch(_1_+'/movies/'+_an_,{method:'DELETE',headers:{'Authorization': \`Bearer \${_2_}\`}});
+      const _ap_=await _ao_.json();if(_ap_.ok){_25_();_29_()}else{alert('Error: '+_ap_.error)}}catch(_aq_){console.error('Delete failed',_aq_);alert('Failed to delete movie')}}
+      async function _31_(){const _ar_=_0x.getElementById('moviePasswordInput').value;
+      if(!_ar_)return alert('Please enter password');try{const _as_=await fetch(_1_+'/movies/'+_4_+'/authorize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:_ar_})});
+      const _at_=await _as_.json();if(_at_.ok){const _au_=await fetch(_1_+'/movies/'+_4_+'/embed',{headers:{'Authorization': \`Bearer \${_at_.token}\`}});
+      const _av_=await _au_.json();if(_av_.ok){_32_(_av_.url)}else{alert('Error: '+_av_.error)}}else{alert('Wrong password')}}catch(_aw_){console.error('Password verification failed',_aw_);alert('Error verifying password')}}
+      function _32_(_ax_){_6_.src=_ax_;_7_.classList.add('active');_12_.classList.remove('active');_0x.getElementById('moviePasswordInput').value=''}
       function _33_(){_7_.classList.remove('active');_6_.src=''}
       async function _29_(){_5_.innerHTML='<p style="text-align:center;color:#aaa;">Loading...</p>';
-      try{const _aw_=await fetch(_1_+'/movies');const _ax_=await _aw_.json();
-      if(!_ax_.ok||!_ax_.movies.length){_5_.innerHTML='<p style="text-align:center;color:#aaa;">No movies found.</p>';return}
-      _5_.innerHTML='';_3_=_ax_.movies;_15_(_3_)}catch(_ay_){console.error('Backend fetch failed');_5_.innerHTML='<p style="color:red;text-align:center;">Error loading movies.</p>'}}
-      _8_.addEventListener('click',_19_);_13_.addEventListener('input',(_az_)=>{_14_(_az_.target.value)});
-      _0x.addEventListener('keydown',_ba_=>{if(_ba_.key==='Escape'){_33_();_20_();_21_();_22_()}});_29_();
+      try{const _ay_=await fetch(_1_+'/movies');const _az_=await _ay_.json();
+      if(!_az_.ok||!_az_.movies.length){_5_.innerHTML='<p style="text-align:center;color:#aaa;">No movies found.</p>';return}
+      _5_.innerHTML='';_3_=_az_.movies;_15_(_3_)}catch(_ba_){console.error('Backend fetch failed',_ba_);_5_.innerHTML='<p style="color:red;text-align:center;">Error loading movies.</p>'}}
+      _8_.addEventListener('click',_19_);_13_.addEventListener('input',(_bb_)=>_14_(_bb_.target.value));
+      _0x.addEventListener('keydown',_bc_=>{if(_bc_.key==='Escape'){_33_();_20_();_21_();_22_()}});_29_();
     })();
   `;
   res.type('text/javascript').send(jsCode);
