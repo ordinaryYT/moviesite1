@@ -5,8 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "migrate": "psql $DATABASE_URL -f migration.sql",
-    "build": "node build.js"
+    "migrate": "psql $DATABASE_URL -f migration.sql"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
@@ -16,12 +15,6 @@
     "jsonwebtoken": "^9.0.2",
     "node-fetch": "^3.3.2",
     "pg": "^8.11.5"
-  },
-  "devDependencies": {
-    "javascript-obfuscator": "^4.1.0",
-    "uglify-js": "^3.17.4",
-    "cssnano": "^7.0.1",
-    "postcss": "^8.4.31"
   },
   "engines": {
     "node": ">=18"
