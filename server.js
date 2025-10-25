@@ -25,45 +25,88 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-// --- Auto-create table and ensure one_time_password_hash column ---
-async function ensureTable() {
+// --- Auto-create tables ---
+async function ensureTables() {
   try {
-    // Create movies table if it doesn't exist (using raw string to avoid parsing issues)
-    await pool.query(
-      'CREATE TABLE IF NOT EXISTS movies (\n' +
-      '  id SERIAL PRIMARY KEY,\n' +
-      '  title TEXT NOT NULL,\n' +
-      '  imdb_id TEXT,\n' +
-      '  password_hash TEXT,\n' +
-      '  one_time_password_hash TEXT,\n' +
-      '  year TEXT,\n' +
-      '  image TEXT,\n' +
-      '  created_at TIMESTAMP DEFAULT NOW()\n' +
-      ')'
-    );
-    console.log('✅ Movies table ready');
+    // Movies table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS movies (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        imdb_id TEXT,
+        password_hash TEXT,
+        one_time_password_hash TEXT,
+        year TEXT,
+        image TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    
+    // Discord banned users table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS discord_bans (
+        id SERIAL PRIMARY KEY,
+        discord_id TEXT UNIQUE NOT NULL,
+        banned_by TEXT NOT NULL,
+        banned_at TIMESTAMP DEFAULT NOW(),
+        reason TEXT
+      )
+    `);
+    
+    // Temp passwords table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS temp_passwords (
+        id SERIAL PRIMARY KEY,
+        movie_id INTEGER REFERENCES movies(id) ON DELETE CASCADE,
+        password_hash TEXT NOT NULL,
+        discord_user TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        used BOOLEAN DEFAULT FALSE
+      )
+    `);
+    
+    // Global temp password toggle
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      )
+    `);
+    
+    // Ensure temp_passwords_enabled setting
+    await pool.query(`
+      INSERT INTO settings (key, value) 
+      VALUES ('temp_passwords_enabled', 'true') 
+      ON CONFLICT (key) DO NOTHING
+    `);
 
-    // Add one_time_password_hash column if it doesn't exist
-    await pool.query(
-      'DO $$\n' +
-      'BEGIN\n' +
-      '  IF NOT EXISTS (\n' +
-      '    SELECT FROM pg_attribute\n' +
-      '    WHERE attrelid = \'movies\'::regclass\n' +
-      '    AND attname = \'one_time_password_hash\'\n' +
-      '  ) THEN\n' +
-      '    ALTER TABLE movies\n' +
-      '    ADD COLUMN one_time_password_hash TEXT;\n' +
-      '  END IF;\n' +
-      'END $$;'
-    );
-    console.log('✅ one_time_password_hash column ensured');
+    console.log('✅ All tables ready');
   } catch (err) {
-    console.error('Error ensuring table schema:', err);
+    console.error('Error ensuring tables:', err);
     throw err;
   }
 }
-ensureTable().catch(console.error);
+ensureTables().catch(console.error);
+
+// --- Utility Functions ---
+async function isTempPasswordsEnabled() {
+  const result = await pool.query('SELECT value FROM settings WHERE key = $1', ['temp_passwords_enabled']);
+  return result.rows[0]?.value === 'true';
+}
+
+async function isUserBanned(discordId) {
+  const result = await pool.query('SELECT id FROM discord_bans WHERE discord_id = $1', [discordId]);
+  return result.rowCount > 0;
+}
+
+function generateTempPassword(length = 12) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 
 // --- IMDb Search Helper ---
 async function searchImdb(title) {
@@ -182,6 +225,19 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
       return res.json({ ok: true, token });
     }
 
+    // Check temp password
+    const tempResult = await pool.query(
+      'SELECT id, password_hash FROM temp_passwords WHERE movie_id = $1 AND used = FALSE',
+      [id]
+    );
+    for (const temp of tempResult.rows) {
+      if (await bcrypt.compare(password, temp.password_hash)) {
+        await pool.query('UPDATE temp_passwords SET used = TRUE WHERE id = $1', [temp.id]);
+        const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
+        return res.json({ ok: true, token });
+      }
+    }
+
     // Check regular password
     if (password_hash && await bcrypt.compare(password, password_hash)) {
       const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
@@ -211,9 +267,156 @@ app.get('/api/movies/:id/embed', async (req, res) => {
   }
 });
 
+// --- Generate temp password ---
+app.post('/api/movies/:id/temp-password', async (req, res) => {
+  try {
+    const { discord_id } = req.body;
+    const movieId = req.params.id;
+
+    if (!await isTempPasswordsEnabled()) {
+      return res.status(403).json({ ok: false, error: 'Temp password generation disabled' });
+    }
+
+    if (await isUserBanned(discord_id)) {
+      return res.status(403).json({ ok: false, error: 'User is banned' });
+    }
+
+    const movieCheck = await pool.query('SELECT id FROM movies WHERE id = $1', [movieId]);
+    if (!movieCheck.rowCount) {
+      return res.status(404).json({ ok: false, error: 'Movie not found' });
+    }
+
+    const tempPassword = generateTempPassword();
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+    await pool.query(
+      'INSERT INTO temp_passwords (movie_id, password_hash, discord_user) VALUES ($1, $2, $3)',
+      [movieId, passwordHash, discord_id]
+    );
+
+    res.json({ ok: true, tempPassword });
+  } catch (err) {
+    console.error('Temp password error:', err);
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+// --- Ban user ---
+app.post('/api/discord/ban', requireAdmin, async (req, res) => {
+  try {
+    const { discord_id, reason } = req.body;
+    if (!discord_id) return res.status(400).json({ ok: false, error: 'Missing Discord ID' });
+
+    await pool.query(
+      'INSERT INTO discord_bans (discord_id, banned_by, reason) VALUES ($1, $2, $3) ON CONFLICT (discord_id) DO NOTHING',
+      [discord_id, 'admin', reason || 'No reason provided']
+    );
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Ban error:', err);
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+// --- Unban user ---
+app.post('/api/discord/unban', requireAdmin, async (req, res) => {
+  try {
+    const { discord_id } = req.body;
+    if (!discord_id) return res.status(400).json({ ok: false, error: 'Missing Discord ID' });
+
+    const result = await pool.query('DELETE FROM discord_bans WHERE discord_id = $1', [discord_id]);
+    if (!result.rowCount) {
+      return res.status(404).json({ ok: false, error: 'User not banned' });
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Unban error:', err);
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+// --- Toggle temp passwords ---
+app.post('/api/settings/temp-passwords', requireAdmin, async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    await pool.query(
+      'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2',
+      ['temp_passwords_enabled', enabled.toString()]
+    );
+    res.json({ ok: true, enabled });
+  } catch (err) {
+    console.error('Toggle temp passwords error:', err);
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
 // Serve HTML
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Obfuscate client-side code
+app.get('/script.js', (req, res) => {
+  const jsCode = `
+    // Obfuscated client-side code
+    (function(){
+      const _0x=document;const _1_=window.location.origin+'/api';let _2_=null;let _3_=[];let _4_=null;
+      const _5_=_0x.getElementById('movieGrid');const _6_=_0x.getElementById('playerIframe');
+      const _7_=_0x.getElementById('playerContainer');const _8_=_0x.getElementById('adminBtn');
+      const _9_=_0x.getElementById('adminPanel');const _10_=_0x.getElementById('loginModal');
+      const _11_=_0x.getElementById('addMovieModal');const _12_=_0x.getElementById('passwordModal');
+      const _13_=_0x.getElementById('searchInput');
+      function _14_(_a_){return _3_.filter(_b_=>_b_.title.toLowerCase().includes(_a_.toLowerCase()))}
+      async function _15_(_c_){_5_.innerHTML='';if(_c_.length===0){_5_.innerHTML='<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';return}_c_.forEach(_d_=>_16_(_d_))}
+      async function _16_(_e_){try{let _f_=_e_.image;let _g_=_e_.year||'N/A';const _h_=await _17_(_e_.title,_g_);
+      if(!_h_.includes('placeholder.com')){_f_=_h_}else if(!_f_||_f_.includes('placeholder.com')){_f_=_h_}
+      const _i_=_0x.createElement('div');_i_.className='movie-card';
+      _i_.innerHTML=\`<img src="\${_f_}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'"><div class="movie-info"><h3>\${_e_.title}</h3><p>\${_g_}</p></div>\`;
+      _i_.onclick=() => _18_(_e_.id,_e_.title);_5_.appendChild(_i_)}catch(_j_){console.error('Movie card render failed',_e_.title);const _k_=_0x.createElement('div');
+      _k_.className='movie-card';_k_.innerHTML=\`<img src="https://via.placeholder.com/300x450/333/fff?text=No+Poster"><div class="movie-info"><h3>\${_e_.title}</h3><p>\${_e_.year||'N/A'}</p></div>\`;
+      _k_.onclick=() => _18_(_e_.id,_e_.title);_5_.appendChild(_k_)}}
+      async function _17_(_l_,_m_=''){try{const _n_=await fetch(\`https://api.tvmaze.com/search/shows?q=\${encodeURIComponent(_l_)}\`);
+      const _o_=await _n_.json();if(_o_.length>0&&_o_[0].show.image&&_o_[0].show.image.medium){return _o_[0].show.image.medium}}catch(_p_){console.log('TVMaze search failed')}
+      try{const _q_=await fetch(\`https://en.wikipedia.org/api/rest_v1/page/summary/\${encodeURIComponent(_l_.replace(/ /g,'_'))}\`);
+      const _r_=await _q_.json();if(_r_.thumbnail&&_r_.thumbnail.source){return _r_.thumbnail.source}}catch(_s_){console.log('Wikipedia search failed')}
+      return \`https://via.placeholder.com/300x450/333/fff?text=\${encodeURIComponent(_l_.substring(0,20))}\`;}
+      function _18_(_t_,_u_){_4_=_t_;_0x.getElementById('passwordMovieTitle').textContent=_u_;_12_.classList.add('active')}
+      function _19_(){_10_.classList.add('active')}function _20_(){_10_.classList.remove('active')}
+      function _21_(){_11_.classList.remove('active')}function _22_(){_12_.classList.remove('active');_4_=null}
+      async function _23_(){const _v_=_0x.getElementById('adminPassword').value;
+      if(!_v_)return alert('Please enter password');try{const _w_=await fetch(_1_+'/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:_v_})});
+      const _x_=await _w_.json();if(_x_.ok){_2_=_x_.token;_20_();_24_();_25_()}else{alert('Invalid password')}}catch(_y_){console.error('Login failed');alert('Login failed')}}
+      function _24_(){_5_.style.display='none';_9_.classList.add('active');
+      _9_.innerHTML=\`<h2>Admin Panel</h2><div class="admin-actions"><button class="admin-btn" onclick="_26_()">Add Movie</button><button class="admin-btn" onclick="_27_()">Exit Admin</button></div><div class="movie-list-admin" id="movieListAdmin"></div>\`}
+      function _27_(){_2_=null;_9_.classList.remove('active');_5_.style.display='grid'}function _26_(){_11_.classList.add('active')}
+      async function _28_(){const _z_=_0x.getElementById('movieTitle').value;const _aa_=_0x.getElementById('movieImdbId').value;
+      const _ab_=_0x.getElementById('moviePassword').value;const _ac_=_0x.getElementById('oneTimePassword').value;
+      if((!_z_&&!_aa_)||!_ab_)return alert('Please provide movie title or IMDb ID and password');
+      try{const _ad_=await fetch(_1_+'/movies',{method:'POST',headers:{'Content-Type':'application/json','Authorization': \`Bearer \${_2_}\`},body:JSON.stringify({name:_z_,imdbId:_aa_,moviePassword:_ab_,oneTimePassword:_ac_||null})});
+      const _ae_=await _ad_.json();if(_ae_.ok){alert('Movie added successfully');_21_();_25_();_29_()}else{alert('Error: '+_ae_.error)}}catch(_af_){console.error('Add movie failed');alert('Failed to add movie')}}
+      async function _25_(){try{const _ag_=await fetch(_1_+'/movies');const _ah_=await _ag_.json();
+      if(_ah_.ok){_3_=_ah_.movies;const _ai_=_0x.getElementById('movieListAdmin');_ai_.innerHTML='<h3>Movies</h3>';
+      _ah_.movies.forEach(_aj_=>{_ai_.innerHTML+=\`<div class="movie-item-admin"><div><strong>\${_aj_.title}</strong> \${_aj_.year? \`(\${_aj_.year})\`:''}</div><button onclick="_30_(\${_aj_.id})">Delete</button></div>\`})}}catch(_ak_){console.error('Failed to load admin movies')}}
+      async function _30_(_al_){if(!confirm('Are you sure you want to delete this movie?'))return;
+      try{const _am_=await fetch(_1_+'/movies/'+_al_,{method:'DELETE',headers:{'Authorization': \`Bearer \${_2_}\`}});
+      const _an_=await _am_.json();if(_an_.ok){_25_();_29_()}else{alert('Error: '+_an_.error)}}catch(_ao_){console.error('Delete failed');alert('Failed to delete movie')}}
+      async function _31_(){const _ap_=_0x.getElementById('moviePasswordInput').value;
+      if(!_ap_)return alert('Please enter password');try{const _aq_=await fetch(_1_+'/movies/'+_4_+'/authorize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:_ap_})});
+      const _ar_=await _aq_.json();if(_ar_.ok){const _as_=await fetch(_1_+'/movies/'+_4_+'/embed',{headers:{'Authorization': \`Bearer \${_ar_.token}\`}});
+      const _at_=await _as_.json();if(_at_.ok){_32_(_at_.url)}else{alert('Error: '+_at_.error)}}else{alert('Wrong password')}}catch(_au_){console.error('Password verification failed');alert('Error verifying password')}}
+      function _32_(_av_){_6_.src=_av_;_7_.classList.add('active');_12_.classList.remove('active');_0x.getElementById('moviePasswordInput').value=''}
+      function _33_(){_7_.classList.remove('active');_6_.src=''}
+      async function _29_(){_5_.innerHTML='<p style="text-align:center;color:#aaa;">Loading...</p>';
+      try{const _aw_=await fetch(_1_+'/movies');const _ax_=await _aw_.json();
+      if(!_ax_.ok||!_ax_.movies.length){_5_.innerHTML='<p style="text-align:center;color:#aaa;">No movies found.</p>';return}
+      _5_.innerHTML='';_3_=_ax_.movies;_15_(_3_)}catch(_ay_){console.error('Backend fetch failed');_5_.innerHTML='<p style="color:red;text-align:center;">Error loading movies.</p>'}}
+      _8_.addEventListener('click',_19_);_13_.addEventListener('input',(_az_)=>{_14_(_az_.target.value)});
+      _0x.addEventListener('keydown',_ba_=>{if(_ba_.key==='Escape'){_33_();_20_();_21_();_22_()}});_29_();
+    })();
+  `;
+  res.type('text/javascript').send(jsCode);
 });
 
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
