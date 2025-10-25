@@ -5,6 +5,7 @@ const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const path = require('path');
+const { Client, GatewayIntentBits } = require('discord.js');
 
 // Render Node 18 has fetch built in, fallback if not
 const fetch = global.fetch || ((...args) => import('node-fetch').then(({ default: f }) => f(...args)));
@@ -18,12 +19,183 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'boughton5';
 const EMBED_BASE = 'https://vidsrc.me/embed/movie/';
+const ADMIN_ROLE = process.env.ADMIN_ROLE || 'Admin';
+const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 
 // --- PostgreSQL ---
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
+
+// --- Discord Bot ---
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
+});
+
+client.on('ready', () => {
+  console.log(`✅ Bot logged in as ${client.user.tag}`);
+});
+
+client.on('messageCreate', async (message) => {
+  if (message.author.bot || !message.content.startsWith('!')) return;
+
+  const args = message.content.slice(1).trim().split(/ +/);
+  const command = args.shift().toLowerCase();
+
+  // !temppassword <movie_id>
+  if (command === 'temppassword') {
+    if (args.length < 1) {
+      return message.reply('Please provide a movie ID. Use !movies to see available movies.');
+    }
+
+    const movieId = parseInt(args[0]);
+    const movies = await getMovies();
+    const movie = movies.find(m => m.id === movieId);
+
+    if (!movie) {
+      return message.reply('Movie not found. Use !movies to see available movies.');
+    }
+
+    try {
+      const res = await fetch(`http://localhost:${PORT}/api/movies/${movieId}/temp-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ discord_id: message.author.id })
+      });
+      const data = await res.json();
+
+      if (data.ok) {
+        await message.author.send(`Temporary password for "${movie.title}": **${data.tempPassword}** (one-time use)`);
+        await message.reply('Check your DMs for the temporary password!');
+      } else {
+        await message.reply(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      console.error('Temp password command error:', err);
+      await message.reply('Failed to generate temporary password.');
+    }
+  }
+
+  // !movies
+  if (command === 'movies') {
+    const movies = await getMovies();
+    if (movies.length === 0) {
+      return message.reply('No movies available.');
+    }
+
+    const movieList = movies.map(m => `ID: ${m.id} | ${m.title} (${m.year || 'N/A'})`).join('\n');
+    await message.reply(`Available movies:\n${movieList}`);
+  }
+
+  // !ban <user> [reason]
+  if (command === 'ban') {
+    if (!message.member.roles.cache.some(role => role.name === ADMIN_ROLE)) {
+      return message.reply('You need the Admin role to use this command.');
+    }
+
+    const user = message.mentions.users.first();
+    const reason = args.slice(1).join(' ') || 'No reason provided';
+
+    if (!user) {
+      return message.reply('Please mention a user to ban.');
+    }
+
+    try {
+      const res = await fetch(`http://localhost:${PORT}/api/discord/ban`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.ADMIN_TOKEN}`
+        },
+        body: JSON.stringify({ discord_id: user.id, reason })
+      });
+      const data = await res.json();
+
+      if (data.ok) {
+        await message.reply(`Banned user <@${user.id}> from generating temp passwords. Reason: ${reason}`);
+      } else {
+        await message.reply(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      console.error('Ban command error:', err);
+      await message.reply('Failed to ban user.');
+    }
+  }
+
+  // !unban <user>
+  if (command === 'unban') {
+    if (!message.member.roles.cache.some(role => role.name === ADMIN_ROLE)) {
+      return message.reply('You need the Admin role to use this command.');
+    }
+
+    const user = message.mentions.users.first();
+    if (!user) {
+      return message.reply('Please mention a user to unban.');
+    }
+
+    try {
+      const res = await fetch(`http://localhost:${PORT}/api/discord/unban`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.ADMIN_TOKEN}`
+        },
+        body: JSON.stringify({ discord_id: user.id })
+      });
+      const data = await res.json();
+
+      if (data.ok) {
+        await message.reply(`Unbanned user <@${user.id}> from generating temp passwords.`);
+      } else {
+        await message.reply(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      console.error('Unban command error:', err);
+      await message.reply('Failed to unban user.');
+    }
+  }
+
+  // !toggletemppasswords <on|off>
+  if (command === 'toggletemppasswords') {
+    if (!message.member.roles.cache.some(role => role.name === ADMIN_ROLE)) {
+      return message.reply('You need the Admin role to use this command.');
+    }
+
+    const state = args[0]?.toLowerCase();
+    if (state !== 'on' && state !== 'off') {
+      return message.reply('Please specify "on" or "off".');
+    }
+
+    try {
+      const res = await fetch(`http://localhost:${PORT}/api/settings/temp-passwords`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.ADMIN_TOKEN}`
+        },
+        body: JSON.stringify({ enabled: state === 'on' })
+      });
+      const data = await res.json();
+
+      if (data.ok) {
+        await message.reply(`Temporary password generation turned ${state}.`);
+      } else {
+        await message.reply(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      console.error('Toggle temp passwords error:', err);
+      await message.reply('Failed to toggle temporary passwords.');
+    }
+  }
+});
+
+// Start Discord bot
+client.login(BOT_TOKEN).catch(err => console.error('Bot login failed:', err));
 
 // --- Auto-create tables ---
 async function ensureTables() {
@@ -106,6 +278,16 @@ function generateTempPassword(length = 12) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return result;
+}
+
+async function getMovies() {
+  try {
+    const res = await pool.query('SELECT id, title, year, image FROM movies ORDER BY created_at DESC');
+    return res.rows;
+  } catch (err) {
+    console.error('Error fetching movies:', err);
+    return [];
+  }
 }
 
 // --- IMDb Search Helper ---
@@ -352,12 +534,7 @@ app.post('/api/settings/temp-passwords', requireAdmin, async (req, res) => {
   }
 });
 
-// Serve HTML
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-// Obfuscate client-side code
+// --- Obfuscated client-side code ---
 app.get('/script.js', (req, res) => {
   const jsCode = `
     // Obfuscated client-side code
@@ -417,6 +594,11 @@ app.get('/script.js', (req, res) => {
     })();
   `;
   res.type('text/javascript').send(jsCode);
+});
+
+// Serve HTML
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
