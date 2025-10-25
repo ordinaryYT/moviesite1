@@ -16,8 +16,8 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || throw new Error('JWT_SECRET not set');
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || throw new Error('ADMIN_PASSWORD not set');
+const JWT_SECRET = process.env.JWT_SECRET || 'change-this-secret';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'boughton5';
 const EMBED_BASE = 'https://vidsrc.me/embed/movie/';
 
 // --- PostgreSQL ---
@@ -213,35 +213,29 @@ app.get('/', async (req, res) => {
   try {
     const result = await pool.query('SELECT id, title, year, image FROM movies ORDER BY created_at DESC');
     const movies = result.rows;
-    const apiBase = process.env.API_BASE || `${req.protocol}://${req.get('host')}/api`;
-
-    // Read index.html
-    let html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-
-    // Inject movie data and API base URL
-    const movieGridHtml = movies.length === 0
-      ? '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>'
-      : movies.map(movie => `
-          <div class="movie-card" onclick="requestMoviePassword(${movie.id}, '${movie.title.replace(/'/g, "\\'")}')">
-            <img src="${movie.image || `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(movie.title.substring(0, 20))}`}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
-            <div class="movie-info">
-              <h3>${movie.title}</h3>
-              <p>${movie.year || 'N/A'}</p>
-            </div>
+    
+    // Generate movie grid HTML
+    let movieGridHtml = '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
+    if (movies.length > 0) {
+      movieGridHtml = movies.map(movie => `
+        <div class="movie-card" onclick="requestMoviePassword(${movie.id}, '${movie.title.replace(/'/g, "\\'")}')">
+          <img src="${movie.image || `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(movie.title.substring(0, 20))}`}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+          <div class="movie-info">
+            <h3>${movie.title}</h3>
+            <p>${movie.year || 'N/A'}</p>
           </div>
-        `).join('');
+        </div>
+      `).join('');
+    }
 
-    html = html
-      .replace('<!-- MOVIE_GRID -->', movieGridHtml)
-      .replace('const API = window.location.origin + \'/api\';', `const API = '${apiBase}';`);
-
+    // Read and modify index.html
+    let html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+    html = html.replace('<!-- MOVIE_GRID -->', movieGridHtml);
     res.send(html);
   } catch (err) {
     console.error('Error rendering index:', err);
     let html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-    html = html
-      .replace('<!-- MOVIE_GRID -->', '<p style="text-align:center;color:#aaa;grid-column:1/-1;">Error loading movies</p>')
-      .replace('const API = window.location.origin + \'/api\';', `const API = '${process.env.API_BASE || `${req.protocol}://${req.get('host')}/api`}';`);
+    html = html.replace('<!-- MOVIE_GRID -->', '<p style="text-align:center;color:#aaa;grid-column:1/-1;">Error loading movies</p>');
     res.send(html);
   }
 });
