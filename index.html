@@ -55,19 +55,7 @@
       <input type="text" id="searchInput" placeholder="Search for movies..." />
     </div>
     <div id="movieGrid">
-      <% if (movies.length === 0) { %>
-        <p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>
-      <% } else { %>
-        <% movies.forEach(movie => { %>
-          <div class="movie-card" onclick="requestMoviePassword(<%= movie.id %>, '<%= movie.title.replace(/'/g, "\\'") %>')">
-            <img src="<%= movie.image || 'https://via.placeholder.com/300x450/333/fff?text=' + encodeURIComponent(movie.title.substring(0, 20)) %>" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
-            <div class="movie-info">
-              <h3><%= movie.title %></h3>
-              <p><%= movie.year || 'N/A' %></p>
-            </div>
-          </div>
-        <% }) %>
-      <% } %>
+      <!-- MOVIE_GRID -->
     </div>
     <div id="adminPanel" class="admin-panel"></div>
   </main>
@@ -135,7 +123,7 @@
   </div>
 
   <script>
-    const API = '<%= apiBase %>';
+    const API = window.location.origin + '/api';
     const playerIframe = document.getElementById('playerIframe');
     const playerContainer = document.getElementById('playerContainer');
     const adminBtn = document.getElementById('adminBtn');
@@ -246,7 +234,7 @@
         if (data.ok) {
           alert('Movie added successfully');
           closeAddMovieModal();
-          location.reload(); // Reload to refresh movie grid
+          location.reload();
         } else {
           alert('Error: ' + data.error);
         }
@@ -294,7 +282,7 @@
         const data = await res.json();
         if (data.ok) {
           loadAdminMovies();
-          location.reload(); // Reload to refresh movie grid
+          location.reload();
         } else {
           alert('Error: ' + data.error);
         }
