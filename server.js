@@ -61,20 +61,25 @@ client.on('messageCreate', async (message) => {
       return message.reply('Movie not found. Use !movies to see available movies.');
     }
 
-    try {
-      const res = await fetch(`http://localhost:${PORT}/api/movies/${movieId}/temp-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ discord_id: message.author.id })
-      });
-      const data = await res.json();
+    if (!await isTempPasswordsEnabled()) {
+      return message.reply('Temp password generation is currently disabled.');
+    }
 
-      if (data.ok) {
-        await message.author.send(`Temporary password for "${movie.title}": **${data.tempPassword}** (one-time use)`);
-        await message.reply('Check your DMs for the temporary password!');
-      } else {
-        await message.reply(`Error: ${data.error}`);
-      }
+    if (await isUserBlocked(message.author.id)) {
+      return message.reply('You are blocked from generating temporary passwords.');
+    }
+
+    try {
+      const tempPassword = generateTempPassword();
+      const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+      await pool.query(
+        'INSERT INTO temp_passwords (movie_id, password_hash, discord_user) VALUES ($1, $2, $3)',
+        [movieId, passwordHash, message.author.id]
+      );
+
+      await message.author.send(`Temporary password for "${movie.title}": **${tempPassword}** (one-time use)`);
+      await message.reply('Check your DMs for the temporary password!');
     } catch (err) {
       console.error('Temp password command error:', err);
       await message.reply('Failed to generate temporary password.');
@@ -106,21 +111,11 @@ client.on('messageCreate', async (message) => {
     }
 
     try {
-      const res = await fetch(`http://localhost:${PORT}/api/discord/block`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.ADMIN_TOKEN}`
-        },
-        body: JSON.stringify({ discord_id: user.id, reason })
-      });
-      const data = await res.json();
-
-      if (data.ok) {
-        await message.reply(`Blocked user <@${user.id}> from generating temp passwords. Reason: ${reason}`);
-      } else {
-        await message.reply(`Error: ${data.error}`);
-      }
+      await pool.query(
+        'INSERT INTO discord_blocks (discord_id, blocked_by, reason) VALUES ($1, $2, $3) ON CONFLICT (discord_id) DO NOTHING',
+        [user.id, message.author.id, reason]
+      );
+      await message.reply(`Blocked user <@${user.id}> from generating temp passwords. Reason: ${reason}`);
     } catch (err) {
       console.error('Block command error:', err);
       await message.reply('Failed to block user.');
@@ -139,28 +134,18 @@ client.on('messageCreate', async (message) => {
     }
 
     try {
-      const res = await fetch(`http://localhost:${PORT}/api/discord/unblock`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.ADMIN_TOKEN}`
-        },
-        body: JSON.stringify({ discord_id: user.id })
-      });
-      const data = await res.json();
-
-      if (data.ok) {
-        await message.reply(`Unblocked user <@${user.id}> from generating temp passwords.`);
-      } else {
-        await message.reply(`Error: ${data.error}`);
+      const result = await pool.query('DELETE FROM discord_blocks WHERE discord_id = $1', [user.id]);
+      if (result.rowCount === 0) {
+        return message.reply('User is not blocked.');
       }
+      await message.reply(`Unblocked user <@${user.id}> from generating temp passwords.`);
     } catch (err) {
       console.error('Unblock command error:', err);
       await message.reply('Failed to unblock user.');
     }
   }
 
-  // !toggle_temp <on/off>
+  // !toggle_temp <on|off>
   if (command === 'toggle_temp') {
     if (!message.member.roles.cache.some(role => role.name === ADMIN_ROLE)) {
       return message.reply('You need the Admin role to use this command.');
@@ -172,21 +157,11 @@ client.on('messageCreate', async (message) => {
     }
 
     try {
-      const res = await fetch(`http://localhost:${PORT}/api/settings/temp-passwords`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.ADMIN_TOKEN}`
-        },
-        body: JSON.stringify({ enabled: state === 'on' })
-      });
-      const data = await res.json();
-
-      if (data.ok) {
-        await message.reply(`Temporary password generation turned ${state}.`);
-      } else {
-        await message.reply(`Error: ${data.error}`);
-      }
+      await pool.query(
+        'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2',
+        ['temp_passwords_enabled', state === 'on']
+      );
+      await message.reply(`Temporary password generation turned ${state}.`);
     } catch (err) {
       console.error('Toggle temp passwords error:', err);
       await message.reply('Failed to toggle temporary passwords.');
@@ -446,91 +421,6 @@ app.get('/api/movies/:id/embed', async (req, res) => {
     res.json({ ok: true, url: EMBED_BASE + r.rows[0].imdb_id });
   } catch {
     res.status(401).json({ ok: false, error: 'Invalid token' });
-  }
-});
-
-// --- Generate temp password ---
-app.post('/api/movies/:id/temp-password', async (req, res) => {
-  try {
-    const { discord_id } = req.body;
-    const movieId = req.params.id;
-
-    if (!await isTempPasswordsEnabled()) {
-      return res.status(403).json({ ok: false, error: 'Temp password generation disabled' });
-    }
-
-    if (await isUserBlocked(discord_id)) {
-      return res.status(403).json({ ok: false, error: 'User is blocked' });
-    }
-
-    const movieCheck = await pool.query('SELECT id FROM movies WHERE id = $1', [movieId]);
-    if (!movieCheck.rowCount) {
-      return res.status(404).json({ ok: false, error: 'Movie not found' });
-    }
-
-    const tempPassword = generateTempPassword();
-    const passwordHash = await bcrypt.hash(tempPassword, 10);
-
-    await pool.query(
-      'INSERT INTO temp_passwords (movie_id, password_hash, discord_user) VALUES ($1, $2, $3)',
-      [movieId, passwordHash, discord_id]
-    );
-
-    res.json({ ok: true, tempPassword });
-  } catch (err) {
-    console.error('Temp password error:', err);
-    res.status(500).json({ ok: false, error: 'Server error' });
-  }
-});
-
-// --- Block user ---
-app.post('/api/discord/block', requireAdmin, async (req, res) => {
-  try {
-    const { discord_id, reason } = req.body;
-    if (!discord_id) return res.status(400).json({ ok: false, error: 'Missing Discord ID' });
-
-    await pool.query(
-      'INSERT INTO discord_blocks (discord_id, blocked_by, reason) VALUES ($1, $2, $3) ON CONFLICT (discord_id) DO NOTHING',
-      [discord_id, 'admin', reason || 'No reason provided']
-    );
-
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('Block error:', err);
-    res.status(500).json({ ok: false, error: 'Server error' });
-  }
-});
-
-// --- Unblock user ---
-app.post('/api/discord/unblock', requireAdmin, async (req, res) => {
-  try {
-    const { discord_id } = req.body;
-    if (!discord_id) return res.status(400).json({ ok: false, error: 'Missing Discord ID' });
-
-    const result = await pool.query('DELETE FROM discord_blocks WHERE discord_id = $1', [discord_id]);
-    if (!result.rowCount) {
-      return res.status(404).json({ ok: false, error: 'User not blocked' });
-    }
-
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('Unblock error:', err);
-    res.status(500).json({ ok: false, error: 'Server error' });
-  }
-});
-
-// --- Toggle temp passwords ---
-app.post('/api/settings/temp-passwords', requireAdmin, async (req, res) => {
-  try {
-    const { enabled } = req.body;
-    await pool.query(
-      'INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2',
-      ['temp_passwords_enabled', enabled.toString()]
-    );
-    res.json({ ok: true, enabled });
-  } catch (err) {
-    console.error('Toggle temp passwords error:', err);
-    res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
 
