@@ -432,9 +432,11 @@ function closePlayer() {
 // === Public Movie Loading ===
 async function loadMovies() {
   movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">Loading...</p>';
+  console.log('Loading movies from:', API + '/movies'); // Debug log
   try {
     const res = await fetch(API + '/movies');
     const data = await res.json();
+    console.log('API response:', data); // Debug log
     if (!data.ok || !data.movies.length) {
       movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">No movies found.</p>';
       return;
