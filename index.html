@@ -48,11 +48,12 @@
   .player-wrapper{position:relative;width:100%;height:100%}
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
-  /* ✅ Fixed bottom overlay (solid + shifted right) */
+  
+  /* ✅ Bottom overlay moved half its width (60px) to the right */
   .bottom-left-overlay {
     position: absolute;
     bottom: 10px;
-    left: 140px;
+    left: 200px; /* was 140px, shifted 60px right */
     width: 120px;
     height: 40px;
     background: #000;
@@ -74,7 +75,6 @@
   <div id="movieGrid"></div>
   <div id="adminPanel" class="admin-panel"></div>
 </main>
-
 <!-- Admin Login Modal -->
 <div id="loginModal" class="modal">
   <div class="modal-content">
@@ -136,6 +136,7 @@
     <div class="bottom-left-overlay"></div>
   </div>
 </div>
+
 <script>
 const API = window.location.origin + '/api';
 const EMBED_BASE = 'https://vidsrc.me/embed/movie/';
@@ -153,7 +154,7 @@ let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
 
-// === Search Functionality ===
+// === Search ===
 function filterMovies(searchTerm) {
   const filteredMovies = currentMovies.filter(movie =>
     movie.title.toLowerCase().includes(searchTerm.toLowerCase())
@@ -216,15 +217,9 @@ async function createMovieCard(movie) {
 }
 
 // === Admin ===
-function openAdminPanel() {
-  loginModal.classList.add('active');
-}
-function closeLoginModal() {
-  loginModal.classList.remove('active');
-}
-function closeAddMovieModal() {
-  addMovieModal.classList.remove('active');
-}
+function openAdminPanel() { loginModal.classList.add('active'); }
+function closeLoginModal() { loginModal.classList.remove('active'); }
+function closeAddMovieModal() { addMovieModal.classList.remove('active'); }
 
 async function adminLogin() {
   const password = document.getElementById('adminPassword').value;
@@ -263,9 +258,7 @@ function exitAdmin() {
   adminPanel.classList.remove('active');
   movieGrid.style.display = 'grid';
 }
-function openAddMovieModal() {
-  addMovieModal.classList.add('active');
-}
+function openAddMovieModal() { addMovieModal.classList.add('active'); }
 
 async function addMovie() {
   const title = document.getElementById('movieTitle').value;
@@ -418,5 +411,6 @@ document.addEventListener('keydown', e => {
 
 loadMovies();
 </script>
+
 </body>
 </html>
