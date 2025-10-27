@@ -59,16 +59,16 @@ async function ensureTable() {
     `);
     console.log('✅ Global passwords table ready');
 
-    // Drop old movies table if it exists (for migration)
+    // Drop old movies table and its dependencies if it exists (for migration)
     await pool.query(`
       DO $$
       BEGIN
         IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'movies') THEN
-          DROP TABLE movies;
+          DROP TABLE movies CASCADE;
         END IF;
       END $$;
     `);
-    console.log('✅ Legacy movies table dropped if existed');
+    console.log('✅ Legacy movies table and dependencies dropped if existed');
 
   } catch (err) {
     console.error('Error ensuring table schema:', err);
