@@ -175,6 +175,7 @@ let currentMovies = [];
 let selectedMovieId = null;
 let selectedShow = null;
 let episodeData = null;
+let lastPassword = null;
 
 function filterMovies(searchTerm) {
   const filteredMovies = currentMovies.filter(m => 
@@ -220,7 +221,7 @@ async function createMovieCard(movie) {
     card.innerHTML = `
       <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
       <div class="movie-info"><h3>${movie.title}</h3><p>${year} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p></div>`;
-    card.onclick = () => movie.type === 'movie' ? requestMoviePassword(movie.id, movie.title) : requestEpisodeSelection(movie.id, movie.title);
+    card.onclick = () => requestMoviePassword(movie.id, movie.title, movie.type);
     movieGrid.appendChild(card);
   } catch (e) {
     console.error(e);
@@ -467,18 +468,16 @@ async function togglePasswords() {
   }
 }
 
-function requestMoviePassword(movieId, title) {
+function requestMoviePassword(movieId, title, type) {
   selectedMovieId = movieId;
+  selectedShow = { id: movieId, title, type };
   document.getElementById('passwordMovieTitle').textContent = title;
   passwordModal.classList.add('active');
 }
 
-async function requestEpisodeSelection(movieId, title) {
-  selectedMovieId = movieId;
-  selectedShow = { id: movieId, title };
-  document.getElementById('episodeShowTitle').textContent = title;
+async function requestEpisodeSelection() {
   try {
-    const res = await fetch(API + '/movies/' + movieId + '/episodes');
+    const res = await fetch(API + '/movies/' + selectedMovieId + '/episodes');
     const data = await res.json();
     if (data.ok) {
       episodeData = data.seasons;
@@ -540,7 +539,8 @@ async function verifyMoviePassword() {
     });
     const data = await res.json();
     if (data.ok) {
-      if (currentMovies.find(m => m.id === selectedMovieId).type === 'movie') {
+      lastPassword = password;
+      if (selectedShow.type === 'movie') {
         const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
           headers: { Authorization: `Bearer ${data.token}` }
         });
@@ -551,7 +551,7 @@ async function verifyMoviePassword() {
           alert('Error: ' + embedData.error);
         }
       } else {
-        await requestEpisodeSelection(selectedMovieId, document.getElementById('passwordMovieTitle').textContent);
+        await requestEpisodeSelection();
       }
     } else {
       alert('Wrong password');
@@ -569,7 +569,7 @@ async function playSelectedEpisode() {
     const authRes = await fetch(API + '/movies/' + selectedMovieId + '/authorize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: document.getElementById('moviePasswordInput').value })
+      body: JSON.stringify({ password: lastPassword })
     });
     const authData = await authRes.json();
     if (authData.ok) {
@@ -600,7 +600,7 @@ async function playSelectedEpisodePlayer() {
     const authRes = await fetch(API + '/movies/' + selectedMovieId + '/authorize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: document.getElementById('moviePasswordInput').value })
+      body: JSON.stringify({ password: lastPassword })
     });
     const authData = await authRes.json();
     if (authData.ok) {
@@ -667,8 +667,7 @@ async function loadMovies() {
     displayMovies(currentMovies);
   } catch (err) {
     console.error(err);
-    movieGrid.innerHTML = 
-      '<p style="color:red;text-align:center;">Error loading movies.</p>';
+    alert('Error loading movies');
   }
 }
 
