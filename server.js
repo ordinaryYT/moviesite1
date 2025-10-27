@@ -64,14 +64,29 @@ async function ensureTable() {
       DO $$
       BEGIN
         IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'movies') THEN
-          -- Copy data from movies to content, setting type to 'movie'
-          INSERT INTO content (title, imdb_id, type, password_hashes, one_time_password_hashes, year, image, created_at)
+          -- Copy data from movies to content, converting single passwords to arrays
+          INSERT INTO content (
+            title, 
+            imdb_id, 
+            type, 
+            password_hashes, 
+            one_time_password_hashes, 
+            year, 
+            image, 
+            created_at
+          )
           SELECT 
             title,
             imdb_id,
             'movie' AS type,
-            COALESCE(password_hashes, '[]'::jsonb) AS password_hashes,
-            COALESCE(one_time_password_hashes, '[]'::jsonb) AS one_time_password_hashes,
+            CASE 
+              WHEN password_hash IS NOT NULL THEN jsonb_build_array(password_hash)
+              ELSE '[]'::jsonb
+            END AS password_hashes,
+            CASE 
+              WHEN one_time_password_hash IS NOT NULL THEN jsonb_build_array(one_time_password_hash)
+              ELSE '[]'::jsonb
+            END AS one_time_password_hashes,
             year,
             image,
             created_at
