@@ -412,14 +412,29 @@ app.post('/api/content/:id/authorize', async (req, res) => {
     if (isContentTable) {
       const { password_hashes, one_time_password_hashes } = contentResult.rows[0];
       try {
-        regularHashes = password_hashes ? JSON.parse(password_hashes) : [];
-        oneTimeHashes = one_time_password_hashes ? JSON.parse(one_time_password_hashes) : [];
+        // Safely parse JSON, default to empty array if invalid or null
+        regularHashes = (typeof password_hashes === 'string' && password_hashes)
+          ? JSON.parse(password_hashes)
+          : (password_hashes || []);
+        oneTimeHashes = (typeof one_time_password_hashes === 'string' && one_time_password_hashes)
+          ? JSON.parse(one_time_password_hashes)
+          : (one_time_password_hashes || []);
       } catch (parseErr) {
         console.error(`JSON parse error for content ID ${id}:`, parseErr);
-        return res.status(500).json({ ok: false, error: 'Invalid password data' });
+        // Log the problematic fields for debugging
+        console.log(`ℹ️ password_hashes: ${JSON.stringify(password_hashes)}`);
+        console.log(`ℹ️ one_time_password_hashes: ${JSON.stringify(one_time_password_hashes)}`);
+        regularHashes = [];
+        oneTimeHashes = [];
       }
-      if (!Array.isArray(regularHashes)) regularHashes = [];
-      if (!Array.isArray(oneTimeHashes)) oneTimeHashes = [];
+      if (!Array.isArray(regularHashes)) {
+        console.warn(`ℹ️ password_hashes for content ID ${id} is not an array, resetting to []`);
+        regularHashes = [];
+      }
+      if (!Array.isArray(oneTimeHashes)) {
+        console.warn(`ℹ️ one_time_password_hashes for content ID ${id} is not an array, resetting to []`);
+        oneTimeHashes = [];
+      }
     } else {
       const { password_hash, one_time_password_hash } = contentResult.rows[0];
       regularHashes = password_hash ? [password_hash] : [];
