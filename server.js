@@ -59,16 +59,31 @@ async function ensureTable() {
     `);
     console.log('✅ Global passwords table ready');
 
-    // Drop old movies table and its dependencies if it exists (for migration)
+    // Migrate data from movies table to content table if movies table exists
     await pool.query(`
       DO $$
       BEGIN
         IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'movies') THEN
+          -- Copy data from movies to content, setting type to 'movie'
+          INSERT INTO content (title, imdb_id, type, password_hashes, one_time_password_hashes, year, image, created_at)
+          SELECT 
+            title,
+            imdb_id,
+            'movie' AS type,
+            COALESCE(password_hashes, '[]'::jsonb) AS password_hashes,
+            COALESCE(one_time_password_hashes, '[]'::jsonb) AS one_time_password_hashes,
+            year,
+            image,
+            created_at
+          FROM movies
+          ON CONFLICT DO NOTHING;
+          
+          -- Drop movies table and its dependencies
           DROP TABLE movies CASCADE;
         END IF;
       END $$;
     `);
-    console.log('✅ Legacy movies table and dependencies dropped if existed');
+    console.log('✅ Migrated data from movies table and dropped it if existed');
 
   } catch (err) {
     console.error('Error ensuring table schema:', err);
@@ -282,11 +297,25 @@ app.post('/api/content/:id/authorize', async (req, res) => {
 
     const { password_hashes, one_time_password_hashes } = contentResult.rows[0];
 
+    // Safely parse JSONB fields
+    let regularHashes = [];
+    let oneTimeHashes = [];
+    try {
+      regularHashes = password_hashes ? JSON.parse(password_hashes) : [];
+      oneTimeHashes = one_time_password_hashes ? JSON.parse(one_time_password_hashes) : [];
+    } catch (parseErr) {
+      console.error('JSON parse error for content passwords:', parseErr);
+      return res.status(500).json({ ok: false, error: 'Invalid password data' });
+    }
+
+    // Ensure arrays are valid
+    if (!Array.isArray(regularHashes)) regularHashes = [];
+    if (!Array.isArray(oneTimeHashes)) oneTimeHashes = [];
+
     // Fetch global passwords
     const globalResult = await pool.query('SELECT id, password_hash, is_one_time FROM global_passwords');
 
     // Check one-time passwords (content-specific)
-    const oneTimeHashes = JSON.parse(one_time_password_hashes || '[]');
     for (let i = 0; i < oneTimeHashes.length; i++) {
       if (await bcrypt.compare(password, oneTimeHashes[i])) {
         // Remove used one-time password
@@ -311,7 +340,6 @@ app.post('/api/content/:id/authorize', async (req, res) => {
     }
 
     // Check regular content passwords
-    const regularHashes = JSON.parse(password_hashes || '[]');
     for (const hash of regularHashes) {
       if (await bcrypt.compare(password, hash)) {
         const token = jwt.sign({ contentId: id }, JWT_SECRET, { expiresIn: '6h' });
