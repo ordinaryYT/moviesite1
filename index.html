@@ -507,20 +507,6 @@ function updateEpisodeSelect() {
   }
 }
 
-function updateEpisodeSelectPlayer() {
-  const season = document.getElementById('seasonSelect').value;
-  const episodeSelect = document.getElementById('episodeSelect');
-  episodeSelect.innerHTML = '';
-  if (episodeData && episodeData[season]) {
-    episodeData[season].forEach(ep => {
-      const option = document.createElement('option');
-      option.value = ep.episode;
-      option.textContent = `${ep.name} (E${ep.episode})`;
-      episodeSelect.appendChild(option);
-    });
-  }
-}
-
 async function verifyMoviePassword() {
   const password = document.getElementById('moviePasswordInput').value;
   if (!password) return alert('Please enter password');
@@ -574,36 +560,6 @@ async function playSelectedEpisode() {
         const url = `${embedData.url}/${season}/${episode}`;
         showPlayer(url);
         episodeModal.classList.remove('active');
-      } else {
-        alert('Error: ' + embedData.error);
-      }
-    } else {
-      alert('Authorization failed');
-    }
-  } catch (err) {
-    console.error(err);
-    alert('Failed to play episode');
-  }
-}
-
-async function playSelectedEpisodePlayer() {
-  const season = document.getElementById('seasonSelect').value;
-  const episode = document.getElementById('episodeSelect').value;
-  try {
-    const authRes = await fetch(API + '/movies/' + selectedMovieId + '/authorize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: lastPassword })
-    });
-    const authData = await authRes.json();
-    if (authData.ok) {
-      const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
-        headers: { Authorization: `Bearer ${authData.token}` }
-      });
-      const embedData = await embedRes.json();
-      if (embedData.ok) {
-        const url = `${embedData.url}/${season}/${episode}`;
-        playerIframe.src = url;
       } else {
         alert('Error: ' + embedData.error);
       }
