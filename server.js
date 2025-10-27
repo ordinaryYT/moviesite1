@@ -386,8 +386,7 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
       oneTimeHashes = [];
     }
 
-    const globalResult = await pool.query('SELECT id, password_hash, is_one_time FROM global_passwords');
-
+    // Check content-specific passwords first
     for (let i = 0; i < oneTimeHashes.length; i++) {
       if (await bcrypt.compare(password, oneTimeHashes[i])) {
         oneTimeHashes.splice(i, 1);
@@ -401,15 +400,6 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
       }
     }
 
-    for (const global of globalResult.rows) {
-      if (global.is_one_time && await bcrypt.compare(password, global.password_hash)) {
-        await pool.query('DELETE FROM global_passwords WHERE id = $1', [global.id]);
-        const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
-        console.log(`ℹ️ Authorized content ID ${id} with global one-time password`);
-        return res.json({ ok: true, token });
-      }
-    }
-
     for (const hash of regularHashes) {
       if (await bcrypt.compare(password, hash)) {
         const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
@@ -418,11 +408,23 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
       }
     }
 
-    for (const global of globalResult.rows) {
-      if (!global.is_one_time && await bcrypt.compare(password, global.password_hash)) {
-        const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
-        console.log(`ℹ️ Authorized content ID ${id} with global password`);
-        return res.json({ ok: true, token });
+    // Only check global passwords if no content-specific passwords are set
+    if (regularHashes.length === 0 && oneTimeHashes.length === 0) {
+      const globalResult = await pool.query('SELECT id, password_hash, is_one_time FROM global_passwords');
+      for (const global of globalResult.rows) {
+        if (global.is_one_time && await bcrypt.compare(password, global.password_hash)) {
+          await pool.query('DELETE FROM global_passwords WHERE id = $1', [global.id]);
+          const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
+          console.log(`ℹ️ Authorized content ID ${id} with global one-time password`);
+          return res.json({ ok: true, token });
+        }
+      }
+      for (const global of globalResult.rows) {
+        if (!global.is_one_time && await bcrypt.compare(password, global.password_hash)) {
+          const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
+          console.log(`ℹ️ Authorized content ID ${id} with global password`);
+          return res.json({ ok: true, token });
+        }
       }
     }
 
