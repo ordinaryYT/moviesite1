@@ -394,13 +394,13 @@ app.get('/api/movies/:id/embed', async (req, res) => {
     if (type !== 'Bearer') return res.status(401).json({ ok: false, error: 'Missing token' });
     const data = jwt.verify(token, JWT_SECRET);
     const movieId = data.movieId;
-    const r = await pool.query('SELECT imdb_id, type FROM movies WHERE id=$1', [movieId]);
+    const r = await pool.query('SELECT imdb_id, type AS contentType FROM movies WHERE id=$1', [movieId]);
     if (!r.rowCount) {
       console.log(`ℹ️ Content ID ${movieId} not found for embed`);
       return res.status(404).json({ ok: false, error: 'Content not found' });
     }
-    const { imdb_id, type } = r.rows[0];
-    const baseUrl = type === 'movie' ? EMBED_BASE_MOVIE : EMBED_BASE_TV;
+    const { imdb_id, contentType } = r.rows[0];
+    const baseUrl = contentType === 'movie' ? EMBED_BASE_MOVIE : EMBED_BASE_TV;
     const url = baseUrl + imdb_id;
     console.log(`ℹ️ Serving embed URL for content ID ${movieId}: ${url}`);
     res.json({ ok: true, url });
