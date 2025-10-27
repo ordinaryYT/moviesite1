@@ -169,6 +169,7 @@ let selectedMovieId = null;
 let selectedShow = null;
 let episodeData = null;
 let lastPassword = null;
+let authToken = null; // New variable to store the authorization token
 
 function filterMovies(searchTerm) {
   const filteredMovies = currentMovies.filter(m => 
@@ -519,9 +520,10 @@ async function verifyMoviePassword() {
     const data = await res.json();
     if (data.ok) {
       lastPassword = password;
+      authToken = data.token; // Store the token here
       if (selectedShow.type === 'movie') {
         const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
-          headers: { Authorization: `Bearer ${data.token}` }
+          headers: { Authorization: `Bearer ${authToken}` }
         });
         const embedData = await embedRes.json();
         if (embedData.ok) {
@@ -545,15 +547,9 @@ async function playSelectedEpisode() {
   const season = document.getElementById('seasonSelect').value;
   const episode = document.getElementById('episodeSelect').value;
   try {
-    const authRes = await fetch(API + '/movies/' + selectedMovieId + '/authorize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: lastPassword })
-    });
-    const authData = await authRes.json();
-    if (authData.ok) {
+    if (authToken) { // Reuse the existing token if available
       const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
-        headers: { Authorization: `Bearer ${authData.token}` }
+        headers: { Authorization: `Bearer ${authToken}` }
       });
       const embedData = await embedRes.json();
       if (embedData.ok) {
@@ -564,7 +560,7 @@ async function playSelectedEpisode() {
         alert('Error: ' + embedData.error);
       }
     } else {
-      alert('Authorization failed');
+      alert('Authorization token missing, please try again.');
     }
   } catch (err) {
     console.error(err);
@@ -584,6 +580,7 @@ function closePlayer() {
   playerIframe.src = '';
   episodeData = null;
   selectedShow = null;
+  authToken = null; // Clear token on player close
 }
 
 async function loadMovies() {
