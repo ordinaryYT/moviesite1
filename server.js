@@ -59,79 +59,110 @@ async function ensureTable() {
     `);
     console.log('✅ Global passwords table ready');
 
-    // Migrate data from movies table to content table if movies table exists
-    await pool.query(`
-      DO $$
-      BEGIN
-        IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'movies') THEN
-          -- Copy data from movies to content, converting single passwords to arrays
-          INSERT INTO content (
-            title, 
-            imdb_id, 
-            type, 
-            password_hashes, 
-            one_time_password_hashes, 
-            year, 
-            image, 
-            created_at
-          )
-          SELECT 
-            title,
-            imdb_id,
-            'movie' AS type,
-            CASE 
-              WHEN password_hash IS NOT NULL THEN jsonb_build_array(password_hash)
-              ELSE '[]'::jsonb
-            END AS password_hashes,
-            CASE 
-              WHEN one_time_password_hash IS NOT NULL THEN jsonb_build_array(one_time_password_hash)
-              ELSE '[]'::jsonb
-            END AS one_time_password_hashes,
-            year,
-            image,
-            created_at
-          FROM movies
-          ON CONFLICT DO NOTHING;
-          
-          -- Drop movies table and its dependencies
-          DROP TABLE movies CASCADE;
-        END IF;
-      END $$;
+    // Check if movies table exists and migrate data
+    const moviesTableExists = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'movies'
+      )
     `);
-    console.log('✅ Migrated data from movies table and dropped it if existed');
+    if (moviesTableExists.rows[0].exists) {
+      console.log('ℹ️ Movies table found, attempting migration...');
+
+      // Get schema of movies table to handle varying columns
+      const columnsResult = await pool.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'movies'
+      `);
+      const columns = columnsResult.rows.map(row => row.column_name);
+      console.log('ℹ️ Movies table columns:', columns);
+
+      // Build dynamic migration query
+      const selectFields = ['title', 'imdb_id', 'year', 'image', 'created_at'].filter(col => columns.includes(col));
+      const passwordFields = ['password_hash', 'one_time_password_hash'].filter(col => columns.includes(col));
+      
+      let query = `
+        INSERT INTO content (
+          title, 
+          imdb_id, 
+          type, 
+          password_hashes, 
+          one_time_password_hashes, 
+          year, 
+          image, 
+          created_at
+        )
+        SELECT 
+          title,
+          imdb_id,
+          'movie' AS type,
+          CASE 
+            WHEN ${columns.includes('password_hash') ? 'password_hash IS NOT NULL' : 'FALSE'} 
+            THEN jsonb_build_array(password_hash) 
+            ELSE '[]'::jsonb 
+          END AS password_hashes,
+          CASE 
+            WHEN ${columns.includes('one_time_password_hash') ? 'one_time_password_hash IS NOT NULL' : 'FALSE'} 
+            THEN jsonb_build_array(one_time_password_hash) 
+            ELSE '[]'::jsonb 
+          END AS one_time_password_hashes,
+          ${selectFields.includes('year') ? 'year' : 'NULL'},
+          ${selectFields.includes('image') ? 'image' : 'NULL'},
+          ${selectFields.includes('created_at') ? 'created_at' : 'NOW()'}
+        FROM movies
+        ON CONFLICT DO NOTHING
+        RETURNING id
+      `;
+      
+      const migrationResult = await pool.query(query);
+      console.log(`✅ Migrated ${migrationResult.rowCount} records from movies to content`);
+
+      // Drop movies table and its dependencies
+      await pool.query('DROP TABLE movies CASCADE');
+      console.log('✅ Dropped movies table and dependencies');
+    } else {
+      console.log('ℹ️ No movies table found, skipping migration');
+    }
 
   } catch (err) {
     console.error('Error ensuring table schema:', err);
     throw err;
   }
 }
-ensureTable().catch(console.error);
+ensureTable().catch(err => console.error('Failed to initialize database:', err));
 
 // --- IMDb Search Helper ---
 async function searchImdb(title) {
   const q = encodeURIComponent(title);
   const url = `https://search.imdbot.workers.dev/?q=${q}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('IMDb search failed');
-  const data = await res.json();
-  const hit = (data.description || []).find(h => h['#IMDB_ID']);
-  if (!hit) return null;
-  const imdb_id = hit['#IMDB_ID'].startsWith('tt') ? hit['#IMDB_ID'] : 'tt' + hit['#IMDB_ID'];
-  return {
-    imdb_id,
-    title: hit['#TITLE'] || title,
-    year: hit['#YEAR'] || null,
-    image: hit.image || null
-  };
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`IMDb search failed: ${res.status}`);
+    const data = await res.json();
+    const hit = (data.description || []).find(h => h['#IMDB_ID']);
+    if (!hit) return null;
+    const imdb_id = hit['#IMDB_ID'].startsWith('tt') ? hit['#IMDB_ID'] : 'tt' + hit['#IMDB_ID'];
+    return {
+      imdb_id,
+      title: hit['#TITLE'] || title,
+      year: hit['#YEAR'] || null,
+      image: hit.image || null
+    };
+  } catch (err) {
+    console.error('IMDb search error:', err);
+    return null;
+  }
 }
 
 // --- Public: list content ---
 app.get('/api/content', async (_, res) => {
   try {
     const result = await pool.query('SELECT id, title, type, year, image FROM content ORDER BY created_at DESC');
+    console.log(`ℹ️ /api/content returned ${result.rowCount} items:`, result.rows);
     res.json({ ok: true, items: result.rows });
   } catch (err) {
-    console.error(err);
+    console.error('Error in /api/content:', err);
     res.status(500).json({ ok: false, error: 'DB error' });
   }
 });
@@ -139,6 +170,7 @@ app.get('/api/content', async (_, res) => {
 // --- Admin login ---
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
+  if (!password) return res.status(400).json({ ok: false, error: 'Password required' });
   if (password !== ADMIN_PASSWORD) return res.status(401).json({ ok: false, error: 'Invalid admin password' });
   const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '12h' });
   res.json({ ok: true, token });
@@ -184,7 +216,6 @@ app.post('/api/content', requireAdmin, async (req, res) => {
       contentData = search;
     }
 
-    // Hash multiple passwords
     const passwordHashes = contentPasswords && contentPasswords.length
       ? await Promise.all(contentPasswords.map(p => bcrypt.hash(p, 10)))
       : [];
@@ -197,6 +228,7 @@ app.post('/api/content', requireAdmin, async (req, res) => {
       [contentData.title, contentData.imdb_id, type, JSON.stringify(passwordHashes), JSON.stringify(oneTimePasswordHashes), contentData.year, contentData.image]
     );
 
+    console.log(`ℹ️ Added content ID ${result.rows[0].id}: ${contentData.title}`);
     res.json({ ok: true, contentId: result.rows[0].id });
   } catch (err) {
     console.error('Add content error:', err);
@@ -210,9 +242,10 @@ app.delete('/api/content/:id', requireAdmin, async (req, res) => {
     const id = req.params.id;
     const r = await pool.query('DELETE FROM content WHERE id=$1 RETURNING id', [id]);
     if (!r.rowCount) return res.status(404).json({ ok: false, error: 'Content not found' });
+    console.log(`ℹ️ Deleted content ID ${id}`);
     res.json({ ok: true });
   } catch (err) {
-    console.error(err);
+    console.error('Delete content error:', err);
     res.status(500).json({ ok: false, error: 'DB error' });
   }
 });
@@ -229,6 +262,7 @@ app.post('/api/admin/global-passwords', requireAdmin, async (req, res) => {
       'INSERT INTO global_passwords (password_hash, is_one_time) VALUES ($1, $2) RETURNING id',
       [passwordHash, !!isOneTime]
     );
+    console.log(`ℹ️ Added global password ID ${result.rows[0].id}`);
     res.json({ ok: true, passwordId: result.rows[0].id });
   } catch (err) {
     console.error('Add global password error:', err);
@@ -240,6 +274,7 @@ app.post('/api/admin/global-passwords', requireAdmin, async (req, res) => {
 app.get('/api/admin/global-passwords', requireAdmin, async (req, res) => {
   try {
     const result = await pool.query('SELECT id, is_one_time, created_at FROM global_passwords ORDER BY created_at DESC');
+    console.log(`ℹ️ /api/admin/global-passwords returned ${result.rowCount} passwords`);
     res.json({ ok: true, passwords: result.rows });
   } catch (err) {
     console.error('List global passwords error:', err);
@@ -255,6 +290,7 @@ app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => 
     if (!result.rowCount) {
       return res.status(404).json({ ok: false, error: 'Global password not found' });
     }
+    console.log(`ℹ️ Deleted global password ID ${id}`);
     res.json({ ok: true });
   } catch (err) {
     console.error('Delete global password error:', err);
@@ -266,6 +302,7 @@ app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => 
 app.post('/api/admin/toggle-passwords', requireAdmin, async (req, res) => {
   try {
     passwordsDisabled = !passwordsDisabled;
+    console.log(`ℹ️ Passwords ${passwordsDisabled ? 'disabled' : 'enabled'}`);
     res.json({ ok: true, disabled: passwordsDisabled });
   } catch (err) {
     console.error('Toggle password error:', err);
@@ -298,6 +335,7 @@ app.post('/api/content/:id/authorize', async (req, res) => {
         return res.status(401).json({ ok: false, error: 'Wrong password' });
       }
       const token = jwt.sign({ contentId: id }, JWT_SECRET, { expiresIn: '6h' });
+      console.log(`ℹ️ Authorized content ID ${id} with admin password`);
       return res.json({ ok: true, token });
     }
 
@@ -307,6 +345,7 @@ app.post('/api/content/:id/authorize', async (req, res) => {
       [id]
     );
     if (!contentResult.rowCount) {
+      console.log(`ℹ️ Content ID ${id} not found`);
       return res.status(404).json({ ok: false, error: 'Content not found' });
     }
 
@@ -319,7 +358,7 @@ app.post('/api/content/:id/authorize', async (req, res) => {
       regularHashes = password_hashes ? JSON.parse(password_hashes) : [];
       oneTimeHashes = one_time_password_hashes ? JSON.parse(one_time_password_hashes) : [];
     } catch (parseErr) {
-      console.error('JSON parse error for content passwords:', parseErr);
+      console.error(`JSON parse error for content ID ${id}:`, parseErr);
       return res.status(500).json({ ok: false, error: 'Invalid password data' });
     }
 
@@ -333,13 +372,13 @@ app.post('/api/content/:id/authorize', async (req, res) => {
     // Check one-time passwords (content-specific)
     for (let i = 0; i < oneTimeHashes.length; i++) {
       if (await bcrypt.compare(password, oneTimeHashes[i])) {
-        // Remove used one-time password
         oneTimeHashes.splice(i, 1);
         await pool.query(
           'UPDATE content SET one_time_password_hashes = $1 WHERE id = $2',
           [JSON.stringify(oneTimeHashes), id]
         );
         const token = jwt.sign({ contentId: id }, JWT_SECRET, { expiresIn: '6h' });
+        console.log(`ℹ️ Authorized content ID ${id} with content-specific one-time password`);
         return res.json({ ok: true, token });
       }
     }
@@ -347,9 +386,9 @@ app.post('/api/content/:id/authorize', async (req, res) => {
     // Check global one-time passwords
     for (const global of globalResult.rows) {
       if (global.is_one_time && await bcrypt.compare(password, global.password_hash)) {
-        // Remove used global one-time password
         await pool.query('DELETE FROM global_passwords WHERE id = $1', [global.id]);
         const token = jwt.sign({ contentId: id }, JWT_SECRET, { expiresIn: '6h' });
+        console.log(`ℹ️ Authorized content ID ${id} with global one-time password`);
         return res.json({ ok: true, token });
       }
     }
@@ -358,6 +397,7 @@ app.post('/api/content/:id/authorize', async (req, res) => {
     for (const hash of regularHashes) {
       if (await bcrypt.compare(password, hash)) {
         const token = jwt.sign({ contentId: id }, JWT_SECRET, { expiresIn: '6h' });
+        console.log(`ℹ️ Authorized content ID ${id} with content-specific password`);
         return res.json({ ok: true, token });
       }
     }
@@ -366,13 +406,15 @@ app.post('/api/content/:id/authorize', async (req, res) => {
     for (const global of globalResult.rows) {
       if (!global.is_one_time && await bcrypt.compare(password, global.password_hash)) {
         const token = jwt.sign({ contentId: id }, JWT_SECRET, { expiresIn: '6h' });
+        console.log(`ℹ️ Authorized content ID ${id} with global password`);
         return res.json({ ok: true, token });
       }
     }
 
+    console.log(`ℹ️ Failed to authorize content ID ${id}: Wrong password`);
     return res.status(401).json({ ok: false, error: 'Wrong password' });
   } catch (err) {
-    console.error('Authorization error:', err);
+    console.error(`Authorization error for content ID ${req.params.id}:`, err);
     res.status(500).json({ ok: false, error: 'Authorization failed' });
   }
 });
@@ -386,11 +428,17 @@ app.get('/api/content/:id/embed', async (req, res) => {
     const data = jwt.verify(token, JWT_SECRET);
     const contentId = data.contentId;
     const r = await pool.query('SELECT imdb_id, type AS contentType FROM content WHERE id=$1', [contentId]);
-    if (!r.rowCount) return res.status(404).json({ ok: false, error: 'Content not found' });
+    if (!r.rowCount) {
+      console.log(`ℹ️ Content ID ${contentId} not found for embed`);
+      return res.status(404).json({ ok: false, error: 'Content not found' });
+    }
     const { imdb_id, contentType } = r.rows[0];
     const baseUrl = contentType === 'movie' ? EMBED_BASE_MOVIE : EMBED_BASE_TV;
-    res.json({ ok: true, url: baseUrl + imdb_id });
-  } catch {
+    const url = baseUrl + imdb_id;
+    console.log(`ℹ️ Serving embed URL for content ID ${contentId}: ${url}`);
+    res.json({ ok: true, url });
+  } catch (err) {
+    console.error('Embed error:', err);
     res.status(401).json({ ok: false, error: 'Invalid token' });
   }
 });
