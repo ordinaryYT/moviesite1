@@ -57,14 +57,26 @@ async function ensureTable() {
     `);
     console.log('✅ Global passwords table ready');
 
-    // Migrate old password_hash and one_time_password_hash to JSONB if they exist
+    // Check existing columns in movies table
     const columnsResult = await pool.query(`
       SELECT column_name 
       FROM information_schema.columns 
       WHERE table_name = 'movies'
     `);
     const columns = columnsResult.rows.map(row => row.column_name);
+    console.log('ℹ️ Existing columns in movies table:', columns);
 
+    // Add password_hashes and one_time_password_hashes if they don't exist
+    if (!columns.includes('password_hashes')) {
+      await pool.query('ALTER TABLE movies ADD COLUMN password_hashes JSONB DEFAULT \'[]\'');
+      console.log('✅ Added password_hashes column');
+    }
+    if (!columns.includes('one_time_password_hashes')) {
+      await pool.query('ALTER TABLE movies ADD COLUMN one_time_password_hashes JSONB DEFAULT \'[]\'');
+      console.log('✅ Added one_time_password_hashes column');
+    }
+
+    // Migrate old password_hash and one_time_password_hash to JSONB if they exist
     if (columns.includes('password_hash') || columns.includes('one_time_password_hash')) {
       console.log('ℹ️ Migrating old password fields to JSONB...');
       await pool.query(`
@@ -78,15 +90,19 @@ async function ensureTable() {
             WHEN one_time_password_hash IS NOT NULL THEN jsonb_build_array(one_time_password_hash) 
             ELSE '[]'::jsonb 
           END
+        WHERE password_hash IS NOT NULL OR one_time_password_hash IS NOT NULL
       `);
+      console.log('✅ Migrated data to JSONB fields');
+
       // Drop old columns after migration
       if (columns.includes('password_hash')) {
         await pool.query('ALTER TABLE movies DROP COLUMN IF EXISTS password_hash');
+        console.log('✅ Dropped password_hash column');
       }
       if (columns.includes('one_time_password_hash')) {
         await pool.query('ALTER TABLE movies DROP COLUMN IF EXISTS one_time_password_hash');
+        console.log('✅ Dropped one_time_password_hash column');
       }
-      console.log('✅ Migrated password fields to JSONB');
     }
 
     // Add type column if it doesn't exist
