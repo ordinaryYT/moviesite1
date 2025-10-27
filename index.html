@@ -146,8 +146,6 @@ const addContentModal = document.getElementById('addContentModal');
 const passwordModal = document.getElementById('passwordModal');
 const globalPasswordModal = document.getElementById('globalPasswordModal');
 const searchInput = document.getElementById('searchInput');
-const adminSearchInput = document.createElement('input');
-
 let adminToken = null;
 let currentContent = [];
 let selectedContentId = null;
@@ -260,9 +258,6 @@ async function adminLogin() {
 function showAdminPanel() {
   movieGrid.style.display = 'none';
   adminPanel.classList.add('active');
-  adminSearchInput.type = 'text';
-  adminSearchInput.placeholder = 'Search content to delete...';
-  adminSearchInput.style.cssText = 'width:100%;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem;margin-bottom:2rem';
   adminPanel.innerHTML = `
     <h2>Admin Panel</h2>
     <div class="admin-actions">
@@ -274,25 +269,12 @@ function showAdminPanel() {
     <div id="globalPasswordList" class="movie-list-admin"></div>
     <h3>Content</h3>
     <div id="contentListAdmin" class="movie-list-admin"></div>`;
-  adminPanel.insertBefore(adminSearchInput, adminPanel.querySelector('#globalPasswordList'));
-  adminSearchInput.addEventListener('input', e => filterAdminContent(e.target.value));
-}
-
-function filterAdminContent(searchTerm) {
-  console.log('ℹ️ Filtering admin content with term:', searchTerm);
-  const contentListAdmin = document.getElementById('contentListAdmin');
-  const items = contentListAdmin.querySelectorAll('.movie-item-admin');
-  items.forEach(item => {
-    const title = item.querySelector('strong').textContent.toLowerCase();
-    item.style.display = title.includes(searchTerm.toLowerCase()) ? 'flex' : 'none';
-  });
 }
 
 function exitAdmin() {
   adminToken = null;
   adminPanel.classList.remove('active');
   movieGrid.style.display = 'grid';
-  adminSearchInput.removeEventListener('input', filterAdminContent);
 }
 
 function openAddContentModal() { addContentModal.classList.add('active'); }
@@ -306,7 +288,7 @@ async function addContent() {
   const oneTimePasswords = document.getElementById('oneTimePasswords').value.split(',').map(p => p.trim()).filter(p => p);
   if (!title && !imdbId) return alert('Please provide title or IMDb ID');
   try {
-    const res = await fetch(API + '/content', {
+    const res = await fetch(API + '/movies', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -356,17 +338,17 @@ async function addGlobalPassword() {
 
 async function loadAdminContent() {
   try {
-    const res = await fetch(API + '/content');
+    const res = await fetch(API + '/movies');
     const data = await res.json();
     console.log('ℹ️ Admin content response:', data);
     if (data.ok) {
-      currentContent = data.items;
+      currentContent = data.movies;
       const contentListAdmin = document.getElementById('contentListAdmin');
       contentListAdmin.innerHTML = '';
-      if (data.items.length === 0) {
+      if (data.movies.length === 0) {
         contentListAdmin.innerHTML = '<p>No content available</p>';
       } else {
-        data.items.forEach(item => {
+        data.movies.forEach(item => {
           const div = document.createElement('div');
           div.className = 'movie-item-admin';
           div.innerHTML = `
@@ -384,7 +366,7 @@ async function loadAdminContent() {
 async function deleteContent(id) {
   if (!confirm('Are you sure?')) return;
   try {
-    const res = await fetch(API + '/content/' + id, {
+    const res = await fetch(API + '/movies/' + id, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${adminToken}` }
     });
@@ -491,7 +473,7 @@ async function verifyContentPassword() {
   const password = document.getElementById('contentPasswordInput').value;
   if (!password) return alert('Please enter password');
   try {
-    const res = await fetch(API + '/content/' + selectedContentId + '/authorize', {
+    const res = await fetch(API + '/movies/' + selectedContentId + '/authorize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password })
@@ -499,14 +481,21 @@ async function verifyContentPassword() {
     const data = await res.json();
     console.log('ℹ️ Authorize response:', data);
     if (data.ok) {
-      const embedRes = await fetch(API + '/content/' + selectedContentId + '/embed', {
+      const embedRes = await fetch(API + '/movies/' + selectedContentId + '/embed', {
         headers: { Authorization: `Bearer ${data.token}` }
       });
       const embedData = await embedRes.json();
       console.log('ℹ️ Embed response:', embedData);
-      if (embedData.ok) showPlayer(embedData.url);
-      else alert('Error: ' + embedData.error);
-    } else alert('Wrong password');
+      if (embedData.ok) {
+        showPlayer(embedData.url);
+      } else {
+        alert('Error: ' + embedData.error);
+        console.error('Embed error:', embedData.error);
+      }
+    } else {
+      alert('Wrong password');
+      console.log('Authorization failed:', data.error);
+    }
   } catch (err) {
     console.error('Verification error:', err);
     alert('Verification failed');
@@ -530,15 +519,15 @@ async function loadContent() {
   movieGrid.innerHTML =
     '<p style="text-align:center;color:#aaa;">Loading...</p>';
   try {
-    const res = await fetch(API + '/content');
+    const res = await fetch(API + '/movies');
     const data = await res.json();
     console.log('ℹ️ Load content response:', data);
-    if (!data.ok || !data.items.length) {
+    if (!data.ok || !data.movies.length) {
       movieGrid.innerHTML =
         '<p style="text-align:center;color:#aaa;">No content found.</p>';
       return;
     }
-    currentContent = data.items;
+    currentContent = data.movies;
     displayContent(currentContent);
   } catch (err) {
     console.error('Load content error:', err);
