@@ -39,11 +39,14 @@
   .movie-item-admin button{background:#ff4444;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer}
   .player-container{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:9999}
   .player-container.active{display:block}
-  .close-btn{position:absolute;top:20px;right:20px;background:rgba(0,0,0,.7);color:white;border:none;width:50px;height:50px;border-radius:50%;font-size:2rem;cursor:pointer}
+  .close-btn{position:absolute;top:20px;right:20px;background:#e50914;color:white;border:none;width:50px;height:50px;border-radius:50%;font-size:2rem;cursor:pointer;font-weight:bold;opacity:1;z-index:10000}
+  .close-btn:hover{background:#ff4444}
   .player-wrapper{position:relative;width:100%;height:100%}
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
   .bottom-left-overlay{position:absolute;bottom:10px;left:200px;width:120px;height:40px;background:#000;z-index:10;border-radius:8px;}
+  .episode-selector{position:absolute;top:70px;left:10px;background:#1a1a1a;padding:1rem;border-radius:8px;color:#fff;border:1px solid #333;z-index:1000}
+  .episode-selector select{padding:0.5rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff;margin-right:0.5rem}
 </style>
 </head>
 <body>
@@ -126,12 +129,32 @@
     <button class="modal-btn" onclick="addGlobalPassword()">Add Global Password</button>
   </div>
 </div>
+<div id="episodeModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeEpisodeModal()">×</button>
+    <h2>Select Episode</h2>
+    <p id="episodeShowTitle" style="margin-bottom:1rem;color:#ccc"></p>
+    <div class="form-group">
+      <label for="seasonSelect">Season:</label>
+      <select id="seasonSelect" onchange="updateEpisodeSelect()"></select>
+    </div>
+    <div class="form-group">
+      <label for="episodeSelect">Episode:</label>
+      <select id="episodeSelect"></select>
+    </div>
+    <button class="modal-btn" onclick="playSelectedEpisode()">Watch Episode</button>
+  </div>
+</div>
 <div id="playerContainer" class="player-container">
   <button class="close-btn" onclick="closePlayer()">×</button>
   <div class="player-wrapper">
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
     <div class="bottom-left-overlay"></div>
+    <div id="episodeSelector" class="episode-selector" style="display:none">
+      <select id="seasonSelectPlayer" onchange="updateEpisodeSelectPlayer()"></select>
+      <select id="episodeSelectPlayer" onchange="playSelectedEpisodePlayer()"></select>
+    </div>
   </div>
 </div>
 <script>
@@ -145,10 +168,13 @@ const loginModal = document.getElementById('loginModal');
 const addMovieModal = document.getElementById('addMovieModal');
 const passwordModal = document.getElementById('passwordModal');
 const globalPasswordModal = document.getElementById('globalPasswordModal');
+const episodeModal = document.getElementById('episodeModal');
 const searchInput = document.getElementById('searchInput');
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
+let selectedShow = null;
+let episodeData = null;
 
 function filterMovies(searchTerm) {
   const filteredMovies = currentMovies.filter(m => 
@@ -194,7 +220,7 @@ async function createMovieCard(movie) {
     card.innerHTML = `
       <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
       <div class="movie-info"><h3>${movie.title}</h3><p>${year} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p></div>`;
-    card.onclick = () => requestMoviePassword(movie.id, movie.title);
+    card.onclick = () => movie.type === 'movie' ? requestMoviePassword(movie.id, movie.title) : requestEpisodeSelection(movie.id, movie.title);
     movieGrid.appendChild(card);
   } catch (e) {
     console.error(e);
@@ -216,6 +242,7 @@ function closeLoginModal() { loginModal.classList.remove('active'); }
 function closeAddMovieModal() { addMovieModal.classList.remove('active'); }
 function closePasswordModal() { passwordModal.classList.remove('active'); }
 function closeGlobalPasswordModal() { globalPasswordModal.classList.remove('active'); }
+function closeEpisodeModal() { episodeModal.classList.remove('active'); }
 
 async function adminLogin() {
   const password = document.getElementById('adminPassword').value;
@@ -446,6 +473,62 @@ function requestMoviePassword(movieId, title) {
   passwordModal.classList.add('active');
 }
 
+async function requestEpisodeSelection(movieId, title) {
+  selectedMovieId = movieId;
+  selectedShow = { id: movieId, title };
+  document.getElementById('episodeShowTitle').textContent = title;
+  try {
+    const res = await fetch(API + '/movies/' + movieId + '/episodes');
+    const data = await res.json();
+    if (data.ok) {
+      episodeData = data.seasons;
+      const seasonSelect = document.getElementById('seasonSelect');
+      seasonSelect.innerHTML = '';
+      Object.keys(episodeData).forEach(season => {
+        const option = document.createElement('option');
+        option.value = season;
+        option.textContent = `Season ${season}`;
+        seasonSelect.appendChild(option);
+      });
+      updateEpisodeSelect();
+      episodeModal.classList.add('active');
+    } else {
+      alert('Error: ' + data.error);
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Failed to load episodes');
+  }
+}
+
+function updateEpisodeSelect() {
+  const season = document.getElementById('seasonSelect').value;
+  const episodeSelect = document.getElementById('episodeSelect');
+  episodeSelect.innerHTML = '';
+  if (episodeData && episodeData[season]) {
+    episodeData[season].forEach(ep => {
+      const option = document.createElement('option');
+      option.value = ep.episode;
+      option.textContent = `${ep.name} (E${ep.episode})`;
+      episodeSelect.appendChild(option);
+    });
+  }
+}
+
+function updateEpisodeSelectPlayer() {
+  const season = document.getElementById('seasonSelectPlayer').value;
+  const episodeSelect = document.getElementById('episodeSelectPlayer');
+  episodeSelect.innerHTML = '';
+  if (episodeData && episodeData[season]) {
+    episodeData[season].forEach(ep => {
+      const option = document.createElement('option');
+      option.value = ep.episode;
+      option.textContent = `${ep.name} (E${ep.episode})`;
+      episodeSelect.appendChild(option);
+    });
+  }
+}
+
 async function verifyMoviePassword() {
   const password = document.getElementById('moviePasswordInput').value;
   if (!password) return alert('Please enter password');
@@ -457,14 +540,18 @@ async function verifyMoviePassword() {
     });
     const data = await res.json();
     if (data.ok) {
-      const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
-        headers: { Authorization: `Bearer ${data.token}` }
-      });
-      const embedData = await embedRes.json();
-      if (embedData.ok) {
-        showPlayer(embedData.url);
+      if (currentMovies.find(m => m.id === selectedMovieId).type === 'movie') {
+        const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
+          headers: { Authorization: `Bearer ${data.token}` }
+        });
+        const embedData = await embedRes.json();
+        if (embedData.ok) {
+          showPlayer(embedData.url);
+        } else {
+          alert('Error: ' + embedData.error);
+        }
       } else {
-        alert('Error: ' + embedData.error);
+        await requestEpisodeSelection(selectedMovieId, document.getElementById('passwordMovieTitle').textContent);
       }
     } else {
       alert('Wrong password');
@@ -475,16 +562,94 @@ async function verifyMoviePassword() {
   }
 }
 
-function showPlayer(url) {
+async function playSelectedEpisode() {
+  const season = document.getElementById('seasonSelect').value;
+  const episode = document.getElementById('episodeSelect').value;
+  try {
+    const authRes = await fetch(API + '/movies/' + selectedMovieId + '/authorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: document.getElementById('moviePasswordInput').value })
+    });
+    const authData = await authRes.json();
+    if (authData.ok) {
+      const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
+        headers: { Authorization: `Bearer ${authData.token}` }
+      });
+      const embedData = await embedRes.json();
+      if (embedData.ok) {
+        const url = `${embedData.url}/${season}/${episode}`;
+        showPlayer(url, true);
+        episodeModal.classList.remove('active');
+      } else {
+        alert('Error: ' + embedData.error);
+      }
+    } else {
+      alert('Authorization failed');
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Failed to play episode');
+  }
+}
+
+async function playSelectedEpisodePlayer() {
+  const season = document.getElementById('seasonSelectPlayer').value;
+  const episode = document.getElementById('episodeSelectPlayer').value;
+  try {
+    const authRes = await fetch(API + '/movies/' + selectedMovieId + '/authorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: document.getElementById('moviePasswordInput').value })
+    });
+    const authData = await authRes.json();
+    if (authData.ok) {
+      const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
+        headers: { Authorization: `Bearer ${authData.token}` }
+      });
+      const embedData = await embedRes.json();
+      if (embedData.ok) {
+        const url = `${embedData.url}/${season}/${episode}`;
+        playerIframe.src = url;
+      } else {
+        alert('Error: ' + embedData.error);
+      }
+    } else {
+      alert('Authorization failed');
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Failed to play episode');
+  }
+}
+
+function showPlayer(url, isTvShow = false) {
   playerIframe.src = url;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
+  if (isTvShow && episodeData) {
+    const seasonSelect = document.getElementById('seasonSelectPlayer');
+    seasonSelect.innerHTML = '';
+    Object.keys(episodeData).forEach(season => {
+      const option = document.createElement('option');
+      option.value = season;
+      option.textContent = `Season ${season}`;
+      seasonSelect.appendChild(option);
+    });
+    updateEpisodeSelectPlayer();
+    document.getElementById('episodeSelector').style.display = 'block';
+  } else {
+    document.getElementById('episodeSelector').style.display = 'none';
+  }
 }
 
 function closePlayer() {
   playerContainer.classList.remove('active');
   playerIframe.src = '';
+  document.getElementById('episodeSelector').style.display = 'none';
+  episodeData = null;
+  selectedShow = null;
 }
 
 async function loadMovies() {
@@ -516,6 +681,7 @@ document.addEventListener('keydown', e => {
     closeAddMovieModal();
     closePasswordModal();
     closeGlobalPasswordModal();
+    closeEpisodeModal();
   }
 });
 
