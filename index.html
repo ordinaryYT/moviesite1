@@ -28,11 +28,12 @@
   .form-group{margin-bottom:1rem}
   .form-group label{display:block;margin-bottom:0.5rem;color:#ccc}
   .form-group input{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
+  .form-group select{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
   .modal-btn{width:100%;padding:0.75rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-top:1rem}
   #adminPanel{display:none;padding:2rem;max-width:1400px;margin:0 auto}
   #adminPanel.active{display:block}
-  .admin-actions{margin-bottom:2rem}
-  .admin-btn{padding:0.75rem 1.5rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-right:1rem}
+  .admin-actions{margin-bottom:2rem;display:flex;gap:1rem}
+  .admin-btn{padding:0.75rem 1.5rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold}
   .movie-list-admin{margin-top:2rem}
   .movie-item-admin{display:flex;justify-content:space-between;align-items:center;padding:1rem;background:#1a1a1a;margin-bottom:1rem;border-radius:8px}
   .movie-item-admin button{background:#ff4444;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer}
@@ -52,7 +53,7 @@
 </header>
 <main>
   <div id="searchContainer">
-    <input type="text" id="searchInput" placeholder="Search for movies..." />
+    <input type="text" id="searchInput" placeholder="Search for movies or TV shows..." />
   </div>
   <div id="movieGrid"></div>
   <div id="adminPanel" class="admin-panel"></div>
@@ -68,45 +69,67 @@
     <button class="modal-btn" onclick="adminLogin()">Login</button>
   </div>
 </div>
-<div id="addMovieModal" class="modal">
+<div id="addContentModal" class="modal">
   <div class="modal-content">
-    <button class="close-modal" onclick="closeAddMovieModal()">×</button>
-    <h2>Add Movie</h2>
+    <button class="close-modal" onclick="closeAddContentModal()">×</button>
+    <h2>Add Content</h2>
     <div class="form-group">
-      <label for="movieTitle">Title:</label>
-      <input type="text" id="movieTitle" placeholder="Enter movie title">
+      <label for="contentTitle">Title:</label>
+      <input type="text" id="contentTitle" placeholder="Enter movie or TV show title">
     </div>
     <div class="form-group">
-      <label for="movieImdbId">IMDb ID (optional):</label>
-      <input type="text" id="movieImdbId" placeholder="tt1234567">
+      <label for="contentImdbId">IMDb ID (optional):</label>
+      <input type="text" id="contentImdbId" placeholder="tt1234567">
     </div>
     <div class="form-group">
-      <label for="moviePassword">Password (optional):</label>
-      <input type="text" id="moviePassword" placeholder="Enter password">
+      <label for="contentType">Type:</label>
+      <select id="contentType">
+        <option value="movie">Movie</option>
+        <option value="tv_show">TV Show</option>
+      </select>
     </div>
     <div class="form-group">
-      <label for="oneTimePassword">One-Time Password (optional):</label>
-      <input type="text" id="oneTimePassword" placeholder="Enter one-time password">
+      <label for="contentPasswords">Passwords (comma-separated):</label>
+      <input type="text" id="contentPasswords" placeholder="pass1,pass2,...">
     </div>
-    <button class="modal-btn" onclick="addMovie()">Add Movie</button>
+    <div class="form-group">
+      <label for="oneTimePasswords">One-Time Passwords (comma-separated, optional):</label>
+      <input type="text" id="oneTimePasswords" placeholder="otp1,otp2,...">
+    </div>
+    <button class="modal-btn" onclick="addContent()">Add Content</button>
   </div>
 </div>
 <div id="passwordModal" class="modal">
   <div class="modal-content">
     <button class="close-modal" onclick="closePasswordModal()">×</button>
     <h2>Enter Password</h2>
-    <p id="passwordMovieTitle" style="margin-bottom:1rem;color:#ccc"></p>
+    <p id="passwordContentTitle" style="margin-bottom:1rem;color:#ccc"></p>
     <div class="form-group">
-      <label for="moviePasswordInput">Password:</label>
-      <input type="password" id="moviePasswordInput" placeholder="Enter password">
+      <label for="contentPasswordInput">Password:</label>
+      <input type="password" id="contentPasswordInput" placeholder="Enter password">
     </div>
-    <button class="modal-btn" onclick="verifyMoviePassword()">Watch</button>
+    <button class="modal-btn" onclick="verifyContentPassword()">Watch</button>
+  </div>
+</div>
+<div id="globalPasswordModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeGlobalPasswordModal()">×</button>
+    <h2>Add Global Password</h2>
+    <div class="form-group">
+      <label for="globalPassword">Password:</label>
+      <input type="password" id="globalPassword" placeholder="Enter global password">
+    </div>
+    <div class="form-group">
+      <label for="isOneTime">One-Time Password:</label>
+      <input type="checkbox" id="isOneTime">
+    </div>
+    <button class="modal-btn" onclick="addGlobalPassword()">Add Global Password</button>
   </div>
 </div>
 <div id="playerContainer" class="player-container">
   <button class="close-btn" onclick="closePlayer()">×</button>
   <div class="player-wrapper">
-    <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen"></iframe>
+    <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
     <div class="bottom-left-overlay"></div>
   </div>
@@ -119,35 +142,37 @@ const playerContainer = document.getElementById('playerContainer');
 const adminBtn = document.getElementById('adminBtn');
 const adminPanel = document.getElementById('adminPanel');
 const loginModal = document.getElementById('loginModal');
-const addMovieModal = document.getElementById('addMovieModal');
+const addContentModal = document.getElementById('addContentModal');
 const passwordModal = document.getElementById('passwordModal');
+const globalPasswordModal = document.getElementById('globalPasswordModal');
 const searchInput = document.getElementById('searchInput');
+const adminSearchInput = document.createElement('input');
 
 let adminToken = null;
-let currentMovies = [];
-let selectedMovieId = null;
+let currentContent = [];
+let selectedContentId = null;
 
-function filterMovies(searchTerm) {
-  console.log('ℹ️ Filtering movies with term:', searchTerm);
-  const filteredMovies = currentMovies.filter(movie =>
-    movie.title.toLowerCase().includes(searchTerm.toLowerCase())
+function filterContent(searchTerm) {
+  console.log('ℹ️ Filtering content with term:', searchTerm);
+  const filteredContent = currentContent.filter(item =>
+    item.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
-  console.log('ℹ️ Filtered movies:', filteredMovies);
-  displayMovies(filteredMovies);
+  console.log('ℹ️ Filtered content:', filteredContent);
+  displayContent(filteredContent);
 }
 
-function displayMovies(movies) {
-  console.log('ℹ️ Displaying movies:', movies);
+function displayContent(items) {
+  console.log('ℹ️ Displaying content:', items);
   movieGrid.innerHTML = '';
-  if (movies.length === 0) {
+  if (items.length === 0) {
     movieGrid.innerHTML =
-      '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
+      '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No content found</p>';
     return;
   }
-  movies.forEach(createMovieCard);
+  items.forEach(createContentCard);
 }
 
-async function getMoviePoster(title, year = '') {
+async function getContentPoster(title, year = '') {
   console.log(`ℹ️ Fetching poster for ${title} (${year})`);
   try {
     const response = await fetch(
@@ -182,28 +207,29 @@ async function getMoviePoster(title, year = '') {
   return placeholder;
 }
 
-async function createMovieCard(movie) {
+async function createContentCard(item) {
   try {
-    let img = movie.image;
-    const year = movie.year || 'N/A';
-    const poster = await getMoviePoster(movie.title, year);
+    let img = item.image;
+    const year = item.year || 'N/A';
+    const poster = await getContentPoster(item.title, year);
     if (!poster.includes('placeholder.com')) img = poster;
     const card = document.createElement('div');
     card.className = 'movie-card';
     card.innerHTML = `
       <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
-      <div class="movie-info"><h3>${movie.title}</h3><p>${year}</p></div>`;
-    card.onclick = () => requestMoviePassword(movie.id, movie.title);
+      <div class="movie-info"><h3>${item.title}</h3><p>${year} (${item.type === 'movie' ? 'Movie' : 'TV Show'})</p></div>`;
+    card.onclick = () => requestContentPassword(item.id, item.title);
     movieGrid.appendChild(card);
-    console.log(`ℹ️ Created card for ${movie.title} (ID: ${movie.id})`);
+    console.log(`ℹ️ Created card for ${item.title} (ID: ${item.id}, Type: ${item.type})`);
   } catch (e) {
-    console.error(`Error rendering card for ${movie.title}:`, e);
+    console.error(`Error rendering card for ${item.title}:`, e);
   }
 }
 
 function openAdminPanel() { loginModal.classList.add('active'); }
 function closeLoginModal() { loginModal.classList.remove('active'); }
-function closeAddMovieModal() { addMovieModal.classList.remove('active'); }
+function closeAddContentModal() { addContentModal.classList.remove('active'); }
+function closeGlobalPasswordModal() { globalPasswordModal.classList.remove('active'); }
 function closePasswordModal() { passwordModal.classList.remove('active'); }
 
 async function adminLogin() {
@@ -221,7 +247,9 @@ async function adminLogin() {
       adminToken = data.token;
       loginModal.classList.remove('active');
       showAdminPanel();
-      loadAdminMovies();
+      loadAdminContent();
+      loadGlobalPasswords();
+      checkPasswordStatus();
     } else alert('Invalid password');
   } catch (err) {
     console.error('Admin login error:', err);
@@ -232,116 +260,238 @@ async function adminLogin() {
 function showAdminPanel() {
   movieGrid.style.display = 'none';
   adminPanel.classList.add('active');
+  adminSearchInput.type = 'text';
+  adminSearchInput.placeholder = 'Search content to delete...';
+  adminSearchInput.style.cssText = 'width:100%;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem;margin-bottom:2rem';
   adminPanel.innerHTML = `
     <h2>Admin Panel</h2>
     <div class="admin-actions">
-      <button class="admin-btn" onclick="openAddMovieModal()">Add Movie</button>
+      <button class="admin-btn" onclick="openAddContentModal()">Add Content</button>
+      <button class="admin-btn" onclick="openGlobalPasswordModal()">Add Global Password</button>
+      <button class="admin-btn" id="togglePasswordBtn">Toggle Passwords</button>
       <button class="admin-btn" onclick="exitAdmin()">Exit Admin</button>
     </div>
-    <h3>Movies</h3>
-    <div id="movieListAdmin" class="movie-list-admin"></div>`;
+    <div id="globalPasswordList" class="movie-list-admin"></div>
+    <h3>Content</h3>
+    <div id="contentListAdmin" class="movie-list-admin"></div>`;
+  adminPanel.insertBefore(adminSearchInput, adminPanel.querySelector('#globalPasswordList'));
+  adminSearchInput.addEventListener('input', e => filterAdminContent(e.target.value));
+}
+
+function filterAdminContent(searchTerm) {
+  console.log('ℹ️ Filtering admin content with term:', searchTerm);
+  const contentListAdmin = document.getElementById('contentListAdmin');
+  const items = contentListAdmin.querySelectorAll('.movie-item-admin');
+  items.forEach(item => {
+    const title = item.querySelector('strong').textContent.toLowerCase();
+    item.style.display = title.includes(searchTerm.toLowerCase()) ? 'flex' : 'none';
+  });
 }
 
 function exitAdmin() {
   adminToken = null;
   adminPanel.classList.remove('active');
   movieGrid.style.display = 'grid';
+  adminSearchInput.removeEventListener('input', filterAdminContent);
 }
 
-function openAddMovieModal() { addMovieModal.classList.add('active'); }
+function openAddContentModal() { addContentModal.classList.add('active'); }
+function openGlobalPasswordModal() { globalPasswordModal.classList.add('active'); }
 
-async function addMovie() {
-  const title = document.getElementById('movieTitle').value;
-  const imdbId = document.getElementById('movieImdbId').value;
-  const password = document.getElementById('moviePassword').value;
-  const oneTimePassword = document.getElementById('oneTimePassword').value;
+async function addContent() {
+  const title = document.getElementById('contentTitle').value;
+  const imdbId = document.getElementById('contentImdbId').value;
+  const type = document.getElementById('contentType').value;
+  const passwords = document.getElementById('contentPasswords').value.split(',').map(p => p.trim()).filter(p => p);
+  const oneTimePasswords = document.getElementById('oneTimePasswords').value.split(',').map(p => p.trim()).filter(p => p);
   if (!title && !imdbId) return alert('Please provide title or IMDb ID');
   try {
-    const res = await fetch(API + '/movies', {
+    const res = await fetch(API + '/content', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${adminToken}`
       },
-      body: JSON.stringify({ name: title, imdbId, password, oneTimePassword })
+      body: JSON.stringify({ name: title, imdbId, type, contentPasswords: passwords, oneTimePasswords })
     });
     const data = await res.json();
-    console.log('ℹ️ Add movie response:', data);
+    console.log('ℹ️ Add content response:', data);
     if (data.ok) {
-      alert('Movie added successfully');
-      closeAddMovieModal();
-      loadAdminMovies();
-      loadMovies();
+      alert('Content added successfully');
+      closeAddContentModal();
+      loadAdminContent();
+      loadContent();
     } else alert('Error: ' + data.error);
   } catch (err) {
-    console.error('Add movie error:', err);
-    alert('Failed to add movie');
+    console.error('Add content error:', err);
+    alert('Failed to add content');
   }
 }
 
-async function loadAdminMovies() {
+async function addGlobalPassword() {
+  const password = document.getElementById('globalPassword').value;
+  const isOneTime = document.getElementById('isOneTime').checked;
+  if (!password) return alert('Please enter a password');
   try {
-    const res = await fetch(API + '/movies');
+    const res = await fetch(API + '/admin/global-passwords', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ password, isOneTime })
+    });
     const data = await res.json();
-    console.log('ℹ️ Admin movies response:', data);
+    console.log('ℹ️ Add global password response:', data);
     if (data.ok) {
-      currentMovies = data.movies;
-      const movieListAdmin = document.getElementById('movieListAdmin');
-      movieListAdmin.innerHTML = '';
-      if (data.movies.length === 0) {
-        movieListAdmin.innerHTML = '<p>No movies available</p>';
+      alert('Global password added');
+      closeGlobalPasswordModal();
+      loadGlobalPasswords();
+    } else alert('Error: ' + data.error);
+  } catch (err) {
+    console.error('Add global password error:', err);
+    alert('Failed to add global password');
+  }
+}
+
+async function loadAdminContent() {
+  try {
+    const res = await fetch(API + '/content');
+    const data = await res.json();
+    console.log('ℹ️ Admin content response:', data);
+    if (data.ok) {
+      currentContent = data.items;
+      const contentListAdmin = document.getElementById('contentListAdmin');
+      contentListAdmin.innerHTML = '';
+      if (data.items.length === 0) {
+        contentListAdmin.innerHTML = '<p>No content available</p>';
       } else {
-        data.movies.forEach(movie => {
+        data.items.forEach(item => {
           const div = document.createElement('div');
           div.className = 'movie-item-admin';
           div.innerHTML = `
-            <div><strong>${movie.title}</strong> ${movie.year ? `(${movie.year})` : ''}</div>
-            <button onclick="deleteMovie(${movie.id})">Delete</button>`;
-          movieListAdmin.appendChild(div);
+            <div><strong>${item.title}</strong> (${item.year || 'N/A'}, ${item.type === 'movie' ? 'Movie' : 'TV Show'})</div>
+            <button onclick="deleteContent(${item.id})">Delete</button>`;
+          contentListAdmin.appendChild(div);
         });
       }
     }
   } catch (err) {
-    console.error('Failed to load admin movies:', err);
+    console.error('Failed to load admin content:', err);
   }
 }
 
-async function deleteMovie(id) {
+async function deleteContent(id) {
   if (!confirm('Are you sure?')) return;
   try {
-    const res = await fetch(API + '/movies/' + id, {
+    const res = await fetch(API + '/content/' + id, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${adminToken}` }
     });
     const data = await res.json();
-    console.log('ℹ️ Delete movie response:', data);
+    console.log('ℹ️ Delete content response:', data);
     if (data.ok) {
-      loadAdminMovies();
-      loadMovies();
+      loadAdminContent();
+      loadContent();
     } else alert('Error: ' + data.error);
   } catch (err) {
-    console.error('Delete movie error:', err);
+    console.error('Delete content error:', err);
     alert('Delete failed');
   }
 }
 
-function requestMoviePassword(movieId, title) {
-  selectedMovieId = movieId;
-  document.getElementById('passwordMovieTitle').textContent = title;
+async function loadGlobalPasswords() {
+  try {
+    const res = await fetch(API + '/admin/global-passwords', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    console.log('ℹ️ Global passwords response:', data);
+    if (data.ok) {
+      const globalPasswordList = document.getElementById('globalPasswordList');
+      globalPasswordList.innerHTML = '<h3>Global Passwords</h3>';
+      if (data.passwords.length === 0) {
+        globalPasswordList.innerHTML += '<p>No global passwords</p>';
+      } else {
+        data.passwords.forEach(pwd => {
+          const item = document.createElement('div');
+          item.className = 'movie-item-admin';
+          item.innerHTML = `
+            <div>${pwd.is_one_time ? 'One-Time' : 'Regular'} Password (Created: ${new Date(pwd.created_at).toLocaleString()})</div>
+            <button onclick="deleteGlobalPassword(${pwd.id})">Delete</button>`;
+          globalPasswordList.appendChild(item);
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load global passwords:', err);
+  }
+}
+
+async function deleteGlobalPassword(id) {
+  if (!confirm('Delete this global password?')) return;
+  try {
+    const res = await fetch(API + '/admin/global-passwords/' + id, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    console.log('ℹ️ Delete global password response:', data);
+    if (data.ok) loadGlobalPasswords();
+    else alert('Error: ' + data.error);
+  } catch (err) {
+    console.error('Delete global password error:', err);
+    alert('Failed to delete global password');
+  }
+}
+
+async function checkPasswordStatus() {
+  try {
+    const res = await fetch(API + '/admin/password-status', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    console.log('ℹ️ Password status response:', data);
+    if (data.ok) {
+      const btn = document.getElementById('togglePasswordBtn');
+      btn.textContent = data.disabled ? 'Enable Passwords' : 'Disable Passwords';
+      btn.onclick = togglePasswords;
+    }
+  } catch (err) {
+    console.error('Failed to check password status:', err);
+  }
+}
+
+async function togglePasswords() {
+  try {
+    const res = await fetch(API + '/admin/toggle-passwords', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    console.log('ℹ️ Toggle passwords response:', data);
+    if (data.ok) {
+      const btn = document.getElementById('togglePasswordBtn');
+      btn.textContent = data.disabled ? 'Enable Passwords' : 'Disable Passwords';
+    } else alert('Error: ' + data.error);
+  } catch (err) {
+    console.error('Toggle passwords error:', err);
+    alert('Failed to toggle passwords');
+  }
+}
+
+function requestContentPassword(contentId, title) {
+  selectedContentId = contentId;
+  document.getElementById('passwordContentTitle').textContent = title;
   passwordModal.classList.add('active');
-  console.log(`ℹ️ Requesting password for movie ID ${movieId}: ${title}`);
+  console.log(`ℹ️ Requesting password for content ID ${contentId}: ${title}`);
 }
 
-function closePasswordModal() {
-  passwordModal.classList.remove('active');
-  selectedMovieId = null;
-}
-
-async function verifyMoviePassword() {
-  const password = document.getElementById('moviePasswordInput').value;
+async function verifyContentPassword() {
+  const password = document.getElementById('contentPasswordInput').value;
   if (!password) return alert('Please enter password');
   try {
-    const res = await fetch(API + '/movies/' + selectedMovieId + '/authorize', {
+    const res = await fetch(API + '/content/' + selectedContentId + '/authorize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password })
@@ -349,7 +499,7 @@ async function verifyMoviePassword() {
     const data = await res.json();
     console.log('ℹ️ Authorize response:', data);
     if (data.ok) {
-      const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
+      const embedRes = await fetch(API + '/content/' + selectedContentId + '/embed', {
         headers: { Authorization: `Bearer ${data.token}` }
       });
       const embedData = await embedRes.json();
@@ -368,7 +518,7 @@ function showPlayer(url) {
   playerIframe.src = url;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
-  document.getElementById('moviePasswordInput').value = '';
+  document.getElementById('contentPasswordInput').value = '';
 }
 
 function closePlayer() {
@@ -376,39 +526,40 @@ function closePlayer() {
   playerIframe.src = '';
 }
 
-async function loadMovies() {
+async function loadContent() {
   movieGrid.innerHTML =
     '<p style="text-align:center;color:#aaa;">Loading...</p>';
   try {
-    const res = await fetch(API + '/movies');
+    const res = await fetch(API + '/content');
     const data = await res.json();
-    console.log('ℹ️ Load movies response:', data);
-    if (!data.ok || !data.movies.length) {
+    console.log('ℹ️ Load content response:', data);
+    if (!data.ok || !data.items.length) {
       movieGrid.innerHTML =
-        '<p style="text-align:center;color:#aaa;">No movies found.</p>';
+        '<p style="text-align:center;color:#aaa;">No content found.</p>';
       return;
     }
-    currentMovies = data.movies;
-    displayMovies(currentMovies);
+    currentContent = data.items;
+    displayContent(currentContent);
   } catch (err) {
-    console.error('Load movies error:', err);
+    console.error('Load content error:', err);
     movieGrid.innerHTML =
-      '<p style="color:red;text-align:center;">Error loading movies.</p>';
+      '<p style="color:red;text-align:center;">Error loading content.</p>';
   }
 }
 
 adminBtn.addEventListener('click', openAdminPanel);
-searchInput.addEventListener('input', e => filterMovies(e.target.value));
+searchInput.addEventListener('input', e => filterContent(e.target.value));
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closePlayer();
     closeLoginModal();
-    closeAddMovieModal();
+    closeAddContentModal();
+    closeGlobalPasswordModal();
     closePasswordModal();
   }
 });
 
-loadMovies();
+loadContent();
 </script>
 </body>
 </html>
