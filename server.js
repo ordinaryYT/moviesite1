@@ -30,7 +30,6 @@ let passwordsDisabled = false;
 // --- Auto-create tables ---
 async function ensureTable() {
   try {
-    // Create movies table with JSONB password fields and type
     await pool.query(`
       CREATE TABLE IF NOT EXISTS movies (
         id SERIAL PRIMARY KEY,
@@ -46,7 +45,6 @@ async function ensureTable() {
     `);
     console.log('✅ Movies table ready');
 
-    // Create global_passwords table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS global_passwords (
         id SERIAL PRIMARY KEY,
@@ -57,7 +55,6 @@ async function ensureTable() {
     `);
     console.log('✅ Global passwords table ready');
 
-    // Check existing columns
     const columnsResult = await pool.query(`
       SELECT column_name 
       FROM information_schema.columns 
@@ -66,7 +63,6 @@ async function ensureTable() {
     const columns = columnsResult.rows.map(row => row.column_name);
     console.log('ℹ️ Existing columns in movies table:', columns);
 
-    // Add password_hashes and one_time_password_hashes if missing
     if (!columns.includes('password_hashes')) {
       await pool.query('ALTER TABLE movies ADD COLUMN password_hashes JSONB DEFAULT \'[]\'');
       console.log('✅ Added password_hashes column');
@@ -76,7 +72,6 @@ async function ensureTable() {
       console.log('✅ Added one_time_password_hashes column');
     }
 
-    // Migrate old password_hash and one_time_password_hash to JSONB
     if (columns.includes('password_hash') || columns.includes('one_time_password_hash')) {
       console.log('ℹ️ Migrating old password fields to JSONB...');
       await pool.query(`
@@ -103,7 +98,6 @@ async function ensureTable() {
       }
     }
 
-    // Add type column if missing
     if (!columns.includes('type')) {
       await pool.query('ALTER TABLE movies ADD COLUMN type TEXT NOT NULL DEFAULT \'movie\' CHECK (type IN (\'movie\', \'tv_show\'))');
       console.log('✅ Added type column to movies table');
@@ -137,6 +131,55 @@ async function searchImdb(title) {
     return null;
   }
 }
+
+// --- Fetch TV Show Episodes ---
+async function fetchEpisodes(imdbId) {
+  try {
+    const res = await fetch(`https://api.tvmaze.com/lookup/shows?imdb=${imdbId}`);
+    if (!res.ok) throw new Error(`TVmaze lookup failed: ${res.status}`);
+    const show = await res.json();
+    const showId = show.id;
+    const episodesRes = await fetch(`https://api.tvmaze.com/shows/${showId}/episodes`);
+    if (!episodesRes.ok) throw new Error(`TVmaze episodes failed: ${episodesRes.status}`);
+    const episodes = await episodesRes.json();
+    const seasons = {};
+    episodes.forEach(ep => {
+      const season = ep.season.toString();
+      if (!seasons[season]) seasons[season] = [];
+      seasons[season].push({
+        episode: ep.number,
+        name: ep.name || `Episode ${ep.number}`,
+        id: ep.id
+      });
+    });
+    return { ok: true, seasons };
+  } catch (err) {
+    console.error('Episode fetch error:', err);
+    return { ok: false, error: 'Failed to fetch episodes' };
+  }
+}
+
+// --- Get episodes for TV show ---
+app.get('/api/movies/:id/episodes', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const r = await pool.query('SELECT imdb_id, type FROM movies WHERE id=$1', [id]);
+    if (!r.rowCount || r.rows[0].type !== 'tv_show') {
+      console.log(`ℹ️ Content ID ${id} not found or not a TV show`);
+      return res.status(404).json({ ok: false, error: 'TV show not found' });
+    }
+    const { imdb_id } = r.rows[0];
+    const episodeData = await fetchEpisodes(imdb_id);
+    if (!episodeData.ok) {
+      return res.status(500).json({ ok: false, error: episodeData.error });
+    }
+    console.log(`ℹ️ Fetched episodes for TV show ID ${id}`);
+    res.json(episodeData);
+  } catch (err) {
+    console.error('Episodes endpoint error:', err);
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
 
 // --- Public: list movies ---
 app.get('/api/movies', async (_, res) => {
@@ -268,7 +311,7 @@ app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => 
   try {
     const id = req.params.id;
     const result = await pool.query('DELETE FROM global_passwords WHERE id=$1 RETURNING id', [id]);
-    if (!r.rowCount) {
+    if (!result.rowCount) {
       return res.status(404).json({ ok: false, error: 'Global password not found' });
     }
     console.log(`ℹ️ Deleted global password ID ${id}`);
