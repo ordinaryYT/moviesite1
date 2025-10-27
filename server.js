@@ -6,7 +6,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 
-const fetch = global.fetch || ((...args) => import('node-fetch').then(({ default: f }) => f(...args)));
+const fetch = global.fetch || ((...args) => import('node-fetch').then(({default: f}) => f(...args)));
 
 const app = express();
 app.use(cors());
@@ -57,7 +57,7 @@ async function ensureTable() {
     `);
     console.log('✅ Global passwords table ready');
 
-    // Check existing columns in movies table
+    // Check existing columns
     const columnsResult = await pool.query(`
       SELECT column_name 
       FROM information_schema.columns 
@@ -66,7 +66,7 @@ async function ensureTable() {
     const columns = columnsResult.rows.map(row => row.column_name);
     console.log('ℹ️ Existing columns in movies table:', columns);
 
-    // Add password_hashes and one_time_password_hashes if they don't exist
+    // Add password_hashes and one_time_password_hashes if missing
     if (!columns.includes('password_hashes')) {
       await pool.query('ALTER TABLE movies ADD COLUMN password_hashes JSONB DEFAULT \'[]\'');
       console.log('✅ Added password_hashes column');
@@ -76,7 +76,7 @@ async function ensureTable() {
       console.log('✅ Added one_time_password_hashes column');
     }
 
-    // Migrate old password_hash and one_time_password_hash to JSONB if they exist
+    // Migrate old password_hash and one_time_password_hash to JSONB
     if (columns.includes('password_hash') || columns.includes('one_time_password_hash')) {
       console.log('ℹ️ Migrating old password fields to JSONB...');
       await pool.query(`
@@ -93,8 +93,6 @@ async function ensureTable() {
         WHERE password_hash IS NOT NULL OR one_time_password_hash IS NOT NULL
       `);
       console.log('✅ Migrated data to JSONB fields');
-
-      // Drop old columns after migration
       if (columns.includes('password_hash')) {
         await pool.query('ALTER TABLE movies DROP COLUMN IF EXISTS password_hash');
         console.log('✅ Dropped password_hash column');
@@ -105,7 +103,7 @@ async function ensureTable() {
       }
     }
 
-    // Add type column if it doesn't exist
+    // Add type column if missing
     if (!columns.includes('type')) {
       await pool.query('ALTER TABLE movies ADD COLUMN type TEXT NOT NULL DEFAULT \'movie\' CHECK (type IN (\'movie\', \'tv_show\'))');
       console.log('✅ Added type column to movies table');
@@ -164,8 +162,7 @@ app.post('/api/admin/login', (req, res) => {
 function requireAdmin(req, res, next) {
   const auth = req.headers.authorization;
   if (!auth) return res.status(401).json({ ok: false, error: 'Missing auth' });
-  const [type, token] = auth.split(' ');
-  if (type !== 'Bearer') return res.status(401).json({ ok: false, error: 'Bad header' });
+  const [, token] = auth.split(' ');
   try {
     const data = jwt.verify(token, JWT_SECRET);
     if (data.role !== 'admin') throw new Error();
@@ -186,9 +183,9 @@ app.post('/api/movies', requireAdmin, async (req, res) => {
       return res.status(400).json({ ok: false, error: 'Invalid content type' });
     }
 
-    let contentData;
+    let movieData;
     if (imdbId) {
-      contentData = {
+      movieData = {
         imdb_id: imdbId.startsWith('tt') ? imdbId : 'tt' + imdbId,
         title: name || imdbId,
         year: null,
@@ -197,7 +194,7 @@ app.post('/api/movies', requireAdmin, async (req, res) => {
     } else {
       const search = await searchImdb(name);
       if (!search) return res.status(404).json({ ok: false, error: 'No IMDb match found' });
-      contentData = search;
+      movieData = search;
     }
 
     const passwordHashes = contentPasswords && contentPasswords.length
@@ -209,10 +206,10 @@ app.post('/api/movies', requireAdmin, async (req, res) => {
 
     const result = await pool.query(
       'INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes, year, image) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-      [contentData.title, contentData.imdb_id, type, JSON.stringify(passwordHashes), JSON.stringify(oneTimePasswordHashes), contentData.year, contentData.image]
+      [movieData.title, movieData.imdb_id, type, JSON.stringify(passwordHashes), JSON.stringify(oneTimePasswordHashes), movieData.year, movieData.image]
     );
 
-    console.log(`ℹ️ Added content ID ${result.rows[0].id}: ${contentData.title} (${type})`);
+    console.log(`ℹ️ Added content ID ${result.rows[0].id}: ${movieData.title} (${type})`);
     res.json({ ok: true, movieId: result.rows[0].id });
   } catch (err) {
     console.error('Add content error:', err);
@@ -271,7 +268,7 @@ app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => 
   try {
     const id = req.params.id;
     const result = await pool.query('DELETE FROM global_passwords WHERE id=$1 RETURNING id', [id]);
-    if (!result.rowCount) {
+    if (!r.rowCount) {
       return res.status(404).json({ ok: false, error: 'Global password not found' });
     }
     console.log(`ℹ️ Deleted global password ID ${id}`);
@@ -309,9 +306,7 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   try {
     const id = req.params.id;
     const { password } = req.body;
-    if (!password) {
-      return res.status(400).json({ ok: false, error: 'Password required' });
-    }
+    if (!password) return res.status(400).json({ ok: false, error: 'Password required' });
 
     if (passwordsDisabled) {
       if (password !== ADMIN_PASSWORD) {
@@ -325,23 +320,17 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
     const r = await pool.query('SELECT password_hashes, one_time_password_hashes, type FROM movies WHERE id=$1', [id]);
     if (!r.rowCount) {
       console.log(`ℹ️ Content ID ${id} not found`);
-      return res.status(404).json({ ok: false, error: 'Content not found' });
+      return res.status(404).json({ ok: false, error: 'Movie not found' });
     }
 
     const { password_hashes, one_time_password_hashes, type } = r.rows[0];
     let regularHashes = [];
     let oneTimeHashes = [];
     try {
-      regularHashes = (typeof password_hashes === 'string' && password_hashes)
-        ? JSON.parse(password_hashes)
-        : (password_hashes || []);
-      oneTimeHashes = (typeof one_time_password_hashes === 'string' && one_time_password_hashes)
-        ? JSON.parse(one_time_password_hashes)
-        : (one_time_password_hashes || []);
-    } catch (parseErr) {
-      console.error(`JSON parse error for content ID ${id}:`, parseErr);
-      console.log(`ℹ️ password_hashes: ${JSON.stringify(password_hashes)}`);
-      console.log(`ℹ️ one_time_password_hashes: ${JSON.stringify(one_time_password_hashes)}`);
+      regularHashes = password_hashes ? JSON.parse(password_hashes) : [];
+      oneTimeHashes = one_time_password_hashes ? JSON.parse(one_time_password_hashes) : [];
+    } catch (err) {
+      console.error(`JSON parse error for content ID ${id}:`, err);
       regularHashes = [];
       oneTimeHashes = [];
     }
@@ -406,17 +395,16 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
 app.get('/api/movies/:id/embed', async (req, res) => {
   try {
     const auth = req.headers.authorization || '';
-    const [type, token] = auth.split(' ');
-    if (type !== 'Bearer') return res.status(401).json({ ok: false, error: 'Missing token' });
+    const [, token] = auth.split(' ');
     const data = jwt.verify(token, JWT_SECRET);
     const movieId = data.movieId;
-    const r = await pool.query('SELECT imdb_id, type AS contentType FROM movies WHERE id=$1', [movieId]);
+    const r = await pool.query('SELECT imdb_id, type FROM movies WHERE id=$1', [movieId]);
     if (!r.rowCount) {
       console.log(`ℹ️ Content ID ${movieId} not found for embed`);
-      return res.status(404).json({ ok: false, error: 'Content not found' });
+      return res.status(404).json({ ok: false, error: 'Movie not found' });
     }
-    const { imdb_id, contentType } = r.rows[0];
-    const baseUrl = contentType === 'movie' ? EMBED_BASE_MOVIE : EMBED_BASE_TV;
+    const { imdb_id, type } = r.rows[0];
+    const baseUrl = type === 'movie' ? EMBED_BASE_MOVIE : EMBED_BASE_TV;
     const url = baseUrl + imdb_id;
     console.log(`ℹ️ Serving embed URL for content ID ${movieId}: ${url}`);
     res.json({ ok: true, url });
