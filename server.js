@@ -32,12 +32,10 @@ const pool = new Pool({
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// --- Generate ONE OM Code ---
 function generateCode() {
   return 'om-' + Math.random().toString(36).substr(2, 12).toUpperCase();
 }
 
-// --- Ensure Tables ---
 async function ensureTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS movies (
@@ -69,7 +67,6 @@ async function ensureTables() {
   `);
 }
 
-// --- DELETE ALL OM CODES + GLOBAL ONE-TIME PASSWORDS ---
 async function deleteAllOMCodes() {
   try {
     await pool.query('DELETE FROM om_codes');
@@ -80,11 +77,8 @@ async function deleteAllOMCodes() {
   }
 }
 
-// --- Discord Bot ---
 client.once('ready', async () => {
   console.log('Discord bot ready');
-
-  // DELETE ALL OM CODES ON START — AFTER TABLES ARE READY
   await deleteAllOMCodes();
 
   const commands = [
@@ -102,10 +96,7 @@ client.once('ready', async () => {
     await rest.put(Routes.applicationCommands(client.user.id), {
       body: commands.map(c => c.toJSON())
     });
-    console.log('Commands registered');
-  } catch (e) {
-    console.error('Command registration failed:', e);
-  }
+  } catch (e) {}
 });
 
 client.on('interactionCreate', async i => {
@@ -132,7 +123,6 @@ client.on('interactionCreate', async i => {
       .setFooter({ text: 'One-time use only!' });
 
     await i.reply({ embeds: [embed] });
-    console.log(`Generated: ${code}`);
   }
 
   if (i.commandName === 'toggle-codes') {
@@ -147,7 +137,6 @@ if (process.env.DISCORD_BOT_TOKEN) {
   client.login(process.env.DISCORD_BOT_TOKEN).catch(console.error);
 }
 
-// --- Start: Setup Tables First ---
 ensureTables();
 
 // --- API: Get Movies ---
@@ -222,7 +211,42 @@ app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => 
   res.json({ ok: rowCount > 0 });
 });
 
-// --- FIXED: /authorize (SAFE JSON PARSING) ---
+// --- FIXED: /episodes (TV SHOWS WORK) ---
+app.get('/api/movies/:id/episodes', async (req, res) => {
+  const id = req.params.id;
+  const { rows } = await pool.query('SELECT imdb_id, type FROM movies WHERE id = $1', [id]);
+  if (!rows[0] || rows[0].type !== 'tv_show') {
+    return res.json({ ok: false, error: 'Not a TV show' });
+  }
+
+  const imdbId = rows[0].imdb_id;
+  try {
+    const showRes = await fetch(`https://api.tvmaze.com/lookup/shows?imdb=${imdbId}`);
+    if (!showRes.ok) throw new Error();
+    const show = await showRes.json();
+
+    const epRes = await fetch(`https://api.tvmaze.com/shows/${show.id}/episodes`);
+    if (!epRes.ok) throw new Error();
+    const eps = await epRes.json();
+
+    const seasons = {};
+    eps.forEach(ep => {
+      const s = ep.season.toString();
+      if (!seasons[s]) seasons[s] = [];
+      seasons[s].push({
+        episode: ep.number,
+        name: ep.name || `Episode ${ep.number}`
+      });
+    });
+
+    res.json({ ok: true, seasons });
+  } catch (err) {
+    console.error('Episode fetch failed for ID:', id);
+    res.json({ ok: false, error: 'Failed to load episodes' });
+  }
+});
+
+// --- FIXED: /authorize (SAFE JSON) ---
 app.post('/api/movies/:id/authorize', async (req, res) => {
   const { password } = req.body;
   if (!password) return res.json({ ok: false, error: 'Password required' });
@@ -241,20 +265,14 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
       regular = JSON.parse(rows[0].password_hashes);
       if (!Array.isArray(regular)) regular = [];
     }
-  } catch (e) {
-    console.error('Corrupted password_hashes:', rows[0].password_hashes);
-    regular = [];
-  }
+  } catch (e) { regular = []; }
 
   try {
     if (rows[0].one_time_password_hashes && typeof rows[0].one_time_password_hashes === 'string' && rows[0].one_time_password_hashes.trim() !== '') {
       ot = JSON.parse(rows[0].one_time_password_hashes);
       if (!Array.isArray(ot)) ot = [];
     }
-  } catch (e) {
-    console.error('Corrupted one_time_password_hashes:', rows[0].one_time_password_hashes);
-    ot = [];
-  }
+  } catch (e) { ot = []; }
 
   for (let i = 0; i < ot.length; i++) {
     if (await bcrypt.compare(password, ot[i])) {
@@ -286,15 +304,20 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   res.json({ ok: false, error: 'Wrong password' });
 });
 
-// --- API: Embed ---
+// --- FIXED: /embed (TV SHOWS SUPPORT SEASON/EPISODE) ---
 app.get('/api/movies/:id/embed', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   try {
     const { movieId } = jwt.verify(token, JWT_SECRET);
     const { rows } = await pool.query('SELECT imdb_id, type FROM movies WHERE id = $1', [movieId]);
     if (!rows[0]) return res.json({ ok: false, error: 'Not found' });
-    const base = rows[0].type === 'movie' ? 'https://vidsrc.me/embed/movie/' : 'https://vidsrc.me/embed/tv/';
-    res.json({ ok: true, url: base + rows[0].imdb_id });
+
+    const { imdb_id, type } = rows[0];
+    let url = type === 'movie' 
+      ? `https://vidsrc.me/embed/movie/${imdb_id}`
+      : `https://vidsrc.me/embed/tv/${imdb_id}`;
+
+    res.json({ ok: true, url });
   } catch {
     res.status(401).json({ ok: false, error: 'Invalid token' });
   }
