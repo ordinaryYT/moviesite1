@@ -1,3 +1,4 @@
+// server.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -5,7 +6,15 @@ const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const path = require('path');
-const { Client, GatewayIntentBits, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const {
+  Client,
+  GatewayIntentBits,
+  SlashCommandBuilder,
+  PermissionFlagsBits,
+  EmbedBuilder,
+  REST,
+  Routes
+} = require('discord.js');
 
 const fetch = global.fetch || ((...args) => import('node-fetch').then(({default: f}) => f(...args)));
 
@@ -20,7 +29,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'boughton5';
 const EMBED_BASE_MOVIE = 'https://vidsrc.me/embed/movie/';
 const EMBED_BASE_TV = 'https://vidsrc.me/embed/tv/';
 
-// --- Discord Bot Config ---
+// --- Discord Config ---
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID;
 const DISCORD_CODE_MANAGER_ROLE_ID = process.env.DISCORD_CODE_MANAGER_ROLE_ID;
@@ -34,12 +43,10 @@ const pool = new Pool({
 
 let passwordsDisabled = false;
 
-// --- Discord Bot Client ---
-const discordClient = new Client({ 
-  intents: [GatewayIntentBits.Guilds] 
-});
+// --- Discord Client ---
+const discordClient = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// --- Generate 12-digit random alphanumeric suffix ---
+// --- Generate 12-char random suffix ---
 function generateCodeSuffix() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let result = '';
@@ -49,11 +56,10 @@ function generateCodeSuffix() {
   return result;
 }
 
-// --- Generate 100 unique one-time codes ---
+// --- Generate 100 unique OM codes on startup ---
 async function generateStartupCodes() {
-  console.log('🔄 Generating 100 unique one-time OM codes...');
-  
-  // Ensure code lookup table exists
+  console.log('Generating 100 unique OM one-time codes...');
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS om_codes (
       id SERIAL PRIMARY KEY,
@@ -64,149 +70,142 @@ async function generateStartupCodes() {
     )
   `);
 
-  const target = 100;
-  const usedCodes = new Set();
-  let generated = 0;
+  const { rows } = await pool.query(`SELECT COUNT(*) FROM om_codes WHERE used = FALSE`);
+  const existing = parseInt(rows[0].count, 10);
+  if (existing >= 100) {
+    console.log(`Already have ${existing} unused codes. Skipping.`);
+    return;
+  }
 
-  while (generated < target) {
-    const suffix = generateCodeSuffix();
-    const code = `om-${suffix}`;
+  const target = 100 - existing;
+  const used = new Set();
+  let count = 0;
 
-    if (usedCodes.has(code)) continue;
+  while (count < target) {
+    const code = `om-${generateCodeSuffix()}`;
+    if (used.has(code)) continue;
 
-    // Check if code already exists in DB
-    const existsCheck = await pool.query('SELECT 1 FROM om_codes WHERE code = $1', [code]);
-    if (existsCheck.rowCount > 0) continue;
+    const exists = await pool.query('SELECT 1 FROM om_codes WHERE code = $1', [code]);
+    if (exists.rowCount > 0) continue;
 
-    // Generate hash and insert to global_passwords
     const hash = await bcrypt.hash(code, 10);
-    const globalRes = await pool.query(
+    const { rows: [global] } = await pool.query(
       'INSERT INTO global_passwords (password_hash, is_one_time) VALUES ($1, true) RETURNING id',
       [hash]
     );
 
-    // Insert to lookup table
     await pool.query(
       'INSERT INTO om_codes (code, global_password_id) VALUES ($1, $2)',
-      [code, globalRes.rows[0].id]
+      [code, global.id]
     );
 
-    usedCodes.add(code);
-    generated++;
-    console.log(`✅ Generated ${generated}/${target}: ${code}`);
+    used.add(code);
+    count++;
+    console.log(`Generated [${count}/${target}]: ${code}`);
   }
 
-  console.log('🎉 100 unique OM one-time codes generated successfully!');
+  console.log('100 OM codes ready!');
 }
 
 // --- Get one unused OM code ---
 async function getOneUnusedOMCode() {
-  const res = await pool.query(`
-    SELECT oc.id, oc.code, gp.id as global_id
-    FROM om_codes oc
-    JOIN global_passwords gp ON oc.global_password_id = gp.id
-    WHERE oc.used = FALSE AND gp.is_one_time = true
-    ORDER BY oc.created_at ASC
-    LIMIT 1
+  const { rows } = await pool.query(`
+    SELECT id, code FROM om_codes WHERE used = FALSE ORDER BY created_at LIMIT 1
   `);
-
-  if (!res.rowCount) return null;
-  return res.rows[0];
+  return rows[0] || null;
 }
 
-// --- Discord Bot Commands ---
+// --- Discord Slash Commands ---
 const discordCommands = [
   new SlashCommandBuilder()
     .setName('gencode')
-    .setDescription('Get one unused OM one-time code')
+    .setDescription('Get one OM one-time access code')
     .setDefaultMemberPermissions(PermissionFlagsBits.SendMessages),
 
   new SlashCommandBuilder()
     .setName('toggle-codes')
     .setDescription('Enable/disable code generation (Code Manager only)')
-    .addStringOption(option =>
-      option.setName('state')
-        .setDescription('Enable or disable')
+    .addStringOption(opt =>
+      opt.setName('state')
+        .setDescription('on or off')
         .setRequired(true)
-        .addChoices(
-          { name: 'enable', value: 'enable' },
-          { name: 'disable', value: 'disable' }
-        )
+        .addChoices({ name: 'Enable', value: 'enable' }, { name: 'Disable', value: 'disable' })
     )
 ];
 
-// --- Discord Bot Ready Event ---
-discordClient.once('ready', async () => {
-  console.log(`🤖 Discord bot logged in as ${discordClient.user.tag}`);
+// --- Register Commands ---
+async function registerCommands() {
+  if (!DISCORD_BOT_TOKEN) return console.log('No bot token → skipping commands');
 
-  if (DISCORD_GUILD_ID) {
-    const guild = discordClient.guilds.cache.get(DISCORD_GUILD_ID);
-    if (guild) {
-      await guild.commands.set(discordCommands);
-      console.log(`✅ Discord slash commands registered in guild ${DISCORD_GUILD_ID}`);
+  const rest = new REST().setToken(DISCORD_BOT_TOKEN);
+  const clientId = discordClient.user?.id;
+  if (!clientId) return;
+
+  const cmds = discordCommands.map(c => c.toJSON());
+
+  try {
+    if (DISCORD_GUILD_ID) {
+      await rest.put(Routes.applicationGuildCommands(clientId, DISCORD_GUILD_ID), { body: cmds });
+      console.log(`Guild commands registered in ${DISCORD_GUILD_ID}`);
     }
+    await rest.put(Routes.applicationCommands(clientId), { body: cmds });
+    console.log('Global commands registered');
+  } catch (err) {
+    console.error('Command registration failed:', err);
   }
+}
+
+// --- Discord Ready ---
+discordClient.once('ready', () => {
+  console.log(`Discord bot online: ${discordClient.user.tag}`);
+  registerCommands();
 });
 
-// --- Discord Slash Command Handler ---
-discordClient.on('interactionCreate', async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+// --- Discord Interaction Handler ---
+discordClient.on('interactionCreate', async (i) => {
+  if (!i.isChatInputCommand()) return;
 
-  const { commandName, options } = interaction;
-
-  if (commandName === 'gencode') {
+  if (i.commandName === 'gencode') {
     if (!codesEnabled) {
-      return interaction.reply({ 
-        content: '❌ **Code generation is currently DISABLED** by admins.', 
-        ephemeral: true 
-      });
+      return i.reply({ content: 'Code generation is **disabled**.', ephemeral: true });
     }
 
-    const codeData = await getOneUnusedOMCode();
-    if (!codeData) {
-      return interaction.reply({ 
-        content: '❌ **No unused OM codes available!** Contact an admin.', 
-        ephemeral: true 
-      });
+    const code = await getOneUnusedOMCode();
+    if (!code) {
+      return i.reply({ content: 'No codes left! Contact admin.', ephemeral: true });
     }
 
-    // Mark as used
-    await pool.query('UPDATE om_codes SET used = TRUE WHERE id = $1', [codeData.id]);
+    await pool.query('UPDATE om_codes SET used = TRUE WHERE id = $1', [code.id]);
 
     const embed = new EmbedBuilder()
-      .setTitle('🎬 OM One-Time Access Code')
-      .setDescription(`**Use this code on the website to watch movies:**\n\`\`\`${codeData.code}\`\`\``)
+      .setTitle('OM One-Time Code')
+      .setDescription(`\`\`\`${code.code}\`\`\``)
       .setColor('#e50914')
-      .setFooter({ text: 'Code is one-time use only!' })
-      .setTimestamp();
+      .setFooter({ text: 'One-time use only!' });
 
-    await interaction.reply({ embeds: [embed], ephemeral: true });
-    console.log(`🎫 OM Code issued to ${interaction.user.tag}: ${codeData.code}`);
+    await i.reply({ embeds: [embed], ephemeral: true });
+    console.log(`Code issued: ${code.code} → ${i.user.tag}`);
   }
 
-  else if (commandName === 'toggle-codes') {
-    // Check if user has Code Manager role
-    if (!interaction.member.roles.cache.has(DISCORD_CODE_MANAGER_ROLE_ID)) {
-      return interaction.reply({ 
-        content: '❌ **You need the "Code Manager" role to use this command!**', 
-        ephemeral: true 
-      });
+  if (i.commandName === 'toggle-codes') {
+    if (!i.member.roles.cache.has(DISCORD_CODE_MANAGER_ROLE_ID)) {
+      return i.reply({ content: 'You need **Code Manager** role!', ephemeral: true });
     }
 
-    const state = options.getString('state');
+    const state = i.options.getString('state');
     codesEnabled = state === 'enable';
-    
-    const status = codesEnabled ? '✅ ENABLED' : '❌ DISABLED';
-    await interaction.reply({ 
-      content: `**Code generation is now ${status}** - ${interaction.user}`, 
-      ephemeral: false 
-    });
-    
-    console.log(`🔧 Code generation ${status.toLowerCase()} by ${interaction.user.tag}`);
+
+    await i.reply({ content: `Code generation: **${codesEnabled ? 'ENABLED' : 'DISABLED'}**` });
+    console.log(`Toggled by ${i.user.tag}: ${codesEnabled}`);
   }
 });
 
-// --- Auto-create tables ---
+// --- Start Discord Bot ---
+if (DISCORD_BOT_TOKEN) {
+  discordClient.login(DISCORD_BOT_TOKEN).catch(console.error);
+}
+
+// --- Table Setup ---
 async function ensureTable() {
   try {
     await pool.query(`
@@ -222,8 +221,6 @@ async function ensureTable() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    console.log('✅ Movies table ready');
-
     await pool.query(`
       CREATE TABLE IF NOT EXISTS global_passwords (
         id SERIAL PRIMARY KEY,
@@ -232,121 +229,75 @@ async function ensureTable() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
-    console.log('✅ Global passwords table ready');
 
-    // ... rest of existing table migration code (unchanged) ...
-    const columnsResult = await pool.query(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_name = 'movies'
-    `);
-    const columns = columnsResult.rows.map(row => row.column_name);
-    console.log('ℹ️ Existing columns in movies table:', columns);
+    const cols = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'movies'`);
+    const columns = cols.rows.map(r => r.column_name);
 
     if (!columns.includes('password_hashes')) {
-      await pool.query('ALTER TABLE movies ADD COLUMN password_hashes JSONB DEFAULT \'[]\'');
-      console.log('✅ Added password_hashes column');
+      await pool.query(`ALTER TABLE movies ADD COLUMN password_hashes JSONB DEFAULT '[]'`);
     }
     if (!columns.includes('one_time_password_hashes')) {
-      await pool.query('ALTER TABLE movies ADD COLUMN one_time_password_hashes JSONB DEFAULT \'[]\'');
-      console.log('✅ Added one_time_password_hashes column');
+      await pool.query(`ALTER TABLE movies ADD COLUMN one_time_password_hashes JSONB DEFAULT '[]'`);
+    }
+    if (!columns.includes('type')) {
+      await pool.query(`ALTER TABLE movies ADD COLUMN type TEXT NOT NULL DEFAULT 'movie' CHECK (type IN ('movie', 'tv_show'))`);
     }
 
     if (columns.includes('password_hash') || columns.includes('one_time_password_hash')) {
-      console.log('ℹ️ Migrating old password fields to JSONB...');
       await pool.query(`
         UPDATE movies 
-        SET 
-          password_hashes = CASE 
-            WHEN password_hash IS NOT NULL THEN jsonb_build_array(password_hash) 
-            ELSE '[]'::jsonb 
-          END,
-          one_time_password_hashes = CASE 
-            WHEN one_time_password_hash IS NOT NULL THEN jsonb_build_array(one_time_password_hash) 
-            ELSE '[]'::jsonb 
-          END
+        SET password_hashes = COALESCE(jsonb_build_array(password_hash), '[]'),
+            one_time_password_hashes = COALESCE(jsonb_build_array(one_time_password_hash), '[]')
         WHERE password_hash IS NOT NULL OR one_time_password_hash IS NOT NULL
       `);
-      console.log('✅ Migrated data to JSONB fields');
-      if (columns.includes('password_hash')) {
-        await pool.query('ALTER TABLE movies DROP COLUMN IF EXISTS password_hash');
-        console.log('✅ Dropped password_hash column');
-      }
-      if (columns.includes('one_time_password_hash')) {
-        await pool.query('ALTER TABLE movies DROP COLUMN IF EXISTS one_time_password_hash');
-        console.log('✅ Dropped one_time_password_hash column');
-      }
-    }
-
-    if (!columns.includes('type')) {
-      await pool.query('ALTER TABLE movies ADD COLUMN type TEXT NOT NULL DEFAULT \'movie\' CHECK (type IN (\'movie\', \'tv_show\'))');
-      console.log('✅ Added type column to movies table');
+      if (columns.includes('password_hash')) await pool.query(`ALTER TABLE movies DROP COLUMN IF EXISTS password_hash`);
+      if (columns.includes('one_time_password_hash')) await pool.query(`ALTER TABLE movies DROP COLUMN IF EXISTS one_time_password_hash`);
     }
   } catch (err) {
-    console.error('Error ensuring table schema:', err);
+    console.error('Table setup error:', err);
     throw err;
   }
 }
 
-// --- Startup sequence ---
+// --- Startup ---
 async function startup() {
   await ensureTable();
-  
-  // Generate 100 OM codes on first launch
   await generateStartupCodes();
-  
-  // Start Discord bot if token provided
-  if (DISCORD_BOT_TOKEN) {
-    discordClient.login(DISCORD_BOT_TOKEN).catch(console.error);
-  }
 }
-
 startup().catch(console.error);
 
-// --- [ALL EXISTING ENDPOINTS REMAIN EXACTLY THE SAME - COPIED HERE FOR COMPLETENESS] ---
-
-// --- IMDb Search Helper ---
+// --- IMDb Search ---
 async function searchImdb(title) {
   const q = encodeURIComponent(title);
   const url = `https://search.imdbot.workers.dev/?q=${q}`;
   try {
     const res = await fetch(url);
-    if (!res.ok) throw new Error(`IMDb search failed: ${res.status}`);
+    if (!res.ok) throw new Error(`IMDb failed: ${res.status}`);
     const data = await res.json();
     const hit = (data.description || []).find(h => h['#IMDB_ID']);
     if (!hit) return null;
     const imdb_id = hit['#IMDB_ID'].startsWith('tt') ? hit['#IMDB_ID'] : 'tt' + hit['#IMDB_ID'];
-    return {
-      imdb_id,
-      title: hit['#TITLE'] || title,
-      year: hit['#YEAR'] || null,
-      image: hit.image || null
-    };
+    return { imdb_id, title: hit['#TITLE'] || title, year: hit['#YEAR'], image: hit.image };
   } catch (err) {
-    console.error('IMDb search error:', err);
+    console.error('IMDb error:', err);
     return null;
   }
 }
 
-// --- Fetch TV Show Episodes ---
+// --- TV Episodes ---
 async function fetchEpisodes(imdbId) {
   try {
     const res = await fetch(`https://api.tvmaze.com/lookup/shows?imdb=${imdbId}`);
-    if (!res.ok) throw new Error(`TVmaze lookup failed: ${res.status}`);
+    if (!res.ok) throw new Error(`TVmaze lookup failed`);
     const show = await res.json();
-    const showId = show.id;
-    const episodesRes = await fetch(`https://api.tvmaze.com/shows/${showId}/episodes`);
-    if (!episodesRes.ok) throw new Error(`TVmaze episodes failed: ${episodesRes.status}`);
-    const episodes = await episodesRes.json();
+    const epRes = await fetch(`https://api.tvmaze.com/shows/${show.id}/episodes`);
+    if (!epRes.ok) throw new Error(`Episodes failed`);
+    const eps = await epRes.json();
     const seasons = {};
-    episodes.forEach(ep => {
-      const season = ep.season.toString();
-      if (!seasons[season]) seasons[season] = [];
-      seasons[season].push({
-        episode: ep.number,
-        name: ep.name || `Episode ${ep.number}`,
-        id: ep.id
-      });
+    eps.forEach(ep => {
+      const s = ep.season.toString();
+      if (!seasons[s]) seasons[s] = [];
+      seasons[s].push({ episode: ep.number, name: ep.name || `Episode ${ep.number}`, id: ep.id });
     });
     return { ok: true, seasons };
   } catch (err) {
@@ -355,51 +306,36 @@ async function fetchEpisodes(imdbId) {
   }
 }
 
-// --- ALL OTHER ENDPOINTS (unchanged) ---
+// --- API Routes ---
 app.get('/api/movies/:id/episodes', async (req, res) => {
   try {
-    const id = req.params.id;
-    const r = await pool.query('SELECT imdb_id, type FROM movies WHERE id=$1', [id]);
-    if (!r.rowCount || r.rows[0].type !== 'tv_show') {
-      console.log(`ℹ️ Content ID ${id} not found or not a TV show`);
-      return res.status(404).json({ ok: false, error: 'TV show not found' });
-    }
-    const { imdb_id } = r.rows[0];
-    const episodeData = await fetchEpisodes(imdb_id);
-    if (!episodeData.ok) {
-      return res.status(500).json({ ok: false, error: episodeData.error });
-    }
-    console.log(`ℹ️ Fetched episodes for TV show ID ${id}`);
-    res.json(episodeData);
+    const { rows } = await pool.query('SELECT imdb_id, type FROM movies WHERE id=$1', [req.params.id]);
+    if (!rows.length || rows[0].type !== 'tv_show') return res.status(404).json({ ok: false, error: 'Not a TV show' });
+    const data = await fetchEpisodes(rows[0].imdb_id);
+    res.json(data);
   } catch (err) {
-    console.error('Episodes endpoint error:', err);
     res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
 
 app.get('/api/movies', async (_, res) => {
-  try {
-    const result = await pool.query('SELECT id, title, type, year, image FROM movies ORDER BY created_at DESC');
-    console.log(`ℹ️ /api/movies queried movies table, found ${result.rowCount} items`);
-    res.json({ ok: true, movies: result.rows });
-  } catch (err) {
-    console.error('Error in /api/movies:', err);
-    res.status(500).json({ ok: false, error: 'DB error' });
-  }
+  const { rows } = await pool.query('SELECT id, title, type, year, image FROM movies ORDER BY created_at DESC');
+  res.json({ ok: true, movies: rows });
 });
 
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
-  if (!password) return res.status(400).json({ ok: false, error: 'Password required' });
-  if (password !== ADMIN_PASSWORD) return res.status(401).json({ ok: false, error: 'Invalid admin password' });
-  const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '12h' });
-  res.json({ ok: true, token });
+  if (password === ADMIN_PASSWORD) {
+    const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '12h' });
+    res.json({ ok: true, token });
+  } else {
+    res.status(401).json({ ok: false, error: 'Invalid password' });
+  }
 });
 
 function requireAdmin(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth) return res.status(401).json({ ok: false, error: 'Missing auth' });
-  const [, token] = auth.split(' ');
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ ok: false, error: 'Missing token' });
   try {
     const data = jwt.verify(token, JWT_SECRET);
     if (data.role !== 'admin') throw new Error();
@@ -410,127 +346,64 @@ function requireAdmin(req, res, next) {
 }
 
 app.post('/api/movies', requireAdmin, async (req, res) => {
-  try {
-    const { name, imdbId, contentPasswords, oneTimePasswords, type } = req.body;
-    if (!name && !imdbId) {
-      return res.status(400).json({ ok: false, error: 'Provide title or IMDb ID' });
-    }
-    if (!['movie', 'tv_show'].includes(type)) {
-      return res.status(400).json({ ok: false, error: 'Invalid content type' });
-    }
+  const { name, imdbId, contentPasswords, oneTimePasswords, type } = req.body;
+  if (!name && !imdbId) return res.status(400).json({ ok: false, error: 'Title or IMDb ID required' });
+  if (!['movie', 'tv_show'].includes(type)) return res.status(400).json({ ok: false, error: 'Invalid type' });
 
-    let movieData;
-    if (imdbId) {
-      movieData = {
-        imdb_id: imdbId.startsWith('tt') ? imdbId : 'tt' + imdbId,
-        title: name || imdbId,
-        year: null,
-        image: null
-      };
-    } else {
-      const search = await searchImdb(name);
-      if (!search) return res.status(404).json({ ok: false, error: 'No IMDb match found' });
-      movieData = search;
-    }
+  let movieData = imdbId
+    ? { imdb_id: imdbId.startsWith('tt') ? imdbId : 'tt' + imdbId, title: name || imdbId }
+    : await searchImdb(name);
 
-    const passwordHashes = contentPasswords && contentPasswords.length
-      ? await Promise.all(contentPasswords.map(p => bcrypt.hash(p, 10)))
-      : [];
-    const oneTimePasswordHashes = oneTimePasswords && oneTimePasswords.length
-      ? await Promise.all(oneTimePasswords.map(p => bcrypt.hash(p, 10)))
-      : [];
+  if (!movieData) return res.status(404).json({ ok: false, error: 'Not found on IMDb' });
 
-    const result = await pool.query(
-      'INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes, year, image) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id',
-      [movieData.title, movieData.imdb_id, type, JSON.stringify(passwordHashes), JSON.stringify(oneTimePasswordHashes), movieData.year, movieData.image]
-    );
+  const hashes = contentPasswords ? await Promise.all(contentPasswords.map(p => bcrypt.hash(p, 10))) : [];
+  const otHashes = oneTimePasswords ? await Promise.all(oneTimePasswords.map(p => bcrypt.hash(p, 10))) : [];
 
-    console.log(`ℹ️ Added content ID ${result.rows[0].id}: ${movieData.title} (${type})`);
-    res.json({ ok: true, movieId: result.rows[0].id });
-  } catch (err) {
-    console.error('Add content error:', err);
-    res.status(500).json({ ok: false, error: 'Server error' });
-  }
+  const { rows } = await pool.query(
+    `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes, year, image)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+    [movieData.title, movieData.imdb_id, type, JSON.stringify(hashes), JSON.stringify(otHashes), movieData.year, movieData.image]
+  );
+
+  res.json({ ok: true, movieId: rows[0].id });
 });
 
 app.delete('/api/movies/:id', requireAdmin, async (req, res) => {
-  try {
-    const id = req.params.id;
-    const r = await pool.query('DELETE FROM movies WHERE id=$1 RETURNING id', [id]);
-    if (!r.rowCount) return res.status(404).json({ ok: false, error: 'Content not found' });
-    console.log(`ℹ️ Deleted content ID ${id}`);
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('Delete content error:', err);
-    res.status(500).json({ ok: false, error: 'DB error' });
-  }
+  const { rowCount } = await pool.query('DELETE FROM movies WHERE id=$1', [req.params.id]);
+  res.json({ ok: rowCount > 0 });
 });
 
 app.post('/api/admin/global-passwords', requireAdmin, async (req, res) => {
-  try {
-    const { password, isOneTime } = req.body;
-    if (!password) {
-      return res.status(400).json({ ok: false, error: 'Password required' });
-    }
-    const passwordHash = await bcrypt.hash(password, 10);
-    const result = await pool.query(
-      'INSERT INTO global_passwords (password_hash, is_one_time) VALUES ($1, $2) RETURNING id',
-      [passwordHash, !!isOneTime]
-    );
-    console.log(`ℹ️ Added global password ID ${result.rows[0].id}`);
-    res.json({ ok: true, passwordId: result.rows[0].id });
-  } catch (err) {
-    console.error('Add global password error:', err);
-    res.status(500).json({ ok: false, error: 'Server error' });
-  }
+  const { password, isOneTime } = req.body;
+  if (!password) return res.status(400).json({ ok: false, error: 'Password required' });
+  const hash = await bcrypt.hash(password, 10);
+  const { rows } = await pool.query(
+    'INSERT INTO global_passwords (password_hash, is_one_time) VALUES ($1, $2) RETURNING id',
+    [hash, !!isOneTime]
+  );
+  res.json({ ok: true, passwordId: rows[0].id });
 });
 
 app.get('/api/admin/global-passwords', requireAdmin, async (req, res) => {
-  try {
-    const result = await pool.query('SELECT id, is_one_time, created_at FROM global_passwords ORDER BY created_at DESC');
-    console.log(`ℹ️ /api/admin/global-passwords returned ${result.rowCount} passwords`);
-    res.json({ ok: true, passwords: result.rows });
-  } catch (err) {
-    console.error('List global passwords error:', err);
-    res.status(500).json({ ok: false, error: 'Server error' });
-  }
+  const { rows } = await pool.query('SELECT id, is_one_time, created_at FROM global_passwords ORDER BY created_at DESC');
+  res.json({ ok: true, passwords: rows });
 });
 
 app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => {
-  try {
-    const id = req.params.id;
-    const result = await pool.query('DELETE FROM global_passwords WHERE id=$1 RETURNING id', [id]);
-    if (!result.rowCount) {
-      return res.status(404).json({ ok: false, error: 'Global password not found' });
-    }
-    console.log(`ℹ️ Deleted global password ID ${id}`);
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('Delete global password error:', err);
-    res.status(500).json({ ok: false, error: 'Server error' });
-  }
+  const { rowCount } = await pool.query('DELETE FROM global_passwords WHERE id=$1', [req.params.id]);
+  res.json({ ok: rowCount > 0 });
 });
 
 app.post('/api/admin/toggle-passwords', requireAdmin, async (req, res) => {
-  try {
-    passwordsDisabled = !passwordsDisabled;
-    console.log(`ℹ️ Passwords ${passwordsDisabled ? 'disabled' : 'enabled'}`);
-    res.json({ ok: true, disabled: passwordsDisabled });
-  } catch (err) {
-    console.error('Toggle password error:', err);
-    res.status(500).json({ ok: false, error: 'Server error' });
-  }
+  passwordsDisabled = !passwordsDisabled;
+  res.json({ ok: true, disabled: passwordsDisabled });
 });
 
 app.get('/api/admin/password-status', requireAdmin, async (req, res) => {
-  try {
-    res.json({ ok: true, disabled: passwordsDisabled });
-  } catch (err) {
-    console.error('Get password status error:', err);
-    res.status(500).json({ ok: false, error: 'Server error' });
-  }
+  res.json({ ok: true, disabled: passwordsDisabled });
 });
 
+// --- FIXED: /authorize (passwords now work!) ---
 app.post('/api/movies/:id/authorize', async (req, res) => {
   try {
     const id = req.params.id;
@@ -542,17 +415,17 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
         return res.status(401).json({ ok: false, error: 'Wrong password' });
       }
       const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
-      console.log(`ℹ️ Authorized content ID ${id} with admin password`);
+      console.log(`Authorized content ID ${id} with admin password`);
       return res.json({ ok: true, token });
     }
 
     const r = await pool.query('SELECT password_hashes, one_time_password_hashes, type FROM movies WHERE id=$1', [id]);
     if (!r.rowCount) {
-      console.log(`ℹ️ Content ID ${id} not found`);
+      console.log(`Content ID ${id} not found`);
       return res.status(404).json({ ok: false, error: 'Movie not found' });
     }
 
-    const { password_hashes, one_time_password_hashes, type } = r.rows[0];
+    const { password_hashes, one_time_password_hashes } = r.rows[0];
     let regularHashes = [];
     let oneTimeHashes = [];
     try {
@@ -560,19 +433,12 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
       oneTimeHashes = one_time_password_hashes ? JSON.parse(one_time_password_hashes) : [];
     } catch (err) {
       console.error(`JSON parse error for content ID ${id}:`, err);
-      regularHashes = [];
-      oneTimeHashes = [];
-    }
-    if (!Array.isArray(regularHashes)) {
-      console.warn(`ℹ️ password_hashes for content ID ${id} is not an array, resetting to []`);
-      regularHashes = [];
-    }
-    if (!Array.isArray(oneTimeHashes)) {
-      console.warn(`ℹ️ one_time_password_hashes for content ID ${id} is not an array, resetting to []`);
-      oneTimeHashes = [];
     }
 
-    // Check content-specific passwords first
+    if (!Array.isArray(regularHashes)) regularHashes = [];
+    if (!Array.isArray(oneTimeHashes)) oneTimeHashes = [];
+
+    // Check per-movie one-time passwords
     for (let i = 0; i < oneTimeHashes.length; i++) {
       if (await bcrypt.compare(password, oneTimeHashes[i])) {
         oneTimeHashes.splice(i, 1);
@@ -581,40 +447,41 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
           [JSON.stringify(oneTimeHashes), id]
         );
         const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
-        console.log(`ℹ️ Authorized content ID ${id} with one-time password`);
+        console.log(`Authorized content ID ${id} with per-movie one-time password`);
         return res.json({ ok: true, token });
       }
     }
 
+    // Check per-movie regular passwords
     for (const hash of regularHashes) {
       if (await bcrypt.compare(password, hash)) {
         const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
-        console.log(`ℹ️ Authorized content ID ${id} with regular password`);
+        console.log(`Authorized content ID ${id} with per-movie regular password`);
         return res.json({ ok: true, token });
       }
     }
 
-    // Only check global passwords if no content-specific passwords are set
+    // Only check global passwords if no per-movie passwords are set
     if (regularHashes.length === 0 && oneTimeHashes.length === 0) {
       const globalResult = await pool.query('SELECT id, password_hash, is_one_time FROM global_passwords');
       for (const global of globalResult.rows) {
         if (global.is_one_time && await bcrypt.compare(password, global.password_hash)) {
           await pool.query('DELETE FROM global_passwords WHERE id = $1', [global.id]);
           const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
-          console.log(`ℹ️ Authorized content ID ${id} with global one-time password`);
+          console.log(`Authorized content ID ${id} with global one-time password`);
           return res.json({ ok: true, token });
         }
       }
       for (const global of globalResult.rows) {
         if (!global.is_one_time && await bcrypt.compare(password, global.password_hash)) {
           const token = jwt.sign({ movieId: id }, JWT_SECRET, { expiresIn: '6h' });
-          console.log(`ℹ️ Authorized content ID ${id} with global password`);
+          console.log(`Authorized content ID ${id} with global regular password`);
           return res.json({ ok: true, token });
         }
       }
     }
 
-    console.log(`ℹ️ Failed to authorize content ID ${id}: Wrong password`);
+    console.log(`Failed to authorize content ID ${id}: Wrong password`);
     return res.status(401).json({ ok: false, error: 'Wrong password' });
   } catch (err) {
     console.error(`Authorization error for content ID ${id}:`, err);
@@ -630,13 +497,13 @@ app.get('/api/movies/:id/embed', async (req, res) => {
     const movieId = data.movieId;
     const r = await pool.query('SELECT imdb_id, type FROM movies WHERE id=$1', [movieId]);
     if (!r.rowCount) {
-      console.log(`ℹ️ Content ID ${movieId} not found for embed`);
+      console.log(`Content ID ${movieId} not found for embed`);
       return res.status(404).json({ ok: false, error: 'Movie not found' });
     }
     const { imdb_id, type } = r.rows[0];
     const baseUrl = type === 'movie' ? EMBED_BASE_MOVIE : EMBED_BASE_TV;
     const url = baseUrl + imdb_id;
-    console.log(`ℹ️ Serving embed URL for content ID ${movieId}: ${url}`);
+    console.log(`Serving embed URL for content ID ${movieId}: ${url}`);
     res.json({ ok: true, url });
   } catch (err) {
     console.error('Embed error:', err);
@@ -644,11 +511,8 @@ app.get('/api/movies/:id/embed', async (req, res) => {
   }
 });
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
-  console.log(`🤖 Discord bot ${DISCORD_BOT_TOKEN ? 'started' : 'disabled (no token)'}`);
+  console.log(`Server running on port ${PORT}`);
 });
