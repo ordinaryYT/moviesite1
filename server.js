@@ -5,6 +5,7 @@ const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const path = require('path');
+const { Client, GatewayIntentBits, SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 
 const fetch = global.fetch || ((...args) => import('node-fetch').then(({default: f}) => f(...args)));
 
@@ -19,6 +20,12 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'boughton5';
 const EMBED_BASE_MOVIE = 'https://vidsrc.me/embed/movie/';
 const EMBED_BASE_TV = 'https://vidsrc.me/embed/tv/';
 
+// --- Discord Bot Config ---
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID;
+const DISCORD_CODE_MANAGER_ROLE_ID = process.env.DISCORD_CODE_MANAGER_ROLE_ID;
+let codesEnabled = true;
+
 // --- PostgreSQL ---
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -26,6 +33,178 @@ const pool = new Pool({
 });
 
 let passwordsDisabled = false;
+
+// --- Discord Bot Client ---
+const discordClient = new Client({ 
+  intents: [GatewayIntentBits.Guilds] 
+});
+
+// --- Generate 12-digit random alphanumeric suffix ---
+function generateCodeSuffix() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < 12; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+// --- Generate 100 unique one-time codes ---
+async function generateStartupCodes() {
+  console.log('🔄 Generating 100 unique one-time OM codes...');
+  
+  // Ensure code lookup table exists
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS om_codes (
+      id SERIAL PRIMARY KEY,
+      code TEXT UNIQUE NOT NULL,
+      global_password_id INTEGER REFERENCES global_passwords(id) ON DELETE CASCADE,
+      used BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  const target = 100;
+  const usedCodes = new Set();
+  let generated = 0;
+
+  while (generated < target) {
+    const suffix = generateCodeSuffix();
+    const code = `om-${suffix}`;
+
+    if (usedCodes.has(code)) continue;
+
+    // Check if code already exists in DB
+    const existsCheck = await pool.query('SELECT 1 FROM om_codes WHERE code = $1', [code]);
+    if (existsCheck.rowCount > 0) continue;
+
+    // Generate hash and insert to global_passwords
+    const hash = await bcrypt.hash(code, 10);
+    const globalRes = await pool.query(
+      'INSERT INTO global_passwords (password_hash, is_one_time) VALUES ($1, true) RETURNING id',
+      [hash]
+    );
+
+    // Insert to lookup table
+    await pool.query(
+      'INSERT INTO om_codes (code, global_password_id) VALUES ($1, $2)',
+      [code, globalRes.rows[0].id]
+    );
+
+    usedCodes.add(code);
+    generated++;
+    console.log(`✅ Generated ${generated}/${target}: ${code}`);
+  }
+
+  console.log('🎉 100 unique OM one-time codes generated successfully!');
+}
+
+// --- Get one unused OM code ---
+async function getOneUnusedOMCode() {
+  const res = await pool.query(`
+    SELECT oc.id, oc.code, gp.id as global_id
+    FROM om_codes oc
+    JOIN global_passwords gp ON oc.global_password_id = gp.id
+    WHERE oc.used = FALSE AND gp.is_one_time = true
+    ORDER BY oc.created_at ASC
+    LIMIT 1
+  `);
+
+  if (!res.rowCount) return null;
+  return res.rows[0];
+}
+
+// --- Discord Bot Commands ---
+const discordCommands = [
+  new SlashCommandBuilder()
+    .setName('gencode')
+    .setDescription('Get one unused OM one-time code')
+    .setDefaultMemberPermissions(PermissionFlagsBits.SendMessages),
+
+  new SlashCommandBuilder()
+    .setName('toggle-codes')
+    .setDescription('Enable/disable code generation (Code Manager only)')
+    .addStringOption(option =>
+      option.setName('state')
+        .setDescription('Enable or disable')
+        .setRequired(true)
+        .addChoices(
+          { name: 'enable', value: 'enable' },
+          { name: 'disable', value: 'disable' }
+        )
+    )
+];
+
+// --- Discord Bot Ready Event ---
+discordClient.once('ready', async () => {
+  console.log(`🤖 Discord bot logged in as ${discordClient.user.tag}`);
+
+  if (DISCORD_GUILD_ID) {
+    const guild = discordClient.guilds.cache.get(DISCORD_GUILD_ID);
+    if (guild) {
+      await guild.commands.set(discordCommands);
+      console.log(`✅ Discord slash commands registered in guild ${DISCORD_GUILD_ID}`);
+    }
+  }
+});
+
+// --- Discord Slash Command Handler ---
+discordClient.on('interactionCreate', async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const { commandName, options } = interaction;
+
+  if (commandName === 'gencode') {
+    if (!codesEnabled) {
+      return interaction.reply({ 
+        content: '❌ **Code generation is currently DISABLED** by admins.', 
+        ephemeral: true 
+      });
+    }
+
+    const codeData = await getOneUnusedOMCode();
+    if (!codeData) {
+      return interaction.reply({ 
+        content: '❌ **No unused OM codes available!** Contact an admin.', 
+        ephemeral: true 
+      });
+    }
+
+    // Mark as used
+    await pool.query('UPDATE om_codes SET used = TRUE WHERE id = $1', [codeData.id]);
+
+    const embed = new EmbedBuilder()
+      .setTitle('🎬 OM One-Time Access Code')
+      .setDescription(`**Use this code on the website to watch movies:**\n\`\`\`${codeData.code}\`\`\``)
+      .setColor('#e50914')
+      .setFooter({ text: 'Code is one-time use only!' })
+      .setTimestamp();
+
+    await interaction.reply({ embeds: [embed], ephemeral: true });
+    console.log(`🎫 OM Code issued to ${interaction.user.tag}: ${codeData.code}`);
+  }
+
+  else if (commandName === 'toggle-codes') {
+    // Check if user has Code Manager role
+    if (!interaction.member.roles.cache.has(DISCORD_CODE_MANAGER_ROLE_ID)) {
+      return interaction.reply({ 
+        content: '❌ **You need the "Code Manager" role to use this command!**', 
+        ephemeral: true 
+      });
+    }
+
+    const state = options.getString('state');
+    codesEnabled = state === 'enable';
+    
+    const status = codesEnabled ? '✅ ENABLED' : '❌ DISABLED';
+    await interaction.reply({ 
+      content: `**Code generation is now ${status}** - ${interaction.user}`, 
+      ephemeral: false 
+    });
+    
+    console.log(`🔧 Code generation ${status.toLowerCase()} by ${interaction.user.tag}`);
+  }
+});
 
 // --- Auto-create tables ---
 async function ensureTable() {
@@ -55,6 +234,7 @@ async function ensureTable() {
     `);
     console.log('✅ Global passwords table ready');
 
+    // ... rest of existing table migration code (unchanged) ...
     const columnsResult = await pool.query(`
       SELECT column_name 
       FROM information_schema.columns 
@@ -107,7 +287,23 @@ async function ensureTable() {
     throw err;
   }
 }
-ensureTable().catch(console.error);
+
+// --- Startup sequence ---
+async function startup() {
+  await ensureTable();
+  
+  // Generate 100 OM codes on first launch
+  await generateStartupCodes();
+  
+  // Start Discord bot if token provided
+  if (DISCORD_BOT_TOKEN) {
+    discordClient.login(DISCORD_BOT_TOKEN).catch(console.error);
+  }
+}
+
+startup().catch(console.error);
+
+// --- [ALL EXISTING ENDPOINTS REMAIN EXACTLY THE SAME - COPIED HERE FOR COMPLETENESS] ---
 
 // --- IMDb Search Helper ---
 async function searchImdb(title) {
@@ -159,7 +355,7 @@ async function fetchEpisodes(imdbId) {
   }
 }
 
-// --- Get episodes for TV show ---
+// --- ALL OTHER ENDPOINTS (unchanged) ---
 app.get('/api/movies/:id/episodes', async (req, res) => {
   try {
     const id = req.params.id;
@@ -181,7 +377,6 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
   }
 });
 
-// --- Public: list movies ---
 app.get('/api/movies', async (_, res) => {
   try {
     const result = await pool.query('SELECT id, title, type, year, image FROM movies ORDER BY created_at DESC');
@@ -193,7 +388,6 @@ app.get('/api/movies', async (_, res) => {
   }
 });
 
-// --- Admin login ---
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
   if (!password) return res.status(400).json({ ok: false, error: 'Password required' });
@@ -215,7 +409,6 @@ function requireAdmin(req, res, next) {
   }
 }
 
-// --- Add Movie or TV Show ---
 app.post('/api/movies', requireAdmin, async (req, res) => {
   try {
     const { name, imdbId, contentPasswords, oneTimePasswords, type } = req.body;
@@ -260,7 +453,6 @@ app.post('/api/movies', requireAdmin, async (req, res) => {
   }
 });
 
-// --- Delete movie ---
 app.delete('/api/movies/:id', requireAdmin, async (req, res) => {
   try {
     const id = req.params.id;
@@ -274,7 +466,6 @@ app.delete('/api/movies/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// --- Add Global Password ---
 app.post('/api/admin/global-passwords', requireAdmin, async (req, res) => {
   try {
     const { password, isOneTime } = req.body;
@@ -294,7 +485,6 @@ app.post('/api/admin/global-passwords', requireAdmin, async (req, res) => {
   }
 });
 
-// --- List Global Passwords ---
 app.get('/api/admin/global-passwords', requireAdmin, async (req, res) => {
   try {
     const result = await pool.query('SELECT id, is_one_time, created_at FROM global_passwords ORDER BY created_at DESC');
@@ -306,7 +496,6 @@ app.get('/api/admin/global-passwords', requireAdmin, async (req, res) => {
   }
 });
 
-// --- Delete Global Password ---
 app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => {
   try {
     const id = req.params.id;
@@ -322,7 +511,6 @@ app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => 
   }
 });
 
-// --- Toggle Password Protection ---
 app.post('/api/admin/toggle-passwords', requireAdmin, async (req, res) => {
   try {
     passwordsDisabled = !passwordsDisabled;
@@ -334,7 +522,6 @@ app.post('/api/admin/toggle-passwords', requireAdmin, async (req, res) => {
   }
 });
 
-// --- Get Password Status ---
 app.get('/api/admin/password-status', requireAdmin, async (req, res) => {
   try {
     res.json({ ok: true, disabled: passwordsDisabled });
@@ -344,7 +531,6 @@ app.get('/api/admin/password-status', requireAdmin, async (req, res) => {
   }
 });
 
-// --- Authorize viewer ---
 app.post('/api/movies/:id/authorize', async (req, res) => {
   try {
     const id = req.params.id;
@@ -436,7 +622,6 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   }
 });
 
-// --- Get embed ---
 app.get('/api/movies/:id/embed', async (req, res) => {
   try {
     const auth = req.headers.authorization || '';
@@ -459,9 +644,11 @@ app.get('/api/movies/:id/embed', async (req, res) => {
   }
 });
 
-// Serve HTML
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`🤖 Discord bot ${DISCORD_BOT_TOKEN ? 'started' : 'disabled (no token)'}`);
+});
