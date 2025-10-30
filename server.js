@@ -1,4 +1,3 @@
-// server.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -183,7 +182,8 @@ discordClient.on('interactionCreate', async (i) => {
       .setColor('#e50914')
       .setFooter({ text: 'One-time use only!' });
 
-    await i.reply({ embeds: [embed], ephemeral: true });
+    // FIXED: Show to everyone
+    await i.reply({ embeds: [embed] });
     console.log(`Code issued: ${code.code} → ${i.user.tag}`);
   }
 
@@ -403,7 +403,7 @@ app.get('/api/admin/password-status', requireAdmin, async (req, res) => {
   res.json({ ok: true, disabled: passwordsDisabled });
 });
 
-// --- FIXED: /authorize (passwords now work!) ---
+// --- FIXED: /authorize (safe JSON parsing) ---
 app.post('/api/movies/:id/authorize', async (req, res) => {
   try {
     const id = req.params.id;
@@ -426,17 +426,30 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
     }
 
     const { password_hashes, one_time_password_hashes } = r.rows[0];
+
+    // FIXED: Safe JSON parsing
     let regularHashes = [];
     let oneTimeHashes = [];
+
     try {
-      regularHashes = password_hashes ? JSON.parse(password_hashes) : [];
-      oneTimeHashes = one_time_password_hashes ? JSON.parse(one_time_password_hashes) : [];
+      if (password_hashes) {
+        const parsed = JSON.parse(password_hashes);
+        regularHashes = Array.isArray(parsed) ? parsed : [];
+      }
     } catch (err) {
-      console.error(`JSON parse error for content ID ${id}:`, err);
+      console.error(`Invalid JSON in password_hashes for content ID ${id}:`, err);
+      regularHashes = [];
     }
 
-    if (!Array.isArray(regularHashes)) regularHashes = [];
-    if (!Array.isArray(oneTimeHashes)) oneTimeHashes = [];
+    try {
+      if (one_time_password_hashes) {
+        const parsed = JSON.parse(one_time_password_hashes);
+        oneTimeHashes = Array.isArray(parsed) ? parsed : [];
+      }
+    } catch (err) {
+      console.error(`Invalid JSON in one_time_password_hashes for content ID ${id}:`, err);
+      oneTimeHashes = [];
+    }
 
     // Check per-movie one-time passwords
     for (let i = 0; i < oneTimeHashes.length; i++) {
@@ -461,7 +474,7 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
       }
     }
 
-    // Only check global passwords if no per-movie passwords are set
+    // Only check global passwords if no per-movie passwords
     if (regularHashes.length === 0 && oneTimeHashes.length === 0) {
       const globalResult = await pool.query('SELECT id, password_hash, is_one_time FROM global_passwords');
       for (const global of globalResult.rows) {
