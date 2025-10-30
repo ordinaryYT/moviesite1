@@ -90,72 +90,54 @@ async function generateOMCodes() {
 
 // --- Discord Bot ---
 client.once('ready', () => {
-  console.log('Discord bot ready');
-
+  console.log('Bot ready');
   const commands = [
     new SlashCommandBuilder()
       .setName('gencode')
-      .setDescription('Get one OM code'),
+      .setDescription('Get OM code'),
     new SlashCommandBuilder()
       .setName('toggle-codes')
-      .setDescription('Enable/disable code generation')
-      .addStringOption(o =>
-        o.setName('state')
-         .setDescription('on or off')
-         .setRequired(true)
-         .addChoices({name: 'on', value: 'on'}, {name: 'off', value: 'off'})
-      )
+      .setDescription('Toggle code gen')
+      .addStringOption(o => o.setName('state').setRequired(true).addChoices({name:'on',value:'on'},{name:'off',value:'off'}))
   ];
 
   (async () => {
     try {
-      const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
-      await rest.put(Routes.applicationCommands(client.user.id), {
-        body: commands.map(c => c.toJSON())
-      });
-      console.log('Commands registered');
-    } catch (e) {
-      console.error('Failed to register commands:', e);
-    }
+      await REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN).put(
+        Routes.applicationCommands(client.user.id),
+        { body: commands.map(c => c.toJSON()) }
+      );
+    } catch (e) {}
   })();
 });
 
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isCommand()) return;
+client.on('interactionCreate', async i => {
+  if (!i.isCommand()) return;
 
-  if (interaction.commandName === 'gencode') {
+  if (i.commandName === 'gencode') {
     const { rows } = await pool.query('SELECT code, id FROM om_codes WHERE used = FALSE LIMIT 1');
-    if (!rows[0]) {
-      return interaction.reply({ content: 'No codes left!', ephemeral: true });
-    }
+    if (!rows[0]) return i.reply({ content: 'No codes!', ephemeral: true });
 
     await pool.query('UPDATE om_codes SET used = TRUE WHERE id = $1', [rows[0].id]);
-
     const embed = new EmbedBuilder()
       .setColor('#e50914')
-      .setTitle('OM One-Time Code')
-      .setDescription(`\`\`\`${rows[0].code}\`\`\``)
-      .setFooter({ text: 'Use once!' });
+      .setTitle('OM Code')
+      .setDescription(`\`\`\`${rows[0].code}\`\`\``);
 
     // FIXED: Show to everyone
-    await interaction.reply({ embeds: [embed] });
+    await i.reply({ embeds: [embed] });
   }
 
-  if (interaction.commandName === 'toggle-codes') {
-    if (!interaction.member.roles.cache.has(process.env.DISCORD_CODE_MANAGER_ROLE_ID)) {
-      return interaction.reply({ content: 'No permission', ephemeral: true });
-    }
-    const state = interaction.options.getString('state');
-    // Add your toggle logic here if needed
-    await interaction.reply(`Code generation: ${state === 'on' ? 'ENABLED' : 'DISABLED'}`);
+  if (i.commandName === 'toggle-codes') {
+    if (!i.member.roles.cache.has(process.env.DISCORD_CODE_MANAGER_ROLE_ID))
+      return i.reply({ content: 'No permission', ephemeral: true });
+    const state = i.options.getString('state');
+    await i.reply(`Codes ${state === 'on' ? 'enabled' : 'disabled'}`);
   }
 });
 
-if (process.env.DISCORD_BOT_TOKEN) {
-  client.login(process.env.DISCORD_BOT_TOKEN).catch(console.error);
-}
+if (process.env.DISCORD_BOT_TOKEN) client.login(process.env.DISCORD_BOT_TOKEN);
 
-// --- Start ---
 ensureTables().then(() => generateOMCodes());
 
 // --- API: Get Movies ---
@@ -251,22 +233,22 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
 
   // SAFE PARSING
   try {
-    if (rows[0].password_hashes && typeof rows[0].password_hashes === 'string') {
+    if (rows[0].password_hashes && typeof rows[0].password_hashes === 'string' && rows[0].password_hashes.trim() !== '') {
       regular = JSON.parse(rows[0].password_hashes);
       if (!Array.isArray(regular)) regular = [];
     }
   } catch (e) {
-    console.error('Corrupted password_hashes:', rows[0].password_hashes);
+    console.error('Corrupted password_hashes for ID', req.params.id, ':', rows[0].password_hashes);
     regular = [];
   }
 
   try {
-    if (rows[0].one_time_password_hashes && typeof rows[0].one_time_password_hashes === 'string') {
+    if (rows[0].one_time_password_hashes && typeof rows[0].one_time_password_hashes === 'string' && rows[0].one_time_password_hashes.trim() !== '') {
       ot = JSON.parse(rows[0].one_time_password_hashes);
       if (!Array.isArray(ot)) ot = [];
     }
   } catch (e) {
-    console.error('Corrupted one_time_password_hashes:', rows[0].one_time_password_hashes);
+    console.error('Corrupted one_time_password_hashes for ID', req.params.id, ':', rows[0].one_time_password_hashes);
     ot = [];
   }
 
@@ -286,7 +268,7 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
     }
   }
 
-  // Global passwords (fallback)
+  // Global passwords
   const { rows: globals } = await pool.query('SELECT id, password_hash, is_one_time FROM global_passwords');
   for (const g of globals) {
     if (g.is_one_time && await bcrypt.compare(password, g.password_hash)) {
