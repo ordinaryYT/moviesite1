@@ -9,7 +9,6 @@ const {
   Client,
   GatewayIntentBits,
   SlashCommandBuilder,
-  PermissionFlagsBits,
   EmbedBuilder,
   REST,
   Routes
@@ -31,11 +30,9 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-let passwordsDisabled = false;
-
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// --- Generate OM Code ---
+// --- Generate ONE OM Code ---
 function generateCode() {
   return 'om-' + Math.random().toString(36).substr(2, 12).toUpperCase();
 }
@@ -72,73 +69,86 @@ async function ensureTables() {
   `);
 }
 
-// --- Generate 100 OM Codes ---
-async function generateOMCodes() {
-  const { rows } = await pool.query('SELECT COUNT(*) FROM om_codes WHERE used = FALSE');
-  if (parseInt(rows[0].count) >= 100) return;
-
-  for (let i = 0; i < 100; i++) {
-    const code = generateCode();
-    const hash = await bcrypt.hash(code, 10);
-    const { rows: [gp] } = await pool.query(
-      'INSERT INTO global_passwords (password_hash, is_one_time) VALUES ($1, true) RETURNING id',
-      [hash]
-    );
-    await pool.query('INSERT INTO om_codes (code, global_password_id) VALUES ($1, $2)', [code, gp.id]);
+// --- DELETE ALL OM CODES + GLOBAL ONE-TIME PASSWORDS ---
+async function deleteAllOMCodes() {
+  try {
+    await pool.query('DELETE FROM om_codes');
+    await pool.query('DELETE FROM global_passwords WHERE is_one_time = TRUE');
+    console.log('DELETED ALL OM CODES & ONE-TIME GLOBAL PASSWORDS');
+  } catch (err) {
+    console.error('Failed to delete OM codes:', err);
   }
 }
 
 // --- Discord Bot ---
-client.once('ready', () => {
-  console.log('Bot ready');
+client.once('ready', async () => {
+  console.log('Discord bot ready');
+
+  // DELETE ALL OM CODES ON START — AFTER TABLES ARE READY
+  await deleteAllOMCodes();
+
   const commands = [
     new SlashCommandBuilder()
       .setName('gencode')
-      .setDescription('Get OM code'),
+      .setDescription('Generate 1 OM code'),
     new SlashCommandBuilder()
       .setName('toggle-codes')
       .setDescription('Toggle code gen')
       .addStringOption(o => o.setName('state').setRequired(true).addChoices({name:'on',value:'on'},{name:'off',value:'off'}))
   ];
 
-  (async () => {
-    try {
-      await REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN).put(
-        Routes.applicationCommands(client.user.id),
-        { body: commands.map(c => c.toJSON()) }
-      );
-    } catch (e) {}
-  })();
+  try {
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
+    await rest.put(Routes.applicationCommands(client.user.id), {
+      body: commands.map(c => c.toJSON())
+    });
+    console.log('Commands registered');
+  } catch (e) {
+    console.error('Command registration failed:', e);
+  }
 });
 
 client.on('interactionCreate', async i => {
   if (!i.isCommand()) return;
 
   if (i.commandName === 'gencode') {
-    const { rows } = await pool.query('SELECT code, id FROM om_codes WHERE used = FALSE LIMIT 1');
-    if (!rows[0]) return i.reply({ content: 'No codes!', ephemeral: true });
+    const code = generateCode();
+    const hash = await bcrypt.hash(code, 10);
 
-    await pool.query('UPDATE om_codes SET used = TRUE WHERE id = $1', [rows[0].id]);
+    const { rows: [gp] } = await pool.query(
+      'INSERT INTO global_passwords (password_hash, is_one_time) VALUES ($1, true) RETURNING id',
+      [hash]
+    );
+
+    await pool.query(
+      'INSERT INTO om_codes (code, global_password_id, used) VALUES ($1, $2, FALSE)',
+      [code, gp.id]
+    );
+
     const embed = new EmbedBuilder()
       .setColor('#e50914')
-      .setTitle('OM Code')
-      .setDescription(`\`\`\`${rows[0].code}\`\`\``);
+      .setTitle('OM One-Time Code')
+      .setDescription(`\`\`\`${code}\`\`\``)
+      .setFooter({ text: 'One-time use only!' });
 
-    // FIXED: Show to everyone
     await i.reply({ embeds: [embed] });
+    console.log(`Generated: ${code}`);
   }
 
   if (i.commandName === 'toggle-codes') {
     if (!i.member.roles.cache.has(process.env.DISCORD_CODE_MANAGER_ROLE_ID))
       return i.reply({ content: 'No permission', ephemeral: true });
     const state = i.options.getString('state');
-    await i.reply(`Codes ${state === 'on' ? 'enabled' : 'disabled'}`);
+    await i.reply(`Code generation: ${state === 'on' ? 'ENABLED' : 'DISABLED'}`);
   }
 });
 
-if (process.env.DISCORD_BOT_TOKEN) client.login(process.env.DISCORD_BOT_TOKEN);
+if (process.env.DISCORD_BOT_TOKEN) {
+  client.login(process.env.DISCORD_BOT_TOKEN).catch(console.error);
+}
 
-ensureTables().then(() => generateOMCodes());
+// --- Start: Setup Tables First ---
+ensureTables();
 
 // --- API: Get Movies ---
 app.get('/api/movies', async (req, res) => {
@@ -173,18 +183,13 @@ app.post('/api/movies', requireAdmin, async (req, res) => {
   const { name, imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie' } = req.body;
   if (!name && !imdbId) return res.status(400).json({ ok: false, error: 'Title or IMDb ID required' });
 
-  let movieData = { title: name || imdbId, imdb_id: imdbId };
-  if (!imdbId) {
-    // your IMDb search logic here if needed
-  }
-
   const hashes = await Promise.all(contentPasswords.map(p => bcrypt.hash(p, 10)));
   const otHashes = await Promise.all(oneTimePasswords.map(p => bcrypt.hash(p, 10)));
 
   const { rows } = await pool.query(
     `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes)
      VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [movieData.title, movieData.imdb_id, type, JSON.stringify(hashes), JSON.stringify(otHashes)]
+    [name || imdbId, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes)]
   );
 
   res.json({ ok: true, movieId: rows[0].id });
@@ -231,14 +236,13 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   let regular = [];
   let ot = [];
 
-  // SAFE PARSING
   try {
     if (rows[0].password_hashes && typeof rows[0].password_hashes === 'string' && rows[0].password_hashes.trim() !== '') {
       regular = JSON.parse(rows[0].password_hashes);
       if (!Array.isArray(regular)) regular = [];
     }
   } catch (e) {
-    console.error('Corrupted password_hashes for ID', req.params.id, ':', rows[0].password_hashes);
+    console.error('Corrupted password_hashes:', rows[0].password_hashes);
     regular = [];
   }
 
@@ -248,11 +252,10 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
       if (!Array.isArray(ot)) ot = [];
     }
   } catch (e) {
-    console.error('Corrupted one_time_password_hashes for ID', req.params.id, ':', rows[0].one_time_password_hashes);
+    console.error('Corrupted one_time_password_hashes:', rows[0].one_time_password_hashes);
     ot = [];
   }
 
-  // One-time per-movie
   for (let i = 0; i < ot.length; i++) {
     if (await bcrypt.compare(password, ot[i])) {
       ot.splice(i, 1);
@@ -261,14 +264,12 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
     }
   }
 
-  // Regular per-movie
   for (const h of regular) {
     if (await bcrypt.compare(password, h)) {
       return res.json({ ok: true, token: jwt.sign({ movieId: req.params.id }, JWT_SECRET, { expiresIn: '6h' }) });
     }
   }
 
-  // Global passwords
   const { rows: globals } = await pool.query('SELECT id, password_hash, is_one_time FROM global_passwords');
   for (const g of globals) {
     if (g.is_one_time && await bcrypt.compare(password, g.password_hash)) {
