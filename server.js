@@ -36,6 +36,7 @@ function generateCode() {
   return 'om-' + Math.random().toString(36).substr(2, 12).toUpperCase();
 }
 
+// --- ENSURE TABLES + ADD subtitles_enabled COLUMN ---
 async function ensureTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS movies (
@@ -47,6 +48,7 @@ async function ensureTables() {
       one_time_password_hashes JSONB DEFAULT '[]',
       year TEXT,
       image TEXT,
+      subtitles_enabled BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT NOW()
     )
   `);
@@ -65,6 +67,13 @@ async function ensureTables() {
       used BOOLEAN DEFAULT FALSE
     )
   `);
+
+  // Add column if missing
+  const cols = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'movies'`);
+  if (!cols.rows.find(r => r.column_name === 'subtitles_enabled')) {
+    await pool.query(`ALTER TABLE movies ADD COLUMN subtitles_enabled BOOLEAN DEFAULT FALSE`);
+    console.log('Added subtitles_enabled column');
+  }
 }
 
 async function deleteAllOMCodes() {
@@ -141,7 +150,7 @@ ensureTables();
 
 // --- API: Get Movies ---
 app.get('/api/movies', async (req, res) => {
-  const { rows } = await pool.query('SELECT id, title, type, year, image FROM movies ORDER BY created_at DESC');
+  const { rows } = await pool.query('SELECT id, title, type, year, image, subtitles_enabled FROM movies ORDER BY created_at DESC');
   res.json({ ok: true, movies: rows });
 });
 
@@ -167,21 +176,36 @@ const requireAdmin = (req, res, next) => {
   }
 };
 
-// --- API: Add Movie ---
+// --- API: Add Movie (with subtitles option) ---
 app.post('/api/movies', requireAdmin, async (req, res) => {
-  const { name, imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie' } = req.body;
+  const { name, imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie', subtitlesEnabled = false } = req.body;
   if (!name && !imdbId) return res.status(400).json({ ok: false, error: 'Title or IMDb ID required' });
 
   const hashes = await Promise.all(contentPasswords.map(p => bcrypt.hash(p, 10)));
   const otHashes = await Promise.all(oneTimePasswords.map(p => bcrypt.hash(p, 10)));
 
   const { rows } = await pool.query(
-    `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes)
-     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [name || imdbId, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes)]
+    `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes, subtitles_enabled)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [name || imdbId, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes), subtitlesEnabled]
   );
 
   res.json({ ok: true, movieId: rows[0].id });
+});
+
+// --- API: Update Subtitles (Admin Only) ---
+app.patch('/api/movies/:id/subtitles', requireAdmin, async (req, res) => {
+  const { subtitlesEnabled } = req.body;
+  if (typeof subtitlesEnabled !== 'boolean') {
+    return res.status(400).json({ ok: false, error: 'subtitlesEnabled must be boolean' });
+  }
+
+  const { rowCount } = await pool.query(
+    'UPDATE movies SET subtitles_enabled = $1 WHERE id = $2',
+    [subtitlesEnabled, req.params.id]
+  );
+
+  res.json({ ok: rowCount > 0 });
 });
 
 // --- API: Delete Movie ---
@@ -211,7 +235,7 @@ app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => 
   res.json({ ok: rowCount > 0 });
 });
 
-// --- FIXED: /episodes (TV SHOWS WORK) ---
+// --- API: Episodes ---
 app.get('/api/movies/:id/episodes', async (req, res) => {
   const id = req.params.id;
   const { rows } = await pool.query('SELECT imdb_id, type FROM movies WHERE id = $1', [id]);
@@ -241,12 +265,11 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
 
     res.json({ ok: true, seasons });
   } catch (err) {
-    console.error('Episode fetch failed for ID:', id);
     res.json({ ok: false, error: 'Failed to load episodes' });
   }
 });
 
-// --- FIXED: /authorize (SAFE JSON) ---
+// --- API: Authorize ---
 app.post('/api/movies/:id/authorize', async (req, res) => {
   const { password } = req.body;
   if (!password) return res.json({ ok: false, error: 'Password required' });
@@ -257,18 +280,17 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   );
   if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
 
-  let regular = [];
-  let ot = [];
+  let regular = [], ot = [];
 
   try {
-    if (rows[0].password_hashes && typeof rows[0].password_hashes === 'string' && rows[0].password_hashes.trim() !== '') {
+    if (rows[0].password_hashes && typeof rows[0].password_hashes === 'string' && rows[0].password_hashes.trim()) {
       regular = JSON.parse(rows[0].password_hashes);
       if (!Array.isArray(regular)) regular = [];
     }
   } catch (e) { regular = []; }
 
   try {
-    if (rows[0].one_time_password_hashes && typeof rows[0].one_time_password_hashes === 'string' && rows[0].one_time_password_hashes.trim() !== '') {
+    if (rows[0].one_time_password_hashes && typeof rows[0].one_time_password_hashes === 'string' && rows[0].one_time_password_hashes.trim()) {
       ot = JSON.parse(rows[0].one_time_password_hashes);
       if (!Array.isArray(ot)) ot = [];
     }
@@ -304,18 +326,22 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   res.json({ ok: false, error: 'Wrong password' });
 });
 
-// --- FIXED: /embed (TV SHOWS SUPPORT SEASON/EPISODE) ---
+// --- FIXED: /embed with SUBTITLES OPTION ---
 app.get('/api/movies/:id/embed', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   try {
     const { movieId } = jwt.verify(token, JWT_SECRET);
-    const { rows } = await pool.query('SELECT imdb_id, type FROM movies WHERE id = $1', [movieId]);
+    const { rows } = await pool.query('SELECT imdb_id, type, subtitles_enabled FROM movies WHERE id = $1', [movieId]);
     if (!rows[0]) return res.json({ ok: false, error: 'Not found' });
 
-    const { imdb_id, type } = rows[0];
+    const { imdb_id, type, subtitles_enabled } = rows[0];
     let url = type === 'movie' 
       ? `https://vidsrc.me/embed/movie/${imdb_id}`
       : `https://vidsrc.me/embed/tv/${imdb_id}`;
+
+    if (subtitles_enabled) {
+      url += '?sub=en'; // vidsrc.me supports ?sub=en
+    }
 
     res.json({ ok: true, url });
   } catch {
