@@ -36,7 +36,6 @@ function generateCode() {
   return 'om-' + Math.random().toString(36).substr(2, 12).toUpperCase();
 }
 
-// --- ENSURE TABLES + ADD subtitles_enabled COLUMN ---
 async function ensureTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS movies (
@@ -67,13 +66,34 @@ async function ensureTables() {
       used BOOLEAN DEFAULT FALSE
     )
   `);
+  // NEW: Persistent config for code generation
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bot_config (
+      key TEXT PRIMARY KEY,
+      value BOOLEAN DEFAULT TRUE
+    )
+  `);
+  await pool.query(`
+    INSERT INTO bot_config (key, value) VALUES ('codes_enabled', TRUE)
+    ON CONFLICT (key) DO NOTHING
+  `);
 
-  // Add column if missing
   const cols = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'movies'`);
   if (!cols.rows.find(r => r.column_name === 'subtitles_enabled')) {
     await pool.query(`ALTER TABLE movies ADD COLUMN subtitles_enabled BOOLEAN DEFAULT FALSE`);
-    console.log('Added subtitles_enabled column');
   }
+}
+
+async function getCodesEnabled() {
+  const { rows } = await pool.query('SELECT value FROM bot_config WHERE key = $1', ['codes_enabled']);
+  return rows[0] ? rows[0].value : true;
+}
+
+async function setCodesEnabled(enabled) {
+  await pool.query(
+    'INSERT INTO bot_config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2',
+    ['codes_enabled', enabled]
+  );
 }
 
 async function deleteAllOMCodes() {
@@ -112,6 +132,11 @@ client.on('interactionCreate', async i => {
   if (!i.isCommand()) return;
 
   if (i.commandName === 'gencode') {
+    const enabled = await getCodesEnabled();
+    if (!enabled) {
+      return i.reply({ content: 'Code generation is **DISABLED** by admin.', ephemeral: true });
+    }
+
     const code = generateCode();
     const hash = await bcrypt.hash(code, 10);
 
@@ -137,8 +162,12 @@ client.on('interactionCreate', async i => {
   if (i.commandName === 'toggle-codes') {
     if (!i.member.roles.cache.has(process.env.DISCORD_CODE_MANAGER_ROLE_ID))
       return i.reply({ content: 'No permission', ephemeral: true });
+
     const state = i.options.getString('state');
-    await i.reply(`Code generation: ${state === 'on' ? 'ENABLED' : 'DISABLED'}`);
+    const enabled = state === 'on';
+    await setCodesEnabled(enabled);
+
+    await i.reply(`Code generation: **${enabled ? 'ENABLED' : 'DISABLED'}**`);
   }
 });
 
@@ -146,9 +175,7 @@ if (process.env.DISCORD_BOT_TOKEN) {
   client.login(process.env.DISCORD_BOT_TOKEN).catch(console.error);
 }
 
-ensureTables();
-
-// --- API: Get Movies ---
+ensureTables();// --- API: Get Movies ---
 app.get('/api/movies', async (req, res) => {
   const { rows } = await pool.query('SELECT id, title, type, year, image, subtitles_enabled FROM movies ORDER BY created_at DESC');
   res.json({ ok: true, movies: rows });
@@ -176,7 +203,7 @@ const requireAdmin = (req, res, next) => {
   }
 };
 
-// --- API: Add Movie (with subtitles option) ---
+// --- API: Add Movie ---
 app.post('/api/movies', requireAdmin, async (req, res) => {
   const { name, imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie', subtitlesEnabled = false } = req.body;
   if (!name && !imdbId) return res.status(400).json({ ok: false, error: 'Title or IMDb ID required' });
@@ -193,7 +220,7 @@ app.post('/api/movies', requireAdmin, async (req, res) => {
   res.json({ ok: true, movieId: rows[0].id });
 });
 
-// --- API: Update Subtitles (Admin Only) ---
+// --- API: Update Subtitles ---
 app.patch('/api/movies/:id/subtitles', requireAdmin, async (req, res) => {
   const { subtitlesEnabled } = req.body;
   if (typeof subtitlesEnabled !== 'boolean') {
@@ -283,17 +310,13 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   let regular = [], ot = [];
 
   try {
-    if (rows[0].password_hashes && typeof rows[0].password_hashes === 'string' && rows[0].password_hashes.trim()) {
-      regular = JSON.parse(rows[0].password_hashes);
-      if (!Array.isArray(regular)) regular = [];
-    }
+    regular = JSON.parse(rows[0].password_hashes || '[]');
+    if (!Array.isArray(regular)) regular = [];
   } catch (e) { regular = []; }
 
   try {
-    if (rows[0].one_time_password_hashes && typeof rows[0].one_time_password_hashes === 'string' && rows[0].one_time_password_hashes.trim()) {
-      ot = JSON.parse(rows[0].one_time_password_hashes);
-      if (!Array.isArray(ot)) ot = [];
-    }
+    ot = JSON.parse(rows[0].one_time_password_hashes || '[]');
+    if (!Array.isArray(ot)) ot = [];
   } catch (e) { ot = []; }
 
   for (let i = 0; i < ot.length; i++) {
@@ -326,12 +349,15 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   res.json({ ok: false, error: 'Wrong password' });
 });
 
-// --- FIXED: /embed with SUBTITLES OPTION ---
+// --- FIXED: /embed — SUBTITLES ONLY IF ENABLED ---
 app.get('/api/movies/:id/embed', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   try {
     const { movieId } = jwt.verify(token, JWT_SECRET);
-    const { rows } = await pool.query('SELECT imdb_id, type, subtitles_enabled FROM movies WHERE id = $1', [movieId]);
+    const { rows } = await pool.query(
+      'SELECT imdb_id, type, subtitles_enabled FROM movies WHERE id = $1',
+      [movieId]
+    );
     if (!rows[0]) return res.json({ ok: false, error: 'Not found' });
 
     const { imdb_id, type, subtitles_enabled } = rows[0];
@@ -340,7 +366,7 @@ app.get('/api/movies/:id/embed', async (req, res) => {
       : `https://vidsrc.me/embed/tv/${imdb_id}`;
 
     if (subtitles_enabled) {
-      url += '?sub=en'; // vidsrc.me supports ?sub=en
+      url += '?sub=en';
     }
 
     res.json({ ok: true, url });
