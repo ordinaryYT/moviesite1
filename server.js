@@ -403,7 +403,7 @@ app.get('/api/admin/password-status', requireAdmin, async (req, res) => {
   res.json({ ok: true, disabled: passwordsDisabled });
 });
 
-// --- FIXED: /authorize (safe JSON parsing) ---
+// --- FIXED: /authorize (100% safe JSON parsing) ---
 app.post('/api/movies/:id/authorize', async (req, res) => {
   try {
     const id = req.params.id;
@@ -427,28 +427,30 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
 
     const { password_hashes, one_time_password_hashes } = r.rows[0];
 
-    // FIXED: Safe JSON parsing
+    // --- SAFE JSON PARSING ---
     let regularHashes = [];
     let oneTimeHashes = [];
 
-    try {
-      if (password_hashes) {
+    // Parse password_hashes
+    if (password_hashes && typeof password_hashes === 'string' && password_hashes.trim() !== '') {
+      try {
         const parsed = JSON.parse(password_hashes);
         regularHashes = Array.isArray(parsed) ? parsed : [];
+      } catch (err) {
+        console.error(`Corrupted password_hashes for ID ${id}:`, password_hashes);
+        regularHashes = [];
       }
-    } catch (err) {
-      console.error(`Invalid JSON in password_hashes for content ID ${id}:`, err);
-      regularHashes = [];
     }
 
-    try {
-      if (one_time_password_hashes) {
+    // Parse one_time_password_hashes
+    if (one_time_password_hashes && typeof one_time_password_hashes === 'string' && one_time_password_hashes.trim() !== '') {
+      try {
         const parsed = JSON.parse(one_time_password_hashes);
         oneTimeHashes = Array.isArray(parsed) ? parsed : [];
+      } catch (err) {
+        console.error(`Corrupted one_time_password_hashes for ID ${id}:`, one_time_password_hashes);
+        oneTimeHashes = [];
       }
-    } catch (err) {
-      console.error(`Invalid JSON in one_time_password_hashes for content ID ${id}:`, err);
-      oneTimeHashes = [];
     }
 
     // Check per-movie one-time passwords
