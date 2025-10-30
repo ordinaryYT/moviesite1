@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>OM Player</title>
   <style>
+    /* YOUR ORIGINAL STYLES — UNCHANGED */
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
     body { background: #121212; color: #fff; line-height: 1.6; }
     .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
@@ -122,6 +123,7 @@
           <label>One-Time Passwords (comma separated)</label>
           <input type="text" id="oneTimePasswords" placeholder="ot1, ot2" />
         </div>
+        <!-- ADDED: SUBTITLES CHECKBOX -->
         <div class="form-group">
           <label>
             <input type="checkbox" id="subtitlesEnabled"> Enable Subtitles (default: off)
@@ -144,7 +146,6 @@
     let selectedEpisode = null;
     let adminToken = null;
 
-    // Load movies
     async function loadMovies() {
       try {
         const res = await fetch(API + '/api/movies');
@@ -158,7 +159,6 @@
       }
     }
 
-    // Render movies
     function renderMovies(list) {
       const grid = document.getElementById('moviesGrid');
       grid.innerHTML = '';
@@ -177,7 +177,6 @@
       });
     }
 
-    // Search
     function searchMovies() {
       const query = document.getElementById('searchInput').value.toLowerCase();
       const filtered = movies.filter(m => 
@@ -187,7 +186,6 @@
       renderMovies(filtered);
     }
 
-    // Open password modal
     function openPasswordModal(movie) {
       currentMovieId = movie.id;
       document.getElementById('modalTitle').textContent = movie.title;
@@ -200,7 +198,6 @@
       document.getElementById('passwordModal').style.display = 'none';
     }
 
-    // Submit password
     async function submitPassword() {
       const pass = document.getElementById('passwordInput').value;
       if (!pass) return;
@@ -230,7 +227,6 @@
       }
     }
 
-    // Load episodes
     async function loadEpisodes(id) {
       try {
         const res = await fetch(API + `/api/movies/${id}/episodes`);
@@ -295,7 +291,6 @@
       loadPlayer(currentMovieId, selectedSeason, selectedEpisode);
     }
 
-    // Load player
     async function loadPlayer(id, season = null, episode = null) {
       try {
         const res = await fetch(API + `/api/movies/${id}/embed`, {
@@ -352,8 +347,9 @@
               <div>
                 <strong>${m.title}</strong> (${m.type === 'tv_show' ? 'TV' : 'Movie'})
                 <button onclick="deleteMovie(${m.id})" style="background:#dc3545; color:white; border:none; padding:0.3rem 0.6rem; margin-left:0.5rem; border-radius:4px;">Delete</button>
+                <!-- ADDED: SUBTITLES TOGGLE -->
                 <button onclick="toggleSubtitles(${m.id}, ${!m.subtitles_enabled})" 
-                        style="background:${m.subtitles_enabled ? '#28a745' : '#6c757d'}; color:white; border:none; padding:0.3rem 0.6rem; margin-left:0.5rem; border-radius:4px;">
+                        style="background:${m.subtitles_enabled ? '#28a745' : '#6c757d'}; color:white; border:none; padding:0.3rem 0.6rem; margin-left:0.5rem; border-radius:4px; font-size:0.8rem;">
                   Subs ${m.subtitles_enabled ? 'ON' : 'OFF'}
                 </button>
               </div>
@@ -370,7 +366,7 @@
       const type = document.getElementById('movieType').value;
       const cp = document.getElementById('contentPasswords').value.split(',').map(s => s.trim()).filter(s => s);
       const otp = document.getElementById('oneTimePasswords').value.split(',').map(s => s.trim()).filter(s => s);
-      const subtitlesEnabled = document.getElementById('subtitlesEnabled').checked;
+      const subtitlesEnabled = document.getElementById('subtitlesEnabled').checked; // ADDED
 
       if (!title && !imdbId) return alert('Title or IMDb ID required');
 
@@ -381,7 +377,7 @@
             'Content-Type': 'application/json',
             Authorization: `Bearer ${adminToken}`
           },
-          body: JSON.stringify({ name: title, imdbId, contentPasswords: cp, oneTimePasswords: otp, type, subtitlesEnabled })
+          body: JSON.stringify({ name: title, imdbId, contentPasswords: cp, oneTimePasswords: otp, type, subtitlesEnabled }) // ADDED
         });
         const data = await res.json();
         if (data.ok) {
@@ -414,6 +410,7 @@
       } catch (err) {}
     }
 
+    // ADDED: TOGGLE SUBTITLES
     async function toggleSubtitles(id, enable) {
       if (!confirm(`Turn subtitles ${enable ? 'ON' : 'OFF'}?`)) return;
       try {
@@ -436,10 +433,8 @@
       }
     }
 
-    // Init
     loadMovies();
 
-    // Show admin panel if ?admin
     if (window.location.search.includes('admin')) {
       document.getElementById('adminPanel').style.display = 'block';
     }
