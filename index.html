@@ -10,16 +10,28 @@
   header{text-align:center;padding:2rem;position:relative}
   h1{color:#e50914;font-size:2.5rem}
   #adminBtn{position:absolute;top:2rem;right:2rem;background:#e50914;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;font-weight:bold}
-  #searchContainer{max-width:500px;margin:0 auto 2rem auto;padding:0 2rem}
+  #searchContainer{max-width:900px;margin:0 auto 1rem auto;padding:0 2rem}
   #searchInput{width:100%;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem}
   #searchInput:focus{outline:none;border-color:#e50914}
+
+  /* selector row */
+  #selectorRow{max-width:900px;margin:0 auto 1rem auto;padding:0 2rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;justify-content:space-between}
+  .selector-group{display:flex;gap:0.5rem;align-items:center}
+  .selector-btn{padding:0.6rem 1rem;border-radius:8px;border:2px solid #333;background:#111;color:#fff;cursor:pointer;font-weight:600}
+  .selector-btn.active{background:#e50914;color:#fff;border-color:#e50914;box-shadow:0 6px 18px rgba(229,9,20,.25)}
+  #genreSelect{padding:0.6rem 0.75rem;border-radius:8px;border:2px solid #333;background:#111;color:#fff;cursor:pointer}
+
   #movieGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem;padding:2rem;max-width:1400px;margin:0 auto}
-  .movie-card{cursor:pointer;border-radius:12px;overflow:hidden;background:#1a1a1a;transition:.3s}
+  .movie-card{cursor:pointer;border-radius:12px;overflow:hidden;background:#1a1a1a;transition:.3s;position:relative}
   .movie-card:hover{transform:scale(1.05);box-shadow:0 0 20px rgba(229,9,20,.5)}
   .movie-card img{width:100%;height:300px;object-fit:cover}
   .movie-info{padding:1rem;text-align:center}
   .movie-info h3{font-size:1.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .movie-info p{color:#aaa;font-size:.9rem}
+  .fav-icon{position:absolute;top:8px;right:8px;font-size:1.3rem;color:#fff;background:rgba(0,0,0,0.6);border-radius:50%;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.2s;}
+  .fav-icon.active{color:#e50914;background:#fff;}
+
+  /* modals & admin styles kept from your original */
   .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center}
   .modal.active{display:flex}
   .modal-content{background:#1a1a1a;padding:2rem;border-radius:12px;width:90%;max-width:400px;position:relative}
@@ -30,9 +42,10 @@
   .form-group input{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
   .form-group select{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
   .modal-btn{width:100%;padding:0.75rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-top:1rem}
+
   #adminPanel{display:none;padding:2rem;max-width:1400px;margin:0 auto}
   #adminPanel.active{display:block}
-  .admin-actions{margin-bottom:2rem;display:flex;gap:1rem}
+  .admin-actions{margin-bottom:2rem;display:flex;gap:1rem;flex-wrap:wrap}
   .admin-btn{padding:0.75rem 1.5rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold}
   .movie-list-admin{margin-top:2rem}
   .movie-item-admin{display:flex;justify-content:space-between;align-items:center;padding:1rem;background:#1a1a1a;margin-bottom:1rem;border-radius:8px}
@@ -51,13 +64,36 @@
   <h1>ogmovie</h1>
   <button id="adminBtn">Admin</button>
 </header>
+
 <main>
   <div id="searchContainer">
     <input type="text" id="searchInput" placeholder="Search for movies or TV shows..." />
   </div>
+
+  <!-- Selector row: Films / TV Shows / Favorites + genre select -->
+  <div id="selectorRow">
+    <div class="selector-group" id="typeSelectors">
+      <button class="selector-btn active" data-type="all">All</button>
+      <button class="selector-btn" data-type="movie">Films</button>
+      <button class="selector-btn" data-type="tv_show">TV Shows</button>
+      <button class="selector-btn" data-type="favorites">Favorites</button>
+    </div>
+
+    <div class="selector-group">
+      <select id="genreSelect">
+        <option value="all">All Genres</option>
+        <!-- dynamic genres inserted here -->
+      </select>
+    </div>
+  </div>
+
   <div id="movieGrid"></div>
+
+  <!-- Admin panel container preserved -->
   <div id="adminPanel" class="admin-panel"></div>
 </main>
+
+<!-- Login modal -->
 <div id="loginModal" class="modal">
   <div class="modal-content">
     <button class="close-modal" onclick="closeLoginModal()">×</button>
@@ -69,6 +105,8 @@
     <button class="modal-btn" onclick="adminLogin()">Login</button>
   </div>
 </div>
+
+<!-- Add Movie modal -->
 <div id="addMovieModal" class="modal">
   <div class="modal-content">
     <button class="close-modal" onclick="closeAddMovieModal()">×</button>
@@ -96,7 +134,6 @@
       <label for="oneTimePassword">One-Time Passwords (comma-separated, optional):</label>
       <input type="text" id="oneTimePassword" placeholder="otp1,otp2,...">
     </div>
-    <!-- ADDED: SUBTITLES CHECKBOX -->
     <div class="form-group">
       <label>
         <input type="checkbox" id="subtitlesEnabled"> Enable Subtitles (default: off)
@@ -105,6 +142,8 @@
     <button class="modal-btn" onclick="addMovie()">Add Content</button>
   </div>
 </div>
+
+<!-- Password modal -->
 <div id="passwordModal" class="modal">
   <div class="modal-content">
     <button class="close-modal" onclick="closePasswordModal()">×</button>
@@ -117,6 +156,8 @@
     <button class="modal-btn" onclick="verifyMoviePassword()">Watch</button>
   </div>
 </div>
+
+<!-- Global password modal -->
 <div id="globalPasswordModal" class="modal">
   <div class="modal-content">
     <button class="close-modal" onclick="closeGlobalPasswordModal()">×</button>
@@ -132,6 +173,8 @@
     <button class="modal-btn" onclick="addGlobalPassword()">Add Global Password</button>
   </div>
 </div>
+
+<!-- Episode modal -->
 <div id="episodeModal" class="modal">
   <div class="modal-content">
     <button class="close-modal" onclick="closeEpisodeModal()">×</button>
@@ -148,6 +191,8 @@
     <button class="modal-btn" onclick="playSelectedEpisode()">Watch Episode</button>
   </div>
 </div>
+
+<!-- Player -->
 <div id="playerContainer" class="player-container">
   <button class="close-btn" onclick="closePlayer()">X</button>
   <div class="player-wrapper">
@@ -156,7 +201,9 @@
     <div class="bottom-left-overlay"></div>
   </div>
 </div>
+
 <script>
+/* Global variables & DOM refs */
 const API = window.location.origin + '/api';
 const movieGrid = document.getElementById('movieGrid');
 const playerIframe = document.getElementById('playerIframe');
@@ -169,21 +216,82 @@ const passwordModal = document.getElementById('passwordModal');
 const globalPasswordModal = document.getElementById('globalPasswordModal');
 const episodeModal = document.getElementById('episodeModal');
 const searchInput = document.getElementById('searchInput');
+const genreSelect = document.getElementById('genreSelect');
+const typeSelectors = document.getElementById('typeSelectors');
+
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
 let selectedShow = null;
 let episodeData = null;
-let lastPassword = null;
 let authToken = null;
 
-function filterMovies(searchTerm) {
-  const filteredMovies = currentMovies.filter(m => 
-    m.title.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-  displayMovies(filteredMovies);
+// user token for per-user favorites
+let userToken = localStorage.getItem('user_token');
+if (!userToken) {
+  userToken = 'usr-' + Math.random().toString(36).substr(2, 12);
+  localStorage.setItem('user_token', userToken);
 }
 
+let userFavorites = new Set();
+let currentViewType = 'all'; // 'all' | 'movie' | 'tv_show' | 'favorites'
+let currentGenre = 'all';
+let currentSearch = '';
+
+/* --- Helper: Fetch and update genres dropdown --- */
+async function loadGenres() {
+  try {
+    const res = await fetch(API + '/genres');
+    const data = await res.json();
+    if (data.ok) {
+      // clear, then add All + server-provided genres
+      genreSelect.innerHTML = '<option value="all">All Genres</option>';
+      data.genres.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g.toLowerCase();
+        opt.textContent = g;
+        genreSelect.appendChild(opt);
+      });
+    }
+  } catch (e) { console.error('Failed loading genres', e); }
+}
+
+/* --- Helper: Load user favorites from server --- */
+async function loadFavoritesFromServer() {
+  try {
+    const res = await fetch(API + `/favorites?user=${encodeURIComponent(userToken)}`);
+    const data = await res.json();
+    if (data.ok) {
+      userFavorites = new Set(data.favorites || []);
+    } else {
+      userFavorites = new Set();
+    }
+  } catch (e) {
+    console.error('Failed to load favorites', e);
+    userFavorites = new Set();
+  }
+}
+
+/* --- Favorite toggle via server --- */
+async function toggleFavoriteServer(id) {
+  try {
+    const res = await fetch(API + '/favorites/' + id, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: userToken })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      if (data.favorited) userFavorites.add(id);
+      else userFavorites.delete(id);
+      applyFilters(); // refresh display to update icons if needed
+    }
+  } catch (e) {
+    console.error('Failed to toggle favorite', e);
+  }
+}
+
+/* --- Poster helper (TVMaze fallback) --- */
 async function getMoviePoster(title, year='') {
   try {
     const response = await fetch(
@@ -210,34 +318,94 @@ async function getMoviePoster(title, year='') {
   )}`;
 }
 
+/* --- Create single movie card (uses server favorites) --- */
 async function createMovieCard(movie) {
   try {
-    let img = movie.image;
-    const year = movie.year || 'N/A';
-    const poster = await getMoviePoster(movie.title, year);
-    if (!poster.includes('placeholder.com')) img = poster;
+    const poster = await getMoviePoster(movie.title);
     const card = document.createElement('div');
     card.className = 'movie-card';
+    card.dataset.id = movie.id;
     card.innerHTML = `
-      <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
-      <div class="movie-info"><h3>${movie.title}</h3><p>${year} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p></div>`;
-    card.onclick = () => requestMoviePassword(movie.id, movie.title, movie.type);
+      <img src="${poster}" alt="${movie.title}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+      <div class="fav-icon ${userFavorites.has(movie.id) ? 'active' : ''}" title="Toggle favorite"></div>
+      <div class="movie-info"><h3>${movie.title}</h3><p>${movie.year || 'N/A'} • ${movie.type === 'movie' ? 'Movie' : 'TV Show'} • ${movie.genre || 'Unknown'}</p></div>`;
+    // click to request password/play
+    card.addEventListener('click', (e) => {
+      const targetIsFav = e.target.closest('.fav-icon');
+      if (targetIsFav) return; // avoid opening when clicking fav
+      requestMoviePassword(movie.id, movie.title, movie.type);
+    });
+
+    // fav icon click
+    const favIcon = card.querySelector('.fav-icon');
+    favIcon.textContent = userFavorites.has(movie.id) ? '❤️' : '🤍';
+    favIcon.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleFavoriteServer(movie.id);
+    });
+
     movieGrid.appendChild(card);
   } catch (e) {
-    console.error(e);
+    console.error('createMovieCard error', e);
   }
 }
 
+/* --- Display movies array --- */
 function displayMovies(movies) {
   movieGrid.innerHTML = '';
-  if (movies.length === 0) {
-    movieGrid.innerHTML = 
-      '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
+  if (!movies || movies.length === 0) {
+    movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
     return;
   }
   movies.forEach(createMovieCard);
 }
 
+/* --- Filter & search logic (type, genre, favorites, search) --- */
+function applyFilters() {
+  let filtered = [...currentMovies];
+  currentSearch = searchInput.value.trim().toLowerCase();
+  if (currentSearch) {
+    filtered = filtered.filter(m => m.title.toLowerCase().includes(currentSearch));
+  }
+
+  // Type view
+  if (currentViewType === 'movie') {
+    filtered = filtered.filter(m => m.type === 'movie');
+  } else if (currentViewType === 'tv_show') {
+    filtered = filtered.filter(m => m.type === 'tv_show');
+  } else if (currentViewType === 'favorites') {
+    filtered = filtered.filter(m => userFavorites.has(m.id));
+  }
+
+  // Genre filter
+  if (currentGenre && currentGenre !== 'all') {
+    filtered = filtered.filter(m => (m.genre || '').toLowerCase() === currentGenre);
+  }
+
+  displayMovies(filtered);
+}
+
+/* --- Load movies from server --- */
+async function loadMovies() {
+  movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">Loading...</p>';
+  try {
+    const res = await fetch(API + '/movies');
+    const data = await res.json();
+    if (!data.ok || !data.movies) {
+      movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">No movies found.</p>';
+      return;
+    }
+    currentMovies = data.movies.map(m => ({ ...m, genre: (m.genre || 'Unknown') }));
+    await loadFavoritesFromServer();
+    await loadGenres();
+    applyFilters();
+  } catch (err) {
+    console.error('Error loading movies', err);
+    movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">Error loading movies.</p>';
+  }
+}
+
+/* --- UI & Admin functions preserved from your original file (login, add movie, etc.) --- */
 function openAdminPanel() { loginModal.classList.add('active'); }
 function closeLoginModal() { loginModal.classList.remove('active'); }
 function closeAddMovieModal() { addMovieModal.classList.remove('active'); }
@@ -261,7 +429,6 @@ async function adminLogin() {
       showAdminPanel();
       loadAdminMovies();
       loadGlobalPasswords();
-      checkPasswordStatus();
     } else alert('Invalid password');
   } catch (err) {
     console.error(err);
@@ -296,14 +463,14 @@ function exitAdmin() {
 
 function openAddMovieModal() { addMovieModal.classList.add('active'); }
 function openGlobalPasswordModal() { globalPasswordModal.classList.add('active'); }
-
+<script>
 async function addMovie() {
   const title = document.getElementById('movieTitle').value;
   const imdbId = document.getElementById('movieImdbId').value;
   const type = document.getElementById('contentType').value;
   const passwords = document.getElementById('moviePassword').value.split(',').map(p => p.trim()).filter(p => p);
   const oneTimePasswords = document.getElementById('oneTimePassword').value.split(',').map(p => p.trim()).filter(p => p);
-  const subtitlesEnabled = document.getElementById('subtitlesEnabled').checked; // ADDED
+  const subtitlesEnabled = document.getElementById('subtitlesEnabled').checked;
 
   if (!title && !imdbId) return alert('Please provide title or IMDb ID');
   try {
@@ -313,14 +480,12 @@ async function addMovie() {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${adminToken}`
       },
-      body: JSON.stringify({ name: title, imdbId, contentPasswords: passwords, oneTimePasswords, type, subtitlesEnabled }) // ADDED
+      body: JSON.stringify({ name: title, imdbId, contentPasswords: passwords, oneTimePasswords, type, subtitlesEnabled })
     });
     const data = await res.json();
     if (data.ok) {
-      alert('Content added successfully');
+      alert('Content added successfully (genre: ' + (data.genre || 'Unknown') + ')');
       closeAddMovieModal();
-      document.getElementById('subtitlesEnabled').checked = false;
-      loadAdminMovies();
       loadMovies();
     } else alert('Error: ' + data.error);
   } catch (err) {
@@ -369,10 +534,9 @@ async function loadAdminMovies() {
           const div = document.createElement('div');
           div.className = 'movie-item-admin';
           div.innerHTML = `
-            <div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'})</div>
+            <div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'}, ${movie.genre || 'Unknown'})</div>
             <div>
               <button onclick="deleteMovie(${movie.id})">Delete</button>
-              <!-- ADDED: SUBTITLES TOGGLE -->
               <button onclick="toggleSubtitles(${movie.id}, ${!movie.subtitles_enabled})" 
                       style="background:${movie.subtitles_enabled ? '#28a745' : '#6c757d'}; margin-left:0.5rem;">
                 Subs ${movie.subtitles_enabled ? 'ON' : 'OFF'}
@@ -387,7 +551,6 @@ async function loadAdminMovies() {
   }
 }
 
-// ADDED: TOGGLE SUBTITLES
 async function toggleSubtitles(id, enable) {
   if (!confirm(`Turn subtitles ${enable ? 'ON' : 'OFF'}?`)) return;
   try {
@@ -444,7 +607,7 @@ async function loadGlobalPasswords() {
           const item = document.createElement('div');
           item.className = 'movie-item-admin';
           item.innerHTML = `
-            <div>${pwd.is_one_time ? 'One-Time' : 'Regular'} Password (Created: ${new Date(pwd.created_at).toLocaleString()})</div>
+            <div>${pwd.is_one_time ? 'One-Time' : 'Regular'} Password (Created: ${new Date(pwd.created_at || Date.now()).toLocaleString()})</div>
             <button onclick="deleteGlobalPassword(${pwd.id})">Delete</button>`;
           globalPasswordList.appendChild(item);
         });
@@ -471,6 +634,7 @@ async function deleteGlobalPassword(id) {
   }
 }
 
+/* --- Password status & toggle (admin) --- */
 async function checkPasswordStatus() {
   try {
     const res = await fetch(API + '/admin/password-status', {
@@ -483,7 +647,7 @@ async function checkPasswordStatus() {
       btn.onclick = togglePasswords;
     }
   } catch (err) {
-    console.error('Failed to check password status:', err);
+    // optional
   }
 }
 
@@ -504,6 +668,7 @@ async function togglePasswords() {
   }
 }
 
+/* --- Request movie password flow --- */
 function requestMoviePassword(movieId, title, type) {
   selectedMovieId = movieId;
   selectedShow = { id: movieId, title, type };
@@ -545,6 +710,7 @@ async function verifyMoviePassword() {
   }
 }
 
+/* --- Episode selection & play --- */
 async function requestEpisodeSelection() {
   try {
     const res = await fetch(API + '/movies/' + selectedMovieId + '/episodes');
@@ -609,6 +775,7 @@ async function playSelectedEpisode() {
   }
 }
 
+/* --- Player controls --- */
 function showPlayer(url) {
   playerIframe.src = url;
   playerContainer.classList.add('active');
@@ -624,27 +791,33 @@ function closePlayer() {
   authToken = null;
 }
 
-async function loadMovies() {
-  movieGrid.innerHTML = 
-    '<p style="text-align:center;color:#aaa;">Loading...</p>';
-  try {
-    const res = await fetch(API + '/movies');
-    const data = await res.json();
-    if (!data.ok || !data.movies.length) {
-      movieGrid.innerHTML = 
-        '<p style="text-align:center;color:#aaa;">No movies found.</p>';
-      return;
-    }
-    currentMovies = data.movies;
-    displayMovies(currentMovies);
-  } catch (err) {
-    console.error(err);
-    alert('Error loading movies');
-  }
+/* --- Load movies / initial UI wiring --- */
+function attachSelectorEvents() {
+  // type selector buttons
+  const buttons = Array.from(typeSelectors.querySelectorAll('.selector-btn'));
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      buttons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const t = btn.dataset.type;
+      currentViewType = t;
+      applyFilters();
+    });
+  });
+
+  // genre select
+  genreSelect.addEventListener('change', (e) => {
+    currentGenre = e.target.value;
+    applyFilters();
+  });
+
+  // search input
+  searchInput.addEventListener('input', () => {
+    applyFilters();
+  });
 }
 
 adminBtn.addEventListener('click', openAdminPanel);
-searchInput.addEventListener('input', e => filterMovies(e.target.value));
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closePlayer();
@@ -656,6 +829,8 @@ document.addEventListener('keydown', e => {
   }
 });
 
+/* --- Load initial data and attach handlers --- */
+attachSelectorEvents();
 loadMovies();
 </script>
 </body>
