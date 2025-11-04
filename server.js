@@ -235,10 +235,8 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   );
   if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
 
-  let regular = [], ot = [];
-
-  try { regular = JSON.parse(rows[0].password_hashes || '[]'); } catch {}
-  try { ot = JSON.parse(rows[0].one_time_password_hashes || '[]'); } catch {}
+  let regular = JSON.parse(rows[0].password_hashes || '[]') || [];
+  let ot = JSON.parse(rows[0].one_time_password_hashes || '[]') || [];
 
   for (let i = 0; i < ot.length; i++) {
     if (await bcrypt.compare(password, ot[i])) {
@@ -298,18 +296,21 @@ app.get('/api/movies/:id/trailer', async (req, res) => {
   if (!rows[0]?.imdb_id) return res.json({ ok: false });
 
   try {
-    const ytRes = await fetch(`https://api.themoviedb.org/3/find/${rows[0].imdb_id}?api_key=15d2ea6d0dc1d476efbca3eba2bcb7f0&external_source=imdb_id`);
-    const data = await ytRes.json();
+    const tmdbRes = await fetch(`https://api.themoviedb.org/3/find/${rows[0].imdb_id}?api_key=15d2ea6d0dc1d476efbca3eba2bcb7f0&external_source=imdb_id`);
+    const data = await tmdbRes.json();
     const id = data.movie_results?.[0]?.id || data.tv_results?.[0]?.id;
     if (!id) throw new Error();
 
-    const trailerRes = await fetch(`https://api.themoviedb.org/3/${data.movie_results?.[0] ? 'movie' : 'tv'}/${id}/videos?api_key=15d2ea6d0dc1d476efbca3eba2bcb7f0`);
-    const trailerData = await trailerRes.json();
-    const trailer = trailerData.results.find(v => v.type === 'Trailer' && v.site === 'YouTube');
+    const videoRes = await fetch(`https://api.themoviedb.org/3/${data.movie_results?.[0] ? 'movie' : 'tv'}/${id}/videos?api_key=15d2ea6d0dc1d476efbca3eba2bcb7f0`);
+    const videoData = await videoRes.json();
+    const trailer = videoData.results.find(v => v.type === 'Trailer' && v.site === 'YouTube');
     if (trailer) {
       res.json({ ok: true, url: `https://www.youtube.com/embed/${trailer.key}` });
-    } else throw new Error();
-  } catch {
+    } else {
+      res.json({ ok: false });
+    }
+  } catch (err) {
+    console.error('Trailer error:', err);
     res.json({ ok: false });
   }
 });
@@ -368,12 +369,10 @@ app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => 
 });
 
 app.post('/api/favorites', async (req, res) => {
-  const { movieId, clientId } = req.body;
   res.json({ ok: true });
 });
 
 app.delete('/api/favorites', async (req, res) => {
-  const { movieId, clientId } = req.body;
   res.json({ ok: true });
 });
 
