@@ -321,15 +321,15 @@ async function loadFavorites() {
   favorites = data.ok ? data.movies.map(m => m.id) : [];
 }
 
-// Trailer
+// Trailer — FIXED
 async function playTrailer(movieId) {
   const res = await fetch(API + '/movies/' + movieId + '/trailer');
   const data = await res.json();
-  if (data.ok) {
+  if (data.ok && data.url) {
     trailerIframe.src = data.url;
     trailerModal.classList.add('active');
   } else {
-    alert('Trailer not found');
+    alert('No trailer found');
   }
 }
 
@@ -355,7 +355,7 @@ async function loadMovies() {
   }
 }
 
-// Password & Player
+// Password & Player — FIXED
 function requestMoviePassword(id, title, type) {
   selectedMovieId = id;
   selectedShow = { id, title, type };
@@ -364,25 +364,31 @@ function requestMoviePassword(id, title, type) {
 }
 
 async function verifyMoviePassword() {
-  const password = document.getElementById('moviePasswordInput').value;
+  const password = document.getElementById('moviePasswordInput').value.trim();
   if (!password) return alert('Enter password');
-  const res = await fetch(API + `/movies/${selectedMovieId}/authorize`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password })
-  });
-  const data = await res.json();
-  if (!data.ok) return alert('Wrong password');
-  authToken = data.token;
-
-  if (selectedShow.type === 'movie') {
-    const embedRes = await fetch(API + `/movies/${selectedMovieId}/embed`, {
-      headers: { Authorization: `Bearer ${authToken}` }
+  
+  try {
+    const res = await fetch(API + `/movies/${selectedMovieId}/authorize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
     });
-    const embedData = await embedRes.json();
-    if (embedData.ok) showPlayer(embedData.url);
-  } else {
-    await loadEpisodes();
+    const data = await res.json();
+    if (!data.ok) return alert('Wrong password');
+    authToken = data.token;
+
+    if (selectedShow.type === 'movie') {
+      const embedRes = await fetch(API + `/movies/${selectedMovieId}/embed`, {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      const embedData = await embedRes.json();
+      if (embedData.ok) showPlayer(embedData.url);
+      else alert('Embed error');
+    } else {
+      await loadEpisodes();
+    }
+  } catch (err) {
+    alert('Connection error');
   }
 }
 
@@ -440,7 +446,7 @@ function closePlayer() {
   authToken = null;
 }
 
-// Admin
+// Admin — FROM YOUR ORIGINAL
 function openAdminPanel() { loginModal.classList.add('active'); }
 function closeLoginModal() { loginModal.classList.remove('active'); }
 function closeAddMovieModal() { addMovieModal.classList.remove('active'); }
