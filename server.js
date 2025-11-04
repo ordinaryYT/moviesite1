@@ -66,7 +66,6 @@ async function ensureTables() {
       used BOOLEAN DEFAULT FALSE
     )
   `);
-  // NEW: Persistent config for code generation
   await pool.query(`
     CREATE TABLE IF NOT EXISTS bot_config (
       key TEXT PRIMARY KEY,
@@ -78,7 +77,7 @@ async function ensureTables() {
     ON CONFLICT (key) DO NOTHING
   `);
 
-  // NEW: Favorites table
+  // Favorites table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS favorites (
       id SERIAL PRIMARY KEY,
@@ -185,30 +184,36 @@ if (process.env.DISCORD_BOT_TOKEN) {
   client.login(process.env.DISCORD_BOT_TOKEN).catch(console.error);
 }
 
-ensureTables();// --- API: Get Movies ---
+ensureTables();
+
+// --- API: Get Movies ---
 app.get('/api/movies', async (req, res) => {
   const { rows } = await pool.query('SELECT id, title, type, year, image, subtitles_enabled FROM movies ORDER BY created_at DESC');
   res.json({ ok: true, movies: rows });
 });
 
-// NEW: Favorites endpoints
+// --- NEW: Favorites Endpoints ---
 app.post('/api/favorites', async (req, res) => {
   const { movieId, clientId } = req.body;
+  if (!movieId || !clientId) return res.status(400).json({ ok: false, error: 'Missing data' });
   try {
     await pool.query('INSERT INTO favorites (movie_id, client_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [movieId, clientId]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ ok: false, error: 'Error adding favorite' });
+    console.error('Add favorite error:', err);
+    res.status(500).json({ ok: false, error: 'DB error' });
   }
 });
 
 app.delete('/api/favorites', async (req, res) => {
   const { movieId, clientId } = req.body;
+  if (!movieId || !clientId) return res.status(400).json({ ok: false, error: 'Missing data' });
   try {
     await pool.query('DELETE FROM favorites WHERE movie_id = $1 AND client_id = $2', [movieId, clientId]);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ ok: false, error: 'Error removing favorite' });
+    console.error('Remove favorite error:', err);
+    res.status(500).json({ ok: false, error: 'DB error' });
   }
 });
 
@@ -224,7 +229,37 @@ app.get('/api/favorites/:clientId', async (req, res) => {
     `, [clientId]);
     res.json({ ok: true, movies: rows });
   } catch (err) {
-    res.status(500).json({ ok: false, error: 'Error fetching favorites' });
+    console.error('Fetch favorites error:', err);
+    res.status(500).json({ ok: false, error: 'DB error' });
+  }
+});
+
+// --- NEW: Trailer Endpoint ---
+app.get('/api/movies/:id/trailer', async (req, res) => {
+  const id = req.params.id;
+  try {
+    const { rows } = await pool.query('SELECT imdb_id FROM movies WHERE id = $1', [id]);
+    if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
+
+    const imdbId = rows[0].imdb_id;
+    const key = process.env.YOUTUBE_API_KEY;
+    if (!key) return res.json({ ok: false, error: 'YouTube API key not set' });
+
+    const searchRes = await fetch(
+      `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${imdbId}+official+trailer&type=video&key=${key}&maxResults=1`
+    );
+    const data = await searchRes.json();
+
+    if (!data.items || data.items.length === 0) {
+      return res.json({ ok: false, error: 'No trailer found' });
+    }
+
+    const videoId = data.items[0].id.videoId;
+    const url = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
+    res.json({ ok: true, url });
+  } catch (err) {
+    console.error('Trailer fetch error:', err);
+    res.json({ ok: false, error: 'Failed to fetch trailer' });
   }
 });
 
@@ -318,7 +353,7 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
   }
 
   const imdbId = rows[0].imdb_id;
-  try {
+   try {
     const showRes = await fetch(`https://api.tvmaze.com/lookup/shows?imdb=${imdbId}`);
     if (!showRes.ok) throw new Error();
     const show = await showRes.json();
@@ -396,7 +431,7 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   res.json({ ok: false, error: 'Wrong password' });
 });
 
-// --- FIXED: /embed — SUBTITLES ONLY IF ENABLED ---
+// --- API: Embed (with subtitles) ---
 app.get('/api/movies/:id/embed', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   try {
