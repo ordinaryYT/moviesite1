@@ -66,6 +66,7 @@ async function ensureTables() {
       used BOOLEAN DEFAULT FALSE
     )
   `);
+  // NEW: Persistent config for code generation
   await pool.query(`
     CREATE TABLE IF NOT EXISTS bot_config (
       key TEXT PRIMARY KEY,
@@ -77,12 +78,13 @@ async function ensureTables() {
     ON CONFLICT (key) DO NOTHING
   `);
 
-  // NEW: Favorites table (per-browser, no login)
+  // NEW: Favorites table
   await pool.query(`
     CREATE TABLE IF NOT EXISTS favorites (
+      id SERIAL PRIMARY KEY,
       movie_id INTEGER REFERENCES movies(id) ON DELETE CASCADE,
       client_id TEXT NOT NULL,
-      PRIMARY KEY (movie_id, client_id)
+      UNIQUE (movie_id, client_id)
     )
   `);
 
@@ -183,42 +185,30 @@ if (process.env.DISCORD_BOT_TOKEN) {
   client.login(process.env.DISCORD_BOT_TOKEN).catch(console.error);
 }
 
-ensureTables();
-
-// --- API: Get Movies ---
+ensureTables();// --- API: Get Movies ---
 app.get('/api/movies', async (req, res) => {
   const { rows } = await pool.query('SELECT id, title, type, year, image, subtitles_enabled FROM movies ORDER BY created_at DESC');
   res.json({ ok: true, movies: rows });
 });
 
-// --- NEW: FAVORITES API ---
+// NEW: Favorites endpoints
 app.post('/api/favorites', async (req, res) => {
   const { movieId, clientId } = req.body;
-  if (!movieId || !clientId) return res.status(400).json({ ok: false, error: 'Missing data' });
   try {
-    await pool.query(
-      'INSERT INTO favorites (movie_id, client_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-      [movieId, clientId]
-    );
+    await pool.query('INSERT INTO favorites (movie_id, client_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [movieId, clientId]);
     res.json({ ok: true });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: 'DB error' });
+    res.status(500).json({ ok: false, error: 'Error adding favorite' });
   }
 });
 
 app.delete('/api/favorites', async (req, res) => {
   const { movieId, clientId } = req.body;
-  if (!movieId || !clientId) return res.status(400).json({ ok: false, error: 'Missing data' });
   try {
-    await pool.query(
-      'DELETE FROM favorites WHERE movie_id = $1 AND client_id = $2',
-      [movieId, clientId]
-    );
+    await pool.query('DELETE FROM favorites WHERE movie_id = $1 AND client_id = $2', [movieId, clientId]);
     res.json({ ok: true });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: 'DB error' });
+    res.status(500).json({ ok: false, error: 'Error removing favorite' });
   }
 });
 
@@ -226,20 +216,19 @@ app.get('/api/favorites/:clientId', async (req, res) => {
   const { clientId } = req.params;
   try {
     const { rows } = await pool.query(`
-      SELECT m.id, m.title, m.type, m.year, m.image, m.subtitles_enabled
-      FROM favorites f
-      JOIN movies m ON f.movie_id = m.id
-      WHERE f.client_id = $1
+      SELECT m.id, m.title, m.type, m.year, m.image, m.subtitles_enabled 
+      FROM favorites f 
+      JOIN movies m ON f.movie_id = m.id 
+      WHERE f.client_id = $1 
       ORDER BY m.created_at DESC
     `, [clientId]);
     res.json({ ok: true, movies: rows });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ ok: false, error: 'DB error' });
+    res.status(500).json({ ok: false, error: 'Error fetching favorites' });
   }
 });
 
-// --- Admin Login ---
+// --- API: Admin Login ---
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
   if (password === ADMIN_PASSWORD) {
@@ -261,7 +250,7 @@ const requireAdmin = (req, res, next) => {
   }
 };
 
-// --- Add Movie ---
+// --- API: Add Movie ---
 app.post('/api/movies', requireAdmin, async (req, res) => {
   const { name, imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie', subtitlesEnabled = false } = req.body;
   if (!name && !imdbId) return res.status(400).json({ ok: false, error: 'Title or IMDb ID required' });
@@ -278,7 +267,7 @@ app.post('/api/movies', requireAdmin, async (req, res) => {
   res.json({ ok: true, movieId: rows[0].id });
 });
 
-// --- Update Subtitles ---
+// --- API: Update Subtitles ---
 app.patch('/api/movies/:id/subtitles', requireAdmin, async (req, res) => {
   const { subtitlesEnabled } = req.body;
   if (typeof subtitlesEnabled !== 'boolean') {
@@ -293,13 +282,13 @@ app.patch('/api/movies/:id/subtitles', requireAdmin, async (req, res) => {
   res.json({ ok: rowCount > 0 });
 });
 
-// --- Delete Movie ---
+// --- API: Delete Movie ---
 app.delete('/api/movies/:id', requireAdmin, async (req, res) => {
   const { rowCount } = await pool.query('DELETE FROM movies WHERE id = $1', [req.params.id]);
   res.json({ ok: rowCount > 0 });
 });
 
-// --- Global Passwords ---
+// --- API: Global Passwords ---
 app.post('/api/admin/global-passwords', requireAdmin, async (req, res) => {
   const { password, isOneTime } = req.body;
   const hash = await bcrypt.hash(password, 10);
@@ -320,7 +309,7 @@ app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => 
   res.json({ ok: rowCount > 0 });
 });
 
-// --- Episodes ---
+// --- API: Episodes ---
 app.get('/api/movies/:id/episodes', async (req, res) => {
   const id = req.params.id;
   const { rows } = await pool.query('SELECT imdb_id, type FROM movies WHERE id = $1', [id]);
@@ -354,7 +343,7 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
   }
 });
 
-// --- Authorize ---
+// --- API: Authorize ---
 app.post('/api/movies/:id/authorize', async (req, res) => {
   const { password } = req.body;
   if (!password) return res.json({ ok: false, error: 'Password required' });
@@ -407,7 +396,7 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   res.json({ ok: false, error: 'Wrong password' });
 });
 
-// --- Embed ---
+// --- FIXED: /embed — SUBTITLES ONLY IF ENABLED ---
 app.get('/api/movies/:id/embed', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   try {
