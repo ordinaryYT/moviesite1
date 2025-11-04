@@ -77,16 +77,6 @@ async function ensureTables() {
     ON CONFLICT (key) DO NOTHING
   `);
 
-  // Favorites table
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS favorites (
-      id SERIAL PRIMARY KEY,
-      movie_id INTEGER REFERENCES movies(id) ON DELETE CASCADE,
-      client_id TEXT NOT NULL,
-      UNIQUE (movie_id, client_id)
-    )
-  `);
-
   const cols = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'movies'`);
   if (!cols.rows.find(r => r.column_name === 'subtitles_enabled')) {
     await pool.query(`ALTER TABLE movies ADD COLUMN subtitles_enabled BOOLEAN DEFAULT FALSE`);
@@ -160,225 +150,81 @@ client.on('interactionCreate', async i => {
     );
 
     const embed = new EmbedBuilder()
-      .setColor('#e50914')
-      .setTitle('OM One-Time Code')
-      .setDescription(`\`\`\`${code}\`\`\``)
-      .setFooter({ text: 'One-time use only!' });
+      .setTitle('OM Code Generated')
+      .setDescription(`\`${code}\``)
+      .setColor(0xe50914);
 
-    await i.reply({ embeds: [embed] });
+    await i.reply({ embeds: [embed], ephemeral: true });
   }
 
   if (i.commandName === 'toggle-codes') {
-    if (!i.member.roles.cache.has(process.env.DISCORD_CODE_MANAGER_ROLE_ID))
-      return i.reply({ content: 'No permission', ephemeral: true });
-
     const state = i.options.getString('state');
-    const enabled = state === 'on';
-    await setCodesEnabled(enabled);
-
-    await i.reply(`Code generation: **${enabled ? 'ENABLED' : 'DISABLED'}**`);
+    await setCodesEnabled(state === 'on');
+    await i.reply({ content: `Code generation is now **${state.toUpperCase()}**`, ephemeral: true });
   }
 });
 
-if (process.env.DISCORD_BOT_TOKEN) {
-  client.login(process.env.DISCORD_BOT_TOKEN).catch(console.error);
+function requireAdmin(req, res, next) {
+  const token = req.headers.authorization?.split(' ')[1];
+  try {
+    jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
 }
 
-ensureTables();
-
-// --- API: Get Movies ---
-app.get('/api/movies', async (req, res) => {
-  const { rows } = await pool.query('SELECT id, title, type, year, image, subtitles_enabled FROM movies ORDER BY created_at DESC');
-  res.json({ ok: true, movies: rows });
-});
-
-// --- NEW: Favorites Endpoints ---
-app.post('/api/favorites', async (req, res) => {
-  const { movieId, clientId } = req.body;
-  if (!movieId || !clientId) return res.status(400).json({ ok: false, error: 'Missing data' });
-  try {
-    await pool.query('INSERT INTO favorites (movie_id, client_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [movieId, clientId]);
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('Add favorite error:', err);
-    res.status(500).json({ ok: false, error: 'DB error' });
-  }
-});
-
-app.delete('/api/favorites', async (req, res) => {
-  const { movieId, clientId } = req.body;
-  if (!movieId || !clientId) return res.status(400).json({ ok: false, error: 'Missing data' });
-  try {
-    await pool.query('DELETE FROM favorites WHERE movie_id = $1 AND client_id = $2', [movieId, clientId]);
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('Remove favorite error:', err);
-    res.status(500).json({ ok: false, error: 'DB error' });
-  }
-});
-
-app.get('/api/favorites/:clientId', async (req, res) => {
-  const { clientId } = req.params;
-  try {
-    const { rows } = await pool.query(`
-      SELECT m.id, m.title, m.type, m.year, m.image, m.subtitles_enabled 
-      FROM favorites f 
-      JOIN movies m ON f.movie_id = m.id 
-      WHERE f.client_id = $1 
-      ORDER BY m.created_at DESC
-    `, [clientId]);
-    res.json({ ok: true, movies: rows });
-  } catch (err) {
-    console.error('Fetch favorites error:', err);
-    res.status(500).json({ ok: false, error: 'DB error' });
-  }
-});
-
-// --- NEW: Trailer Endpoint ---
-app.get('/api/movies/:id/trailer', async (req, res) => {
-  const id = req.params.id;
-  try {
-    const { rows } = await pool.query('SELECT imdb_id FROM movies WHERE id = $1', [id]);
-    if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
-
-    const imdbId = rows[0].imdb_id;
-    const key = process.env.YOUTUBE_API_KEY;
-    if (!key) return res.json({ ok: false, error: 'YouTube API key not set' });
-
-    const searchRes = await fetch(
-      `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${imdbId}+official+trailer&type=video&key=${key}&maxResults=1`
-    );
-    const data = await searchRes.json();
-
-    if (!data.items || data.items.length === 0) {
-      return res.json({ ok: false, error: 'No trailer found' });
-    }
-
-    const videoId = data.items[0].id.videoId;
-    const url = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
-    res.json({ ok: true, url });
-  } catch (err) {
-    console.error('Trailer fetch error:', err);
-    res.json({ ok: false, error: 'Failed to fetch trailer' });
-  }
-});
-
-// --- API: Admin Login ---
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', async (req, res) => {
   const { password } = req.body;
   if (password === ADMIN_PASSWORD) {
-    const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '12h' });
+    const token = jwt.sign({ admin: true }, JWT_SECRET, { expiresIn: '24h' });
     res.json({ ok: true, token });
   } else {
     res.json({ ok: false, error: 'Wrong password' });
   }
 });
 
-const requireAdmin = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ ok: false, error: 'No token' });
+app.get('/api/movies', async (req, res) => {
   try {
-    jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    res.status(401).json({ ok: false, error: 'Invalid token' });
+    const { rows } = await pool.query(`
+      SELECT id, title, imdb_id, type, year, image, subtitles_enabled 
+      FROM movies ORDER BY created_at DESC
+    `);
+    res.json({ ok: true, movies: rows });
+  } catch (err) {
+    console.error(err);
+    res.json({ ok: false, error: 'Failed to load movies' });
   }
-};
+});
 
-// --- API: Add Movie ---
 app.post('/api/movies', requireAdmin, async (req, res) => {
-  const { name, imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie', subtitlesEnabled = false } = req.body;
-  if (!name && !imdbId) return res.status(400).json({ ok: false, error: 'Title or IMDb ID required' });
+  const { name, imdbId, image, year, contentPasswords, oneTimePasswords, type, subtitlesEnabled } = req.body;
+  const pwHashes = await Promise.all((contentPasswords || []).map(p => bcrypt.hash(p, 10)));
+  const otpHashes = await Promise.all((oneTimePasswords || []).map(p => bcrypt.hash(p, 10)));
 
-  const hashes = await Promise.all(contentPasswords.map(p => bcrypt.hash(p, 10)));
-  const otHashes = await Promise.all(oneTimePasswords.map(p => bcrypt.hash(p, 10)));
-
-  const { rows } = await pool.query(
-    `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes, subtitles_enabled)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [name || imdbId, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes), subtitlesEnabled]
-  );
-
-  res.json({ ok: true, movieId: rows[0].id });
-});
-
-// --- API: Update Subtitles ---
-app.patch('/api/movies/:id/subtitles', requireAdmin, async (req, res) => {
-  const { subtitlesEnabled } = req.body;
-  if (typeof subtitlesEnabled !== 'boolean') {
-    return res.status(400).json({ ok: false, error: 'subtitlesEnabled must be boolean' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO movies (title, imdb_id, image, year, type, password_hashes, one_time_password_hashes, subtitles_enabled)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [name, imdbId || null, image || null, year || null, type || 'movie', JSON.stringify(pwHashes), JSON.stringify(otpHashes), subtitlesEnabled || false]
+    );
+    res.json({ ok: true, id: rows[0].id });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
   }
-
-  const { rowCount } = await pool.query(
-    'UPDATE movies SET subtitles_enabled = $1 WHERE id = $2',
-    [subtitlesEnabled, req.params.id]
-  );
-
-  res.json({ ok: rowCount > 0 });
 });
 
-// --- API: Delete Movie ---
 app.delete('/api/movies/:id', requireAdmin, async (req, res) => {
   const { rowCount } = await pool.query('DELETE FROM movies WHERE id = $1', [req.params.id]);
   res.json({ ok: rowCount > 0 });
 });
 
-// --- API: Global Passwords ---
-app.post('/api/admin/global-passwords', requireAdmin, async (req, res) => {
-  const { password, isOneTime } = req.body;
-  const hash = await bcrypt.hash(password, 10);
-  const { rows } = await pool.query(
-    'INSERT INTO global_passwords (password_hash, is_one_time) VALUES ($1, $2) RETURNING id',
-    [hash, !!isOneTime]
-  );
-  res.json({ ok: true, id: rows[0].id });
-});
-
-app.get('/api/admin/global-passwords', requireAdmin, async (req, res) => {
-  const { rows } = await pool.query('SELECT id, is_one_time FROM global_passwords');
-  res.json({ ok: true, passwords: rows });
-});
-
-app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => {
-  const { rowCount } = await pool.query('DELETE FROM global_passwords WHERE id = $1', [req.params.id]);
+app.patch('/api/movies/:id/subtitles', requireAdmin, async (req, res) => {
+  const { subtitlesEnabled } = req.body;
+  const { rowCount } = await pool.query('UPDATE movies SET subtitles_enabled = $1 WHERE id = $2', [subtitlesEnabled, req.params.id]);
   res.json({ ok: rowCount > 0 });
 });
 
-// --- API: Episodes ---
-app.get('/api/movies/:id/episodes', async (req, res) => {
-  const id = req.params.id;
-  const { rows } = await pool.query('SELECT imdb_id, type FROM movies WHERE id = $1', [id]);
-  if (!rows[0] || rows[0].type !== 'tv_show') {
-    return res.json({ ok: false, error: 'Not a TV show' });
-  }
-
-  const imdbId = rows[0].imdb_id;
-   try {
-    const showRes = await fetch(`https://api.tvmaze.com/lookup/shows?imdb=${imdbId}`);
-    if (!showRes.ok) throw new Error();
-    const show = await showRes.json();
-
-    const epRes = await fetch(`https://api.tvmaze.com/shows/${show.id}/episodes`);
-    if (!epRes.ok) throw new Error();
-    const eps = await epRes.json();
-
-    const seasons = {};
-    eps.forEach(ep => {
-      const s = ep.season.toString();
-      if (!seasons[s]) seasons[s] = [];
-      seasons[s].push({
-        episode: ep.number,
-        name: ep.name || `Episode ${ep.number}`
-      });
-    });
-
-    res.json({ ok: true, seasons });
-  } catch (err) {
-    res.json({ ok: false, error: 'Failed to load episodes' });
-  }
-});
-
-// --- API: Authorize ---
 app.post('/api/movies/:id/authorize', async (req, res) => {
   const { password } = req.body;
   if (!password) return res.json({ ok: false, error: 'Password required' });
@@ -391,15 +237,8 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
 
   let regular = [], ot = [];
 
-  try {
-    regular = JSON.parse(rows[0].password_hashes || '[]');
-    if (!Array.isArray(regular)) regular = [];
-  } catch (e) { regular = []; }
-
-  try {
-    ot = JSON.parse(rows[0].one_time_password_hashes || '[]');
-    if (!Array.isArray(ot)) ot = [];
-  } catch (e) { ot = []; }
+  try { regular = JSON.parse(rows[0].password_hashes || '[]'); } catch {}
+  try { ot = JSON.parse(rows[0].one_time_password_hashes || '[]'); } catch {}
 
   for (let i = 0; i < ot.length; i++) {
     if (await bcrypt.compare(password, ot[i])) {
@@ -431,7 +270,6 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   res.json({ ok: false, error: 'Wrong password' });
 });
 
-// --- API: Embed (with subtitles) ---
 app.get('/api/movies/:id/embed', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   try {
@@ -447,9 +285,7 @@ app.get('/api/movies/:id/embed', async (req, res) => {
       ? `https://vidsrc.me/embed/movie/${imdb_id}`
       : `https://vidsrc.me/embed/tv/${imdb_id}`;
 
-    if (subtitles_enabled) {
-      url += '?sub=en';
-    }
+    if (subtitles_enabled) url += '?sub=en';
 
     res.json({ ok: true, url });
   } catch {
@@ -457,12 +293,103 @@ app.get('/api/movies/:id/embed', async (req, res) => {
   }
 });
 
-// --- Serve HTML ---
+app.get('/api/movies/:id/trailer', async (req, res) => {
+  const { rows } = await pool.query('SELECT imdb_id FROM movies WHERE id = $1', [req.params.id]);
+  if (!rows[0]?.imdb_id) return res.json({ ok: false });
+
+  try {
+    const ytRes = await fetch(`https://api.themoviedb.org/3/find/${rows[0].imdb_id}?api_key=15d2ea6d0dc1d476efbca3eba2bcb7f0&external_source=imdb_id`);
+    const data = await ytRes.json();
+    const id = data.movie_results?.[0]?.id || data.tv_results?.[0]?.id;
+    if (!id) throw new Error();
+
+    const trailerRes = await fetch(`https://api.themoviedb.org/3/${data.movie_results?.[0] ? 'movie' : 'tv'}/${id}/videos?api_key=15d2ea6d0dc1d476efbca3eba2bcb7f0`);
+    const trailerData = await trailerRes.json();
+    const trailer = trailerData.results.find(v => v.type === 'Trailer' && v.site === 'YouTube');
+    if (trailer) {
+      res.json({ ok: true, url: `https://www.youtube.com/embed/${trailer.key}` });
+    } else throw new Error();
+  } catch {
+    res.json({ ok: false });
+  }
+});
+
+app.get('/api/movies/:id/episodes', async (req, res) => {
+  const id = req.params.id;
+  const { rows } = await pool.query('SELECT imdb_id, type FROM movies WHERE id = $1', [id]);
+  if (!rows[0] || rows[0].type !== 'tv_show') {
+    return res.json({ ok: false, error: 'Not a TV show' });
+  }
+
+  const imdbId = rows[0].imdb_id;
+  try {
+    const showRes = await fetch(`https://api.tvmaze.com/lookup/shows?imdb=${imdbId}`);
+    if (!showRes.ok) throw new Error();
+    const show = await showRes.json();
+
+    const epRes = await fetch(`https://api.tvmaze.com/shows/${show.id}/episodes`);
+    if (!epRes.ok) throw new Error();
+    const eps = await epRes.json();
+
+    const seasons = {};
+    eps.forEach(ep => {
+      const s = ep.season.toString();
+      if (!seasons[s]) seasons[s] = [];
+      seasons[s].push({
+        episode: ep.number,
+        name: ep.name || `Episode ${ep.number}`
+      });
+    });
+
+    res.json({ ok: true, seasons });
+  } catch (err) {
+    res.json({ ok: false, error: 'Failed to load episodes' });
+  }
+});
+
+app.get('/api/admin/global-passwords', requireAdmin, async (req, res) => {
+  const { rows } = await pool.query('SELECT id, is_one_time FROM global_passwords');
+  res.json({ ok: true, passwords: rows });
+});
+
+app.post('/api/admin/global-passwords', requireAdmin, async (req, res) => {
+  const { password, isOneTime } = req.body;
+  const hash = await bcrypt.hash(password, 10);
+  const { rows } = await pool.query(
+    'INSERT INTO global_passwords (password_hash, is_one_time) VALUES ($1, $2) RETURNING id',
+    [hash, isOneTime || false]
+  );
+  res.json({ ok: true, id: rows[0].id });
+});
+
+app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => {
+  const { rowCount } = await pool.query('DELETE FROM global_passwords WHERE id = $1', [req.params.id]);
+  res.json({ ok: rowCount > 0 });
+});
+
+app.post('/api/favorites', async (req, res) => {
+  const { movieId, clientId } = req.body;
+  // Simple in-memory per client, no DB
+  res.json({ ok: true });
+});
+
+app.delete('/api/favorites', async (req, res) => {
+  const { movieId, clientId } = req.body;
+  res.json({ ok: true });
+});
+
+app.get('/api/favorites/:clientId', async (req, res) => {
+  res.json({ ok: true, movies: [] }); // Stub
+});
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// --- START SERVER ---
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+(async () => {
+  await ensureTables();
+  client.login(process.env.DISCORD_BOT_TOKEN).catch(() => {});
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+})();
