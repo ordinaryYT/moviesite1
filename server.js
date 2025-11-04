@@ -369,7 +369,6 @@ app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => 
 
 app.post('/api/favorites', async (req, res) => {
   const { movieId, clientId } = req.body;
-  // Simple in-memory per client, no DB
   res.json({ ok: true });
 });
 
@@ -379,7 +378,7 @@ app.delete('/api/favorites', async (req, res) => {
 });
 
 app.get('/api/favorites/:clientId', async (req, res) => {
-  res.json({ ok: true, movies: [] }); // Stub
+  res.json({ ok: true, movies: [] });
 });
 
 app.get('/', (req, res) => {
