@@ -124,6 +124,8 @@
     <h2>Add Content</h2>
     <div class="form-group"><label>Title:</label><input type="text" id="movieTitle"></div>
     <div class="form-group"><label>IMDb ID (optional):</label><input type="text" id="movieImdbId"></div>
+    <div class="form-group"><label>Image URL:</label><input type="text" id="movieImage" placeholder="https://i.imgur.com/abc123.jpg"></div>
+    <div class="form-group"><label>Year:</label><input type="text" id="movieYear" placeholder="2025"></div>
     <div class="form-group"><label>Type:</label>
       <select id="contentType"><option value="movie">Movie</option><option value="tv_show">TV Show</option></select>
     </div>
@@ -213,14 +215,9 @@ let selectedShow = null;
 let authToken = null;
 let episodeData = null;
 
-// Poster
-async function getMoviePoster(title, year = '') {
-  try {
-    const res = await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(title)}`);
-    const data = await res.json();
-    if (data[0]?.show?.image?.medium) return data[0].show.image.medium;
-  } catch {}
-  return `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(title.slice(0,15))}`;
+// YOUR ORIGINAL IMAGE LOGIC — NO FALLBACK
+function getMovieImage(movie) {
+  return movie.image || 'https://via.placeholder.com/300x450/111/ccc?text=No+Image';
 }
 
 // Create Card
@@ -228,7 +225,7 @@ function createMovieCard(movie) {
   const card = document.createElement('div');
   card.className = 'movie-card';
   card.innerHTML = `
-    <img src="" alt="${movie.title}" loading="lazy">
+    <img src="${getMovieImage(movie)}" alt="${movie.title}" loading="lazy">
     <div class="info">
       <h3>${movie.title}</h3>
       <div class="year">${movie.year || 'N/A'}</div>
@@ -239,10 +236,6 @@ function createMovieCard(movie) {
       <button class="fav-btn ${favorites.includes(movie.id) ? 'active' : ''}" data-id="${movie.id}">Heart</button>
     </div>
   `;
-
-  getMoviePoster(movie.title, movie.year).then(src => {
-    card.querySelector('img').src = src;
-  });
 
   const trailerBtn = card.querySelector('.trailer-btn');
   const playBtn = card.querySelector('.play-btn');
@@ -466,7 +459,7 @@ async function adminLogin() {
   if (data.ok) {
     adminToken = data.token;
     closeLoginModal();
-    adminPanel.classList.add('active');
+    document.getElementById('adminPanel').classList.add('active');
     loadAdminMovies();
     loadGlobalPasswords();
   } else alert('Wrong password');
@@ -478,6 +471,8 @@ function openGlobalPasswordModal() { globalPasswordModal.classList.add('active')
 async function addMovie() {
   const title = document.getElementById('movieTitle').value;
   const imdbId = document.getElementById('movieImdbId').value;
+  const image = document.getElementById('movieImage').value;
+  const year = document.getElementById('movieYear').value;
   const type = document.getElementById('contentType').value;
   const pw = document.getElementById('moviePassword').value.split(',').map(p=>p.trim()).filter(p=>p);
   const otp = document.getElementById('oneTimePassword').value.split(',').map(p=>p.trim()).filter(p=>p);
@@ -486,7 +481,7 @@ async function addMovie() {
   const res = await fetch(API + '/movies', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
-    body: JSON.stringify({ name: title, imdbId, contentPasswords: pw, oneTimePasswords: otp, type, subtitlesEnabled: sub })
+    body: JSON.stringify({ name: title, imdbId, image, year, contentPasswords: pw, oneTimePasswords: otp, type, subtitlesEnabled: sub })
   });
   const data = await res.json();
   if (data.ok) {
