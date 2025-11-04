@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ogmovie</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#000;color:#fff;font-family:Arial,sans-serif}
+  header{text-align:center;padding:2rem;position:relative}
+  h1{color:#e50914;font-size:2.5rem}
+  #adminBtn{position:absolute;top:2rem;right:2rem;background:#e50914;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;font-weight:bold}
+  #searchContainer{max-width:500px;margin:0 auto 1rem auto;padding:0 2rem}
+  #searchInput{width:100%;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem}
+  #searchInput:focus{outline:none;border-color:#e50914}
+
+  /* Filter Tabs */
+  .filter-tabs{display:flex;justify-content:center;gap:1rem;margin:1rem 0;flex-wrap:wrap;padding:0 1rem}
+  .filter-tab{padding:0.5rem 1rem;background:#1a1a1a;border-radius:6px;cursor:pointer;transition:.2s;font-weight:bold}
+  .filter-tab.active{background:#e50914}
+
+  .section h2{margin:1.5rem 0 1rem 2rem;color:#e50914}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem;padding:0 2rem;max-width:1400px;margin:0 auto}
+  .movie-card{position:relative;cursor:pointer;border-radius:12px;overflow:hidden;background:#1a1a1a;transition:.3s}
+  .movie-card:hover{transform:scale(1.05);box-shadow:0 0 20px rgba(229,9,20,.5)}
+  .movie-card img{width:100%;height:300px;object-fit:cover}
+  .movie-info{padding:1rem;text-align:center}
+  .movie-info h3{font-size:1.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .movie-info p{color:#aaa;font-size:.9rem}
+  .fav-btn{position:absolute;top:8px;right:8px;background:rgba(0,0,0,.7);border:none;color:#fff;font-size:1.3rem;cursor:pointer;padding:4px 8px;border-radius:4px}
+  .fav-btn.active{color:#ff4444}
+
+  .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center}
+  .modal.active{display:flex}
+  .modal-content{background:#1a1a1a;padding:2rem;border-radius:12px;width:90%;max-width:400px;position:relative}
+  .close-modal{position:absolute;top:10px;right:15px;background:none;border:none;color:#fff;font-size:1.5rem;cursor:pointer}
+  .modal h2{margin-bottom:1.5rem;color:#e50914}
+  .form-group{margin-bottom:1rem}
+  .form-group label{display:block;margin-bottom:0.5rem;color:#ccc}
+  .form-group input,.form-group select{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
+  .modal-btn{width:100%;padding:0.75rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-top:1rem}
+
+  .player-container{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:999}
+  .player-container.active{display:block}
+  .close-btn{position:absolute;top:10px;right:10px;background:none;border:none;color:#fff;font-size:1.5rem;cursor:pointer;z-index:1001}
+  .player-wrapper{position:relative;width:100%;height:100%}
+  #playerIframe{width:100%;height:100%;border:none}
+  .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
+  .bottom-left-overlay{position:absolute;bottom:10px;left:200px;width:120px;height:40px;background:#000;z-index:10;border-radius:8px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>ogmovie</h1>
+  <button id="adminBtn">Admin</button>
+</header>
+<main>
+  <div id="searchContainer">
+    <input type="text" id="searchInput" placeholder="Search for movies or TV shows..." />
+  </div>
+
+  <!-- FILTER TABS -->
+  <div class="filter-tabs">
+    <div class="filter-tab active" data-filter="all">All</div>
+    <div class="filter-tab" data-filter="movie">Movies</div>
+    <div class="filter-tab" data-filter="tv_show">TV Shows</div>
+    <div class="filter-tab" data-filter="favorites">Favorites</div>
+  </div>
+
+  <!-- SECTIONS -->
+  <section id="allSection">
+    <h2>All Content</h2>
+    <div class="grid" id="allGrid"></div>
+  </section>
+  <section id="movieSection" style="display:none">
+    <h2>Movies</h2>
+    <div class="grid" id="movieGrid"></div>
+  </section>
+  <section id="tvSection" style="display:none">
+    <h2>TV Shows</h2>
+    <div class="grid" id="tvGrid"></div>
+  </section>
+  <section id="favSection" style="display:none">
+    <h2>Favorites</h2>
+    <div class="grid" id="favGrid"></div>
+  </section>
+
+  <div id="adminPanel" class="admin-panel"></div>
+</main>
+
+<!-- MODALS -->
+<div id="loginModal" class="modal"> ... </div>
+<div id="addMovieModal" class="modal"> ... </div>
+<div id="passwordModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closePasswordModal()">×</button>
+    <h2>Enter Password</h2>
+    <p id="passwordMovieTitle" style="margin-bottom:1rem;color:#ccc"></p>
+    <div class="form-group">
+      <label for="moviePasswordInput">Password:</label>
+      <input type="password" id="moviePasswordInput" placeholder="Enter password">
+    </div>
+    <button class="modal-btn" onclick="verifyMoviePassword()">Watch</button>
+  </div>
+</div>
+<div id="episodeModal" class="modal"> ... </div>
+<div id="playerContainer" class="player-container">
+  <button class="close-btn" onclick="closePlayer()">X</button>
+  <div class="player-wrapper">
+    <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+    <div class="iframe-overlay">ogmovie</div>
+    <div class="bottom-left-overlay"></div>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin + '/api';
+const allGrid = document.getElementById('allGrid');
+const movieGrid = document.getElementById('movieGrid');
+const tvGrid = document.getElementById('tvGrid');
+const favGrid = document.getElementById('favGrid');
+const searchInput = document.getElementById('searchInput');
+const filterTabs = document.querySelectorAll('.filter-tab');
+
+let allMovies = [], movieList = [], tvList = [], favList = [];
+let currentFilter = 'all';
+let clientId = localStorage.getItem('clientId') || crypto.randomUUID();
+if (!localStorage.getItem('clientId')) localStorage.setItem('clientId', clientId);
+
+async function getMoviePoster(title, year='') {
+  try {
+    const response = await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(title)}`);
+    const data = await response.json();
+    if(data.length>0 && data[0].show.image && data[0].show.image.medium){
+      return data[0].show.image.medium;
+    }
+  } catch (err) {}
+  try {
+    const wikiResponse = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g,'_'))}`);
+    const wikiData = await wikiResponse.json();
+    if(wikiData.thumbnail && wikiData.thumbnail.source){
+      return wikiData.thumbnail.source;
+    }
+  } catch (err) {}
+  return `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(title.substring(0,20))}`;
+}
+
+function createMovieCard(movie, container) {
+  (async () => {
+    let img = movie.image;
+    if (!img || img.includes('placeholder')) {
+      img = await getMoviePoster(movie.title, movie.year);
+    }
+    const card = document.createElement('div');
+    card.className = 'movie-card';
+    card.innerHTML = `
+      <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+      <div class="movie-info"><h3>${movie.title}</h3><p>${movie.year || 'N/A'} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p></div>
+      <button class="fav-btn ${favList.some(f => f.id === movie.id) ? 'active' : ''}" data-id="${movie.id}">Heart</button>
+    `;
+    card.onclick = (e) => {
+      if (e.target.classList.contains('fav-btn')) return;
+      requestMoviePassword(movie.id, movie.title, movie.type);
+    };
+    card.querySelector('.fav-btn').onclick = (e) => {
+      e.stopPropagation();
+      toggleFavorite(movie.id, e.target);
+    };
+    container.appendChild(card);
+  })();
+}
+
+function displayMovies(movies, grid) {
+  grid.innerHTML = '';
+  if (movies.length === 0) {
+    grid.innerHTML = '<p style="grid-column:1/-1;text-align:center;color:#aaa">No content</p>';
+    return;
+  }
+  movies.forEach(m => createMovieCard(m, grid));
+}
+
+function renderCurrent() {
+  const term = searchInput.value.toLowerCase();
+  let list = currentFilter === 'all' ? allMovies :
+            currentFilter === 'movie' ? movieList :
+            currentFilter === 'tv_show' ? tvList : favList;
+  const filtered = list.filter(m => m.title.toLowerCase().includes(term));
+  const grid = currentFilter === 'all' ? allGrid :
+               currentFilter === 'movie' ? movieGrid :
+               currentFilter === 'tv_show' ? tvGrid : favGrid;
+  displayMovies(filtered, grid);
+}
+
+function switchFilter(filter) {
+  currentFilter = filter;
+  filterTabs.forEach(t => t.classList.remove('active'));
+  document.querySelector(`[data-filter="${filter}"]`).classList.add('active');
+  document.querySelectorAll('section').forEach(s => s.style.display = 'none');
+  document.getElementById(
+    filter === 'all' ? 'allSection' :
+    filter === 'movie' ? 'movieSection' :
+    filter === 'tv_show' ? 'tvSection' : 'favSection'
+  ).style.display = 'block';
+  renderCurrent();
+}
+
+async function toggleFavorite(movieId, btn) {
+  const isActive = btn.classList.contains('active');
+  await fetch(API + '/favorites', {
+    method: isActive ? 'DELETE' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ movieId, clientId })
+  });
+  btn.classList.toggle('active');
+  await loadFavorites();
+  if (currentFilter === 'favorites') renderCurrent();
+}
+
+async function loadFavorites() {
+  const res = await fetch(API + `/favorites/${clientId}`);
+  const data = await res.json();
+  favList = data.ok ? data.movies : [];
+}
+
+async function loadMovies() {
+  const res = await fetch(API + '/movies');
+  const data = await res.json();
+  if (!data.ok) return;
+  allMovies = data.movies;
+  movieList = allMovies.filter(m => m.type === 'movie');
+  tvList = allMovies.filter(m => m.type === 'tv_show');
+  await loadFavorites();
+  renderCurrent();
+}
+
+// --- Player & Password (original logic) ---
+let selectedMovieId, selectedShow, authToken = null;
+
+function requestMoviePassword(id, title, type) {
+  selectedMovieId = id;
+  selectedShow = { id, title, type };
+  document.getElementById('passwordMovieTitle').textContent = title;
+  document.getElementById('passwordModal').classList.add('active');
+}
+
+async function verifyMoviePassword() {
+  const password = document.getElementById('moviePasswordInput').value;
+  if (!password) return alert('Enter password');
+  const res = await fetch(API + `/movies/${selectedMovieId}/authorize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  const data = await res.json();
+  if (!data.ok) return alert('Wrong password');
+  authToken = data.token;
+  if (selectedShow.type === 'movie') {
+    const embedRes = await fetch(API + `/movies/${selectedMovieId}/embed`, {
+      headers: { Authorization: `Bearer ${authToken}` }
+    });
+    const embedData = await embedRes.json();
+    if (embedData.ok) showPlayer(embedData.url);
+  } else {
+    await loadEpisodes();
+  }
+}
+
+async function loadEpisodes() {
+  const res = await fetch(API + `/movies/${selectedMovieId}/episodes`);
+  const data = await res.json();
+  if (!data.ok) return alert('Failed to load episodes');
+  const seasons = data.seasons;
+  const sel = document.getElementById('seasonSelect');
+  sel.innerHTML = '';
+  Object.keys(seasons).forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s; opt.textContent = `Season ${s}`;
+    sel.appendChild(opt);
+  });
+  updateEpisodeSelect(seasons);
+  document.getElementById('episodeModal').classList.add('active');
+}
+
+function updateEpisodeSelect(seasons) {
+  const s = document.getElementById('seasonSelect').value;
+  const e = document.getElementById('episodeSelect');
+  e.innerHTML = '';
+  (seasons || {})[s].forEach(ep => {
+    const opt = document.createElement('option');
+    opt.value = ep.episode;
+    opt.textContent = `${ep.name} (E${ep.episode})`;
+    e.appendChild(opt);
+  });
+}
+
+async function playSelectedEpisode() {
+  const s = document.getElementById('seasonSelect').value;
+  const e = document.getElementById('episodeSelect').value;
+  const res = await fetch(API + `/movies/${selectedMovieId}/embed`, {
+    headers: { Authorization: `Bearer ${authToken}` }
+  });
+  const data = await res.json();
+  if (data.ok) {
+    showPlayer(`${data.url}/${s}/${e}`);
+    document.getElementById('episodeModal').classList.remove('active');
+  }
+}
+
+function showPlayer(url) {
+  document.getElementById('playerIframe').src = url;
+  document.getElementById('playerContainer').classList.add('active');
+  document.getElementById('passwordModal').classList.remove('active');
+  document.getElementById('moviePasswordInput').value = '';
+}
+
+function closePlayer() {
+  document.getElementById('playerContainer').classList.remove('active');
+  document.getElementById('playerIframe').src = '';
+  authToken = null;
+}
+
+// --- Admin (original) ---
+document.getElementById('adminBtn').addEventListener('click', () => {
+  document.getElementById('loginModal').classList.add('active');
+});
+
+// --- Init ---
+filterTabs.forEach(tab => tab.addEventListener('click', () => switchFilter(tab.dataset.filter)));
+searchInput.addEventListener('input', renderCurrent);
+loadMovies();
+</script>
+</body>
+</html>
