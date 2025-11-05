@@ -125,7 +125,9 @@ client.once('ready', async () => {
     await rest.put(Routes.applicationCommands(client.user.id), {
       body: commands.map(c => c.toJSON())
     });
-  } catch (e) {}
+  } catch (e) {
+    console.error('Failed to register commands:', e);
+  }
 });
 
 client.on('interactionCreate', async i => {
@@ -148,7 +150,7 @@ client.on('interactionCreate', async i => {
     await pool.query(
       'INSERT INTO om_codes (code, global_password_id, used) VALUES ($1, $2, FALSE)',
       [code, gp.id]
-  );
+    );
 
     const embed = new EmbedBuilder()
       .setColor('#e50914')
@@ -295,7 +297,8 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
     });
 
     res.json({ ok: true, seasons });
-  } --catch (err) {
+  } catch (err) {
+    console.error('Episodes API error:', err);
     res.json({ ok: false, error: 'Failed to load episodes' });
   }
 });
