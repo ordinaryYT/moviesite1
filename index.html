@@ -253,7 +253,7 @@ async function createMovieCard(movie) {
       <p>${year} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p>
     </div>
     <div class="card-actions">
-      <button class="favorite-btn" data-id="${movie.id}">♡</button>
+      <button class="favorite-btn" data-id="${movie.id}">Heart</button>
       <button class="trailer-btn" data-id="${movie.id}" ${movie.type === 'tv_show' ? 'disabled' : ''}>Trailer</button>
       <button class="play-btn" data-id="${movie.id}">Play</button>
     </div>`;
@@ -277,7 +277,7 @@ function updateFavoriteButtons() {
   const favs = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
   document.querySelectorAll('.favorite-btn').forEach(btn => {
     const id = parseInt(btn.dataset.id);
-    btn.textContent = favs.includes(id) ? '❤️' : '♡';
+    btn.textContent = favs.includes(id) ? 'Heart' : 'Heart';
   });
 }
 
@@ -317,7 +317,7 @@ movieGrid.addEventListener('click', e => {
     if (idx > -1) favs.splice(idx, 1);
     else favs.push(id);
     localStorage.setItem(FAV_KEY, JSON.stringify(favs));
-    btn.textContent = favs.includes(id) ? '❤️' : '♡';
+    btn.textContent = favs.includes(id) ? 'Heart' : 'Heart';
     if (currentFilter === 'favorites') applyFilters(searchInput.value);
     return;
   }
@@ -329,16 +329,24 @@ movieGrid.addEventListener('click', e => {
   }
   if (btn.classList.contains('trailer-btn') && !btn.disabled) {
     const id = parseInt(btn.dataset.id);
-    const movie = currentMovies.find(m => m.id === id);
-    openTrailerModal(movie.imdb_id || movie.title);
+    openTrailerModal(id);
     return;
   }
 });
 
-function openTrailerModal(query) {
-  const src = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query + ' official trailer')}`;
-  document.getElementById('trailerIframe').src = src;
-  trailerModal.classList.add('active');
+// --- NEW: Trailer via YouTube API ---
+function openTrailerModal(movieId) {
+  fetch(`${API}/movies/${movieId}/trailer`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.ok) {
+        document.getElementById('trailerIframe').src = data.url;
+        trailerModal.classList.add('active');
+      } else {
+        alert('Trailer not available: ' + data.error);
+      }
+    })
+    .catch(() => alert('Failed to load trailer'));
 }
 function closeTrailerModal() {
   trailerModal.classList.remove('active');
@@ -347,7 +355,7 @@ function closeTrailerModal() {
 
 searchInput.addEventListener('input', e => applyFilters(e.target.value));
 
-// --- Existing Functions (Admin, Player, etc.) ---
+// --- Existing Functions ---
 function openAdminPanel() { loginModal.classList.add('active'); }
 function closeLoginModal() { loginModal.classList.remove('active'); }
 function closeAddMovieModal() { addMovieModal.classList.remove('active'); }
@@ -371,7 +379,6 @@ async function adminLogin() {
       showAdminPanel();
       loadAdminMovies();
       loadGlobalPasswords();
-      checkPasswordStatus();
     } else alert('Invalid password');
   } catch (err) {
     console.error(err);
@@ -387,7 +394,6 @@ function showAdminPanel() {
     <div class="admin-actions">
       <button class="admin-btn" onclick="openAddMovieModal()">Add Content</button>
       <button class="admin-btn" onclick="openGlobalPasswordModal()">Add Global Password</button>
-      <button class="admin-btn" id="togglePasswordBtn">Toggle Passwords</button>
       <button class="admin-btn" onclick="exitAdmin()">Exit Admin</button>
     </div>
     <h3>Content</h3>
@@ -575,39 +581,6 @@ async function deleteGlobalPassword(id) {
   } catch (err) {
     console.error(err);
     alert('Failed to delete global password');
-  }
-}
-
-async function checkPasswordStatus() {
-  try {
-    const res = await fetch(API + '/admin/password-status', {
-      headers: { Authorization: `Bearer ${adminToken}` }
-    });
-    const data = await res.json();
-    if (data.ok) {
-      const btn = document.getElementById('togglePasswordBtn');
-      btn.textContent = data.disabled ? 'Enable Passwords' : 'Disable Passwords';
-      btn.onclick = togglePasswords;
-    }
-  } catch (err) {
-    console.error('Failed to check password status:', err);
-  }
-}
-
-async function togglePasswords() {
-  try {
-    const res = await fetch(API + '/admin/toggle-passwords', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${adminToken}` }
-    });
-    const data = await res.json();
-    if (data.ok) {
-      const btn = document.getElementById('togglePasswordBtn');
-      btn.textContent = data.disabled ? 'Enable Passwords' : 'Disable Passwords';
-    } else alert('Error: ' + data.error);
-  } catch (err) {
-    console.error(err);
-    alert('Failed to toggle passwords');
   }
 }
 
