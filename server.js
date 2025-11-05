@@ -24,7 +24,7 @@ app.use(express.static(__dirname));
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY; // <-- YouTube API Key
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY; // Required for trailers
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -33,9 +33,7 @@ const pool = new Pool({
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-/* ------------------------------------------------------------------ */
-/*                     DISCORD BOT – FIXED (v14 → v15)                */
-/* ------------------------------------------------------------------ */
+/* ────────────────────── DISCORD BOT (FIXED) ────────────────────── */
 function generateCode() {
   return 'om-' + Math.random().toString(36).substr(2, 12).toUpperCase();
 }
@@ -110,7 +108,7 @@ async function deleteAllOMCodes() {
   }
 }
 
-/* ---------- Discord clientReady (v15+) ---------- */
+/* Discord Ready */
 client.once('clientReady', async () => {
   console.log('Discord bot ready');
   await deleteAllOMCodes();
@@ -187,16 +185,10 @@ if (process.env.DISCORD_BOT_TOKEN) {
   client.login(process.env.DISCORD_BOT_TOKEN).catch(console.error);
 }
 
-/* ------------------------------------------------------------------ */
-/*                              DB SETUP                              */
-/* ------------------------------------------------------------------ */
+/* ────────────────────── DATABASE SETUP ────────────────────── */
 ensureTables();
 
-/* ------------------------------------------------------------------ */
-/*                         API ENDPOINTS                              */
-/* ------------------------------------------------------------------ */
-
-/* ----- Get Movies ----- */
+/* ────────────────────── API ENDPOINTS ────────────────────── */
 app.get('/api/movies', async (req, res) => {
   const { rows } = await pool.query(
     'SELECT id, title, type, year, image, subtitles_enabled, imdb_id FROM movies ORDER BY created_at DESC'
@@ -204,7 +196,6 @@ app.get('/api/movies', async (req, res) => {
   res.json({ ok: true, movies: rows });
 });
 
-/* ----- Admin Login ----- */
 app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
   if (password === ADMIN_PASSWORD) {
@@ -226,7 +217,6 @@ const requireAdmin = (req, res, next) => {
   }
 };
 
-/* ----- Add Movie ----- */
 app.post('/api/movies', requireAdmin, async (req, res) => {
   const { name, imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie', subtitlesEnabled = false } = req.body;
   if (!name && !imdbId) return res.status(400).json({ ok: false, error: 'Title or IMDb ID required' });
@@ -243,7 +233,6 @@ app.post('/api/movies', requireAdmin, async (req, res) => {
   res.json({ ok: true, movieId: rows[0].id });
 });
 
-/* ----- Update Subtitles ----- */
 app.patch('/api/movies/:id/subtitles', requireAdmin, async (req, res) => {
   const { subtitlesEnabled } = req.body;
   if (typeof subtitlesEnabled !== 'boolean') {
@@ -258,13 +247,11 @@ app.patch('/api/movies/:id/subtitles', requireAdmin, async (req, res) => {
   res.json({ ok: rowCount > 0 });
 });
 
-/* ----- Delete Movie ----- */
 app.delete('/api/movies/:id', requireAdmin, async (req, res) => {
   const { rowCount } = await pool.query('DELETE FROM movies WHERE id = $1', [req.params.id]);
   res.json({ ok: rowCount > 0 });
 });
 
-/* ----- Global Passwords ----- */
 app.post('/api/admin/global-passwords', requireAdmin, async (req, res) => {
   const { password, isOneTime } = req.body;
   const hash = await bcrypt.hash(password, 10);
@@ -285,7 +272,6 @@ app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => 
   res.json({ ok: rowCount > 0 });
 });
 
-/* ----- Episodes ----- */
 app.get('/api/movies/:id/episodes', async (req, res) => {
   const id = req.params.id;
   const { rows } = await pool.query('SELECT imdb_id, type FROM movies WHERE id = $1', [id]);
@@ -320,7 +306,6 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
   }
 });
 
-/* ----- Authorize ----- */
 app.post('/api/movies/:id/authorize', async (req, res) => {
   const { password } = req.body;
   if (!password) return res.json({ ok: false, error: 'Password required' });
@@ -332,7 +317,6 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
 
   let regular = [], ot = [];
-
   try { regular = JSON.parse(rows[0].password_hashes || '[]'); } catch (_) { regular = []; }
   try { ot = JSON.parse(rows[0].one_time_password_hashes || '[]'); } catch (_) { ot = []; }
 
@@ -367,7 +351,6 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   res.json({ ok: false, error: 'Wrong password' });
 });
 
-/* ----- Embed URL ----- */
 app.get('/api/movies/:id/embed', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   try {
@@ -391,18 +374,16 @@ app.get('/api/movies/:id/embed', async (req, res) => {
   }
 });
 
-/* ----- NEW: YouTube Trailer (YouTube Data API v3) ----- */
+/* ────────────────────── NEW: YouTube Trailer API ────────────────────── */
 app.get('/api/movies/:id/trailer', async (req, res) => {
   if (!YOUTUBE_API_KEY) {
-    return res.json({ ok: false, error: 'YouTube API key not configured' });
+    return res.json({ ok: false, error: 'YouTube API key not set' });
   }
 
-  const id = req.params.id;
-  const { rows } = await pool.query('SELECT title, imdb_id FROM movies WHERE id = $1', [id]);
+  const { rows } = await pool.query('SELECT title FROM movies WHERE id = $1', [req.params.id]);
   if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
 
-  const { title } = rows[0];
-  const query = encodeURIComponent(`${title} official trailer`);
+  const query = encodeURIComponent(`${rows[0].title} official trailer`);
 
   try {
     const ytRes = await fetch(
@@ -419,24 +400,19 @@ app.get('/api/movies/:id/trailer', async (req, res) => {
       v.snippet.title.toLowerCase().includes('trailer')
     ) || data.items[0];
 
-    const videoId = video.id.videoId;
-    const embedUrl = `https://www.youtube.com/embed/${videoId}`;
-
-    res.json({ ok: true, url: embedUrl });
+    res.json({ ok: true, url: `https://www.youtube.com/embed/${video.id.videoId}` });
   } catch (err) {
     console.error('YouTube API error:', err);
     res.json({ ok: false, error: 'Failed to fetch trailer' });
   }
 });
 
-/* ----- Serve index.html ----- */
+/* ────────────────────── SERVE HTML ────────────────────── */
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-/* ------------------------------------------------------------------ */
-/*                             START SERVER                           */
-/* ------------------------------------------------------------------ */
+/* ────────────────────── START SERVER ────────────────────── */
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
