@@ -10,16 +10,29 @@
   header{text-align:center;padding:2rem;position:relative}
   h1{color:#e50914;font-size:2.5rem}
   #adminBtn{position:absolute;top:2rem;right:2rem;background:#e50914;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;font-weight:bold}
-  #searchContainer{max-width:500px;margin:0 auto 2rem auto;padding:0 2rem}
+  #searchContainer{max-width:500px;margin:0 auto 1rem auto;padding:0 2rem}
   #searchInput{width:100%;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem}
   #searchInput:focus{outline:none;border-color:#e50914}
+
+  /* Filter Tabs */
+  #filterTabs{text-align:center;margin:1rem 0;}
+  #filterTabs button{margin:0 .25rem;padding:.5rem 1rem;background:#1a1a1a;border:none;color:#fff;border-radius:4px;cursor:pointer}
+  #filterTabs button.active{background:#e50914}
+
   #movieGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem;padding:2rem;max-width:1400px;margin:0 auto}
-  .movie-card{cursor:pointer;border-radius:12px;overflow:hidden;background:#1a1a1a;transition:.3s}
+  .movie-card{cursor:pointer;border-radius:12px;overflow:hidden;background:#1a1a1a;transition:.3s;position:relative}
   .movie-card:hover{transform:scale(1.05);box-shadow:0 0 20px rgba(229,9,20,.5)}
   .movie-card img{width:100%;height:300px;object-fit:cover}
-  .movie-info{padding:1rem;text-align:center}
+  .movie-info{padding:1rem;text-align:center;position:relative}
   .movie-info h3{font-size:1.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .movie-info p{color:#aaa;font-size:.9rem}
+
+  .card-actions{position:absolute;bottom:8px;right:8px;display:flex;gap:4px;opacity:0;transition:opacity .2s}
+  .movie-card:hover .card-actions{opacity:1}
+  .card-actions button{background:rgba(0,0,0,.6);border:none;color:#fff;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:.9rem}
+  .card-actions button:hover{background:#e50914}
+  .favorite-btn .filled{color:#e50914}
+
   .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center}
   .modal.active{display:flex}
   .modal-content{background:#1a1a1a;padding:2rem;border-radius:12px;width:90%;max-width:400px;position:relative}
@@ -30,13 +43,16 @@
   .form-group input{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
   .form-group select{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
   .modal-btn{width:100%;padding:0.75rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-top:1rem}
+
   #adminPanel{display:none;padding:2rem;max-width:1400px;margin:0 auto}
   #adminPanel.active{display:block}
-  .admin-actions{margin-bottom:2rem;display:flex;gap:1rem}
+  .admin-actions{margin-bottom:2rem;display:flex;gap:1rem;flex-wrap:wrap}
   .admin-btn{padding:0.75rem 1.5rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold}
   .movie-list-admin{margin-top:2rem}
   .movie-item-admin{display:flex;justify-content:space-between;align-items:center;padding:1rem;background:#1a1a1a;margin-bottom:1rem;border-radius:8px}
   .movie-item-admin button{background:#ff4444;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer}
+  .movie-item-admin button + button{margin-left:0.5rem}
+
   .player-container{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:999}
   .player-container.active{display:block}
   .close-btn{position:absolute;top:10px;right:10px;background:none;border:none;color:#fff;font-size:1.5rem;cursor:pointer;z-index:1001}
@@ -55,12 +71,23 @@
   <div id="searchContainer">
     <input type="text" id="searchInput" placeholder="Search for movies or TV shows..." />
   </div>
+
+  <!-- Filter Tabs -->
+  <div id="filterTabs">
+    <button class="filter-btn active" data-type="all">All</button>
+    <button class="filter-btn" data-type="movie">Movies</button>
+    <button class="filter-btn" data-type="tv_show">TV Shows</button>
+    <button class="filter-btn" data-type="favorites">Favorites</button>
+  </div>
+
   <div id="movieGrid"></div>
   <div id="adminPanel" class="admin-panel"></div>
 </main>
+
+<!-- Modals -->
 <div id="loginModal" class="modal">
   <div class="modal-content">
-    <button class="close-modal" onclick="closeLoginModal()">×</button>
+    <button class="close-modal" onclick="closeLoginModal()">X</button>
     <h2>Admin Login</h2>
     <div class="form-group">
       <label for="adminPassword">Password:</label>
@@ -69,9 +96,10 @@
     <button class="modal-btn" onclick="adminLogin()">Login</button>
   </div>
 </div>
+
 <div id="addMovieModal" class="modal">
   <div class="modal-content">
-    <button class="close-modal" onclick="closeAddMovieModal()">×</button>
+    <button class="close-modal" onclick="closeAddMovieModal()">X</button>
     <h2>Add Content</h2>
     <div class="form-group">
       <label for="movieTitle">Title:</label>
@@ -96,18 +124,16 @@
       <label for="oneTimePassword">One-Time Passwords (comma-separated, optional):</label>
       <input type="text" id="oneTimePassword" placeholder="otp1,otp2,...">
     </div>
-    <!-- ADDED: SUBTITLES CHECKBOX -->
     <div class="form-group">
-      <label>
-        <input type="checkbox" id="subtitlesEnabled"> Enable Subtitles (default: off)
-      </label>
+      <label><input type="checkbox" id="subtitlesEnabled"> Enable Subtitles (default: off)</label>
     </div>
     <button class="modal-btn" onclick="addMovie()">Add Content</button>
   </div>
 </div>
+
 <div id="passwordModal" class="modal">
   <div class="modal-content">
-    <button class="close-modal" onclick="closePasswordModal()">×</button>
+    <button class="close-modal" onclick="closePasswordModal()">X</button>
     <h2>Enter Password</h2>
     <p id="passwordMovieTitle" style="margin-bottom:1rem;color:#ccc"></p>
     <div class="form-group">
@@ -117,24 +143,25 @@
     <button class="modal-btn" onclick="verifyMoviePassword()">Watch</button>
   </div>
 </div>
+
 <div id="globalPasswordModal" class="modal">
   <div class="modal-content">
-    <button class="close-modal" onclick="closeGlobalPasswordModal()">×</button>
+    <button class="close-modal" onclick="closeGlobalPasswordModal()">X</button>
     <h2>Add Global Password</h2>
     <div class="form-group">
       <label for="globalPassword">Password:</label>
       <input type="password" id="globalPassword" placeholder="Enter global password">
     </div>
     <div class="form-group">
-      <label for="isOneTime">One-Time Password:</label>
-      <input type="checkbox" id="isOneTime">
+      <label><input type="checkbox" id="isOneTime"> One-Time Password</label>
     </div>
     <button class="modal-btn" onclick="addGlobalPassword()">Add Global Password</button>
   </div>
 </div>
+
 <div id="episodeModal" class="modal">
   <div class="modal-content">
-    <button class="close-modal" onclick="closeEpisodeModal()">×</button>
+    <button class="close-modal" onclick="closeEpisodeModal()">X</button>
     <h2>Select Episode</h2>
     <p id="episodeShowTitle" style="margin-bottom:1rem;color:#ccc"></p>
     <div class="form-group">
@@ -148,6 +175,19 @@
     <button class="modal-btn" onclick="playSelectedEpisode()">Watch Episode</button>
   </div>
 </div>
+
+<!-- Trailer Modal -->
+<div id="trailerModal" class="modal">
+  <div class="modal-content" style="max-width:800px;">
+    <button class="close-modal" onclick="closeTrailerModal()">X</button>
+    <h2>Trailer</h2>
+    <div style="position:relative;padding-bottom:56.25%;height:0;">
+      <iframe id="trailerIframe" style="position:absolute;top:0;left:0;width:100%;height:100%;" 
+              src="" frameborder="0" allowfullscreen></iframe>
+    </div>
+  </div>
+</div>
+
 <div id="playerContainer" class="player-container">
   <button class="close-btn" onclick="closePlayer()">X</button>
   <div class="player-wrapper">
@@ -156,6 +196,7 @@
     <div class="bottom-left-overlay"></div>
   </div>
 </div>
+
 <script>
 const API = window.location.origin + '/api';
 const movieGrid = document.getElementById('movieGrid');
@@ -168,76 +209,145 @@ const addMovieModal = document.getElementById('addMovieModal');
 const passwordModal = document.getElementById('passwordModal');
 const globalPasswordModal = document.getElementById('globalPasswordModal');
 const episodeModal = document.getElementById('episodeModal');
+const trailerModal = document.getElementById('trailerModal');
 const searchInput = document.getElementById('searchInput');
 let adminToken = null;
 let currentMovies = [];
 let selectedMovieId = null;
 let selectedShow = null;
 let episodeData = null;
-let lastPassword = null;
 let authToken = null;
-
-function filterMovies(searchTerm) {
-  const filteredMovies = currentMovies.filter(m => 
-    m.title.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-  displayMovies(filteredMovies);
-}
+let currentFilter = 'all';
+const FAV_KEY = 'ogmovie_favorites';
 
 async function getMoviePoster(title, year='') {
   try {
-    const response = await fetch(
-      `https://api.tvmaze.com/search/shows?q=${encodeURIComponent(title)}`
-    );
+    const response = await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(title)}`);
     const data = await response.json();
     if(data.length>0 && data[0].show.image && data[0].show.image.medium){
       return data[0].show.image.medium;
     }
   } catch (err) {}
   try {
-    const wikiResponse = await fetch(
-      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(
-        title.replace(/ /g,'_')
-      )}`
-    );
+    const wikiResponse = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g,'_'))}`);
     const wikiData = await wikiResponse.json();
     if(wikiData.thumbnail && wikiData.thumbnail.source){
       return wikiData.thumbnail.source;
     }
   } catch (err) {}
-  return `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(
-    title.substring(0,20)
-  )}`;
+  return `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(title.substring(0,20))}`;
 }
 
 async function createMovieCard(movie) {
-  try {
-    let img = movie.image;
-    const year = movie.year || 'N/A';
-    const poster = await getMoviePoster(movie.title, year);
-    if (!poster.includes('placeholder.com')) img = poster;
-    const card = document.createElement('div');
-    card.className = 'movie-card';
-    card.innerHTML = `
-      <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
-      <div class="movie-info"><h3>${movie.title}</h3><p>${year} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p></div>`;
-    card.onclick = () => requestMoviePassword(movie.id, movie.title, movie.type);
-    movieGrid.appendChild(card);
-  } catch (e) {
-    console.error(e);
-  }
+  let img = movie.image;
+  const year = movie.year || 'N/A';
+  const poster = await getMoviePoster(movie.title, year);
+  if (!poster.includes('placeholder.com')) img = poster;
+
+  const card = document.createElement('div');
+  card.className = 'movie-card';
+  card.innerHTML = `
+    <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+    <div class="movie-info">
+      <h3>${movie.title}</h3>
+      <p>${year} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p>
+    </div>
+    <div class="card-actions">
+      <button class="favorite-btn" data-id="${movie.id}">♡</button>
+      <button class="trailer-btn" data-id="${movie.id}" ${movie.type === 'tv_show' ? 'disabled' : ''}>Trailer</button>
+      <button class="play-btn" data-id="${movie.id}">Play</button>
+    </div>`;
+
+  card.querySelector('.movie-info').style.cursor = 'pointer';
+  card.querySelector('.movie-info').onclick = () => requestMoviePassword(movie.id, movie.title, movie.type);
+  movieGrid.appendChild(card);
 }
 
 function displayMovies(movies) {
   movieGrid.innerHTML = '';
   if (movies.length === 0) {
-    movieGrid.innerHTML = 
-      '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
+    movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
     return;
   }
   movies.forEach(createMovieCard);
+  updateFavoriteButtons();
 }
 
+function updateFavoriteButtons() {
+  const favs = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
+  document.querySelectorAll('.favorite-btn').forEach(btn => {
+    const id = parseInt(btn.dataset.id);
+    btn.textContent = favs.includes(id) ? '❤️' : '♡';
+  });
+}
+
+function applyFilters(search = '') {
+  let list = currentMovies;
+  const lower = search.toLowerCase();
+
+  if (search) {
+    list = list.filter(m => m.title.toLowerCase().includes(lower));
+  }
+
+  if (currentFilter === 'movie') list = list.filter(m => m.type === 'movie');
+  if (currentFilter === 'tv_show') list = list.filter(m => m.type === 'tv_show');
+  if (currentFilter === 'favorites') {
+    const favIds = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || '[]'));
+    list = list.filter(m => favIds.has(m.id));
+  }
+
+  displayMovies(list);
+}
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.type;
+    applyFilters(searchInput.value);
+  });
+});
+
+movieGrid.addEventListener('click', e => {
+  const btn = e.target;
+  if (btn.classList.contains('favorite-btn')) {
+    const id = parseInt(btn.dataset.id);
+    let favs = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
+    const idx = favs.indexOf(id);
+    if (idx > -1) favs.splice(idx, 1);
+    else favs.push(id);
+    localStorage.setItem(FAV_KEY, JSON.stringify(favs));
+    btn.textContent = favs.includes(id) ? '❤️' : '♡';
+    if (currentFilter === 'favorites') applyFilters(searchInput.value);
+    return;
+  }
+  if (btn.classList.contains('play-btn')) {
+    const id = parseInt(btn.dataset.id);
+    const movie = currentMovies.find(m => m.id === id);
+    requestMoviePassword(id, movie.title, movie.type);
+    return;
+  }
+  if (btn.classList.contains('trailer-btn') && !btn.disabled) {
+    const id = parseInt(btn.dataset.id);
+    const movie = currentMovies.find(m => m.id === id);
+    openTrailerModal(movie.imdb_id || movie.title);
+    return;
+  }
+});
+
+function openTrailerModal(query) {
+  const src = `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(query + ' official trailer')}`;
+  document.getElementById('trailerIframe').src = src;
+  trailerModal.classList.add('active');
+}
+function closeTrailerModal() {
+  trailerModal.classList.remove('active');
+  document.getElementById('trailerIframe').src = '';
+}
+
+searchInput.addEventListener('input', e => applyFilters(e.target.value));
+
+// --- Existing Functions (Admin, Player, etc.) ---
 function openAdminPanel() { loginModal.classList.add('active'); }
 function closeLoginModal() { loginModal.classList.remove('active'); }
 function closeAddMovieModal() { addMovieModal.classList.remove('active'); }
@@ -280,10 +390,8 @@ function showAdminPanel() {
       <button class="admin-btn" id="togglePasswordBtn">Toggle Passwords</button>
       <button class="admin-btn" onclick="exitAdmin()">Exit Admin</button>
     </div>
-    
     <h3>Content</h3>
     <div id="movieListAdmin" class="movie-list-admin"></div>
-    
     <h3>Global Passwords</h3>
     <div id="globalPasswordList" class="movie-list-admin"></div>`;
 }
@@ -292,6 +400,7 @@ function exitAdmin() {
   adminToken = null;
   adminPanel.classList.remove('active');
   movieGrid.style.display = 'grid';
+  loadMovies();
 }
 
 function openAddMovieModal() { addMovieModal.classList.add('active'); }
@@ -303,7 +412,7 @@ async function addMovie() {
   const type = document.getElementById('contentType').value;
   const passwords = document.getElementById('moviePassword').value.split(',').map(p => p.trim()).filter(p => p);
   const oneTimePasswords = document.getElementById('oneTimePassword').value.split(',').map(p => p.trim()).filter(p => p);
-  const subtitlesEnabled = document.getElementById('subtitlesEnabled').checked; // ADDED
+  const subtitlesEnabled = document.getElementById('subtitlesEnabled').checked;
 
   if (!title && !imdbId) return alert('Please provide title or IMDb ID');
   try {
@@ -313,7 +422,7 @@ async function addMovie() {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${adminToken}`
       },
-      body: JSON.stringify({ name: title, imdbId, contentPasswords: passwords, oneTimePasswords, type, subtitlesEnabled }) // ADDED
+      body: JSON.stringify({ name: title, imdbId, contentPasswords: passwords, oneTimePasswords, type, subtitlesEnabled })
     });
     const data = await res.json();
     if (data.ok) {
@@ -372,7 +481,6 @@ async function loadAdminMovies() {
             <div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'})</div>
             <div>
               <button onclick="deleteMovie(${movie.id})">Delete</button>
-              <!-- ADDED: SUBTITLES TOGGLE -->
               <button onclick="toggleSubtitles(${movie.id}, ${!movie.subtitles_enabled})" 
                       style="background:${movie.subtitles_enabled ? '#28a745' : '#6c757d'}; margin-left:0.5rem;">
                 Subs ${movie.subtitles_enabled ? 'ON' : 'OFF'}
@@ -387,7 +495,6 @@ async function loadAdminMovies() {
   }
 }
 
-// ADDED: TOGGLE SUBTITLES
 async function toggleSubtitles(id, enable) {
   if (!confirm(`Turn subtitles ${enable ? 'ON' : 'OFF'}?`)) return;
   try {
@@ -625,18 +732,16 @@ function closePlayer() {
 }
 
 async function loadMovies() {
-  movieGrid.innerHTML = 
-    '<p style="text-align:center;color:#aaa;">Loading...</p>';
+  movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">Loading...</p>';
   try {
     const res = await fetch(API + '/movies');
     const data = await res.json();
     if (!data.ok || !data.movies.length) {
-      movieGrid.innerHTML = 
-        '<p style="text-align:center;color:#aaa;">No movies found.</p>';
+      movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">No movies found.</p>';
       return;
     }
     currentMovies = data.movies;
-    displayMovies(currentMovies);
+    applyFilters();
   } catch (err) {
     console.error(err);
     alert('Error loading movies');
@@ -644,7 +749,6 @@ async function loadMovies() {
 }
 
 adminBtn.addEventListener('click', openAdminPanel);
-searchInput.addEventListener('input', e => filterMovies(e.target.value));
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closePlayer();
@@ -653,6 +757,7 @@ document.addEventListener('keydown', e => {
     closePasswordModal();
     closeGlobalPasswordModal();
     closeEpisodeModal();
+    closeTrailerModal();
   }
 });
 
