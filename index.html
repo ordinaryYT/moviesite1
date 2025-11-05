@@ -334,7 +334,7 @@ movieGrid.addEventListener('click', e => {
   }
 });
 
-// --- NEW: Trailer via YouTube API ---
+// --- NEW: YouTube Trailer via API ---
 function openTrailerModal(movieId) {
   fetch(`${API}/movies/${movieId}/trailer`)
     .then(r => r.json())
@@ -348,6 +348,7 @@ function openTrailerModal(movieId) {
     })
     .catch(() => alert('Failed to load trailer'));
 }
+
 function closeTrailerModal() {
   trailerModal.classList.remove('active');
   document.getElementById('trailerIframe').src = '';
@@ -355,7 +356,7 @@ function closeTrailerModal() {
 
 searchInput.addEventListener('input', e => applyFilters(e.target.value));
 
-// --- Existing Functions ---
+// --- Admin & Player Functions (unchanged from working version) ---
 function openAdminPanel() { loginModal.classList.add('active'); }
 function closeLoginModal() { loginModal.classList.remove('active'); }
 function closeAddMovieModal() { addMovieModal.classList.remove('active'); }
