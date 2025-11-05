@@ -55,7 +55,8 @@ async function ensureTables() {
     CREATE TABLE IF NOT EXISTS global_passwords (
       id SERIAL PRIMARY KEY,
       password_hash TEXT,
-      is_one_time BOOLEAN DEFAULT FALSE
+      is_one_time BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT NOW()
     )
   `);
   await pool.query(`
@@ -66,7 +67,6 @@ async function ensureTables() {
       used BOOLEAN DEFAULT FALSE
     )
   `);
-  // NEW: Persistent config for code generation
   await pool.query(`
     CREATE TABLE IF NOT EXISTS bot_config (
       key TEXT PRIMARY KEY,
@@ -148,7 +148,7 @@ client.on('interactionCreate', async i => {
     await pool.query(
       'INSERT INTO om_codes (code, global_password_id, used) VALUES ($1, $2, FALSE)',
       [code, gp.id]
-    );
+  );
 
     const embed = new EmbedBuilder()
       .setColor('#e50914')
@@ -175,9 +175,13 @@ if (process.env.DISCORD_BOT_TOKEN) {
   client.login(process.env.DISCORD_BOT_TOKEN).catch(console.error);
 }
 
-ensureTables();// --- API: Get Movies ---
+ensureTables();
+
+// --- API: Get Movies (includes imdb_id) ---
 app.get('/api/movies', async (req, res) => {
-  const { rows } = await pool.query('SELECT id, title, type, year, image, subtitles_enabled FROM movies ORDER BY created_at DESC');
+  const { rows } = await pool.query(
+    'SELECT id, title, type, year, image, subtitles_enabled, imdb_id FROM movies ORDER BY created_at DESC'
+  );
   res.json({ ok: true, movies: rows });
 });
 
@@ -253,7 +257,7 @@ app.post('/api/admin/global-passwords', requireAdmin, async (req, res) => {
 });
 
 app.get('/api/admin/global-passwords', requireAdmin, async (req, res) => {
-  const { rows } = await pool.query('SELECT id, is_one_time FROM global_passwords');
+  const { rows } = await pool.query('SELECT id, is_one_time, created_at FROM global_passwords');
   res.json({ ok: true, passwords: rows });
 });
 
@@ -291,7 +295,7 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
     });
 
     res.json({ ok: true, seasons });
-  } catch (err) {
+  } --catch (err) {
     res.json({ ok: false, error: 'Failed to load episodes' });
   }
 });
@@ -349,7 +353,7 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   res.json({ ok: false, error: 'Wrong password' });
 });
 
-// --- FIXED: /embed — SUBTITLES ONLY IF ENABLED ---
+// --- API: Embed ---
 app.get('/api/movies/:id/embed', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   try {
