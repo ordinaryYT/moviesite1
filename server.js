@@ -24,7 +24,6 @@ app.use(express.static(__dirname));
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY; // Required for trailers
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -33,7 +32,6 @@ const pool = new Pool({
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-/* ────────────────────── DISCORD BOT (FIXED) ────────────────────── */
 function generateCode() {
   return 'om-' + Math.random().toString(36).substr(2, 12).toUpperCase();
 }
@@ -108,7 +106,6 @@ async function deleteAllOMCodes() {
   }
 }
 
-/* Discord Ready */
 client.once('clientReady', async () => {
   console.log('Discord bot ready');
   await deleteAllOMCodes();
