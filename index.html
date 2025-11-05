@@ -13,12 +13,9 @@
   #searchContainer{max-width:500px;margin:0 auto 1rem auto;padding:0 2rem}
   #searchInput{width:100%;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem}
   #searchInput:focus{outline:none;border-color:#e50914}
-
-  /* Filter Tabs */
   #filterTabs{text-align:center;margin:1rem 0;}
   #filterTabs button{margin:0 .25rem;padding:.5rem 1rem;background:#1a1a1a;border:none;color:#fff;border-radius:4px;cursor:pointer}
   #filterTabs button.active{background:#e50914}
-
   #movieGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem;padding:2rem;max-width:1400px;margin:0 auto}
   .movie-card{cursor:pointer;border-radius:12px;overflow:hidden;background:#1a1a1a;transition:.3s;position:relative}
   .movie-card:hover{transform:scale(1.05);box-shadow:0 0 20px rgba(229,9,20,.5)}
@@ -26,13 +23,10 @@
   .movie-info{padding:1rem;text-align:center;position:relative}
   .movie-info h3{font-size:1.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .movie-info p{color:#aaa;font-size:.9rem}
-
   .card-actions{position:absolute;bottom:8px;right:8px;display:flex;gap:4px;opacity:0;transition:opacity .2s}
   .movie-card:hover .card-actions{opacity:1}
   .card-actions button{background:rgba(0,0,0,.6);border:none;color:#fff;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:.9rem}
   .card-actions button:hover{background:#e50914}
-  .favorite-btn .filled{color:#e50914}
-
   .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center}
   .modal.active{display:flex}
   .modal-content{background:#1a1a1a;padding:2rem;border-radius:12px;width:90%;max-width:400px;position:relative}
@@ -43,7 +37,6 @@
   .form-group input{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
   .form-group select{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
   .modal-btn{width:100%;padding:0.75rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-top:1rem}
-
   #adminPanel{display:none;padding:2rem;max-width:1400px;margin:0 auto}
   #adminPanel.active{display:block}
   .admin-actions{margin-bottom:2rem;display:flex;gap:1rem;flex-wrap:wrap}
@@ -52,7 +45,6 @@
   .movie-item-admin{display:flex;justify-content:space-between;align-items:center;padding:1rem;background:#1a1a1a;margin-bottom:1rem;border-radius:8px}
   .movie-item-admin button{background:#ff4444;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer}
   .movie-item-admin button + button{margin-left:0.5rem}
-
   .player-container{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:999}
   .player-container.active{display:block}
   .close-btn{position:absolute;top:10px;right:10px;background:none;border:none;color:#fff;font-size:1.5rem;cursor:pointer;z-index:1001}
@@ -71,15 +63,12 @@
   <div id="searchContainer">
     <input type="text" id="searchInput" placeholder="Search for movies or TV shows..." />
   </div>
-
-  <!-- Filter Tabs -->
   <div id="filterTabs">
     <button class="filter-btn active" data-type="all">All</button>
     <button class="filter-btn" data-type="movie">Movies</button>
     <button class="filter-btn" data-type="tv_show">TV Shows</button>
     <button class="filter-btn" data-type="favorites">Favorites</button>
   </div>
-
   <div id="movieGrid"></div>
   <div id="adminPanel" class="admin-panel"></div>
 </main>
@@ -334,7 +323,7 @@ movieGrid.addEventListener('click', e => {
   }
 });
 
-// --- NEW: YouTube Trailer via API ---
+// NEW: YouTube Trailer via API
 function openTrailerModal(movieId) {
   fetch(`${API}/movies/${movieId}/trailer`)
     .then(r => r.json())
@@ -356,7 +345,7 @@ function closeTrailerModal() {
 
 searchInput.addEventListener('input', e => applyFilters(e.target.value));
 
-// --- Admin & Player Functions (unchanged from working version) ---
+// --- Admin & Player Functions ---
 function openAdminPanel() { loginModal.classList.add('active'); }
 function closeLoginModal() { loginModal.classList.remove('active'); }
 function closeAddMovieModal() { addMovieModal.classList.remove('active'); }
@@ -380,6 +369,7 @@ async function adminLogin() {
       showAdminPanel();
       loadAdminMovies();
       loadGlobalPasswords();
+      checkPasswordStatus();
     } else alert('Invalid password');
   } catch (err) {
     console.error(err);
@@ -395,6 +385,7 @@ function showAdminPanel() {
     <div class="admin-actions">
       <button class="admin-btn" onclick="openAddMovieModal()">Add Content</button>
       <button class="admin-btn" onclick="openGlobalPasswordModal()">Add Global Password</button>
+      <button class="admin-btn" id="togglePasswordBtn">Toggle Passwords</button>
       <button class="admin-btn" onclick="exitAdmin()">Exit Admin</button>
     </div>
     <h3>Content</h3>
@@ -582,6 +573,39 @@ async function deleteGlobalPassword(id) {
   } catch (err) {
     console.error(err);
     alert('Failed to delete global password');
+  }
+}
+
+async function checkPasswordStatus() {
+  try {
+    const res = await fetch(API + '/admin/password-status', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const btn = document.getElementById('togglePasswordBtn');
+      btn.textContent = data.disabled ? 'Enable Passwords' : 'Disable Passwords';
+      btn.onclick = togglePasswords;
+    }
+  } catch (err) {
+    console.error('Failed to check password status:', err);
+  }
+}
+
+async function togglePasswords() {
+  try {
+    const res = await fetch(API + '/admin/toggle-passwords', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const btn = document.getElementById('togglePasswordBtn');
+      btn.textContent = data.disabled ? 'Enable Passwords' : 'Disable Passwords';
+    } else alert('Error: ' + data.error);
+  } catch (err) {
+    console.error(err);
+    alert('Failed to toggle passwords');
   }
 }
 
