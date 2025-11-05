@@ -27,6 +27,7 @@
   .movie-card:hover .card-actions{opacity:1}
   .card-actions button{background:rgba(0,0,0,.6);border:none;color:#fff;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:.9rem}
   .card-actions button:hover{background:#e50914}
+  .favorite-btn.filled{color:#e50914}
   .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center}
   .modal.active{display:flex}
   .modal-content{background:#1a1a1a;padding:2rem;border-radius:12px;width:90%;max-width:400px;position:relative}
@@ -165,7 +166,6 @@
   </div>
 </div>
 
-<!-- Trailer Modal -->
 <div id="trailerModal" class="modal">
   <div class="modal-content" style="max-width:800px;">
     <button class="close-modal" onclick="closeTrailerModal()">X</button>
@@ -232,7 +232,6 @@ async function createMovieCard(movie) {
   const year = movie.year || 'N/A';
   const poster = await getMoviePoster(movie.title, year);
   if (!poster.includes('placeholder.com')) img = poster;
-
   const card = document.createElement('div');
   card.className = 'movie-card';
   card.innerHTML = `
@@ -242,11 +241,10 @@ async function createMovieCard(movie) {
       <p>${year} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p>
     </div>
     <div class="card-actions">
-      <button class="favorite-btn" data-id="${movie.id}">Heart</button>
+      <button class="favorite-btn" data-id="${movie.id}">♡</button>
       <button class="trailer-btn" data-id="${movie.id}" ${movie.type === 'tv_show' ? 'disabled' : ''}>Trailer</button>
       <button class="play-btn" data-id="${movie.id}">Play</button>
     </div>`;
-
   card.querySelector('.movie-info').style.cursor = 'pointer';
   card.querySelector('.movie-info').onclick = () => requestMoviePassword(movie.id, movie.title, movie.type);
   movieGrid.appendChild(card);
@@ -266,25 +264,22 @@ function updateFavoriteButtons() {
   const favs = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
   document.querySelectorAll('.favorite-btn').forEach(btn => {
     const id = parseInt(btn.dataset.id);
-    btn.textContent = favs.includes(id) ? 'Heart' : 'Heart';
+    btn.textContent = favs.includes(id) ? '❤️' : '♡';
   });
 }
 
 function applyFilters(search = '') {
   let list = currentMovies;
   const lower = search.toLowerCase();
-
   if (search) {
     list = list.filter(m => m.title.toLowerCase().includes(lower));
   }
-
   if (currentFilter === 'movie') list = list.filter(m => m.type === 'movie');
   if (currentFilter === 'tv_show') list = list.filter(m => m.type === 'tv_show');
   if (currentFilter === 'favorites') {
     const favIds = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || '[]'));
     list = list.filter(m => favIds.has(m.id));
   }
-
   displayMovies(list);
 }
 
@@ -306,7 +301,7 @@ movieGrid.addEventListener('click', e => {
     if (idx > -1) favs.splice(idx, 1);
     else favs.push(id);
     localStorage.setItem(FAV_KEY, JSON.stringify(favs));
-    btn.textContent = favs.includes(id) ? 'Heart' : 'Heart';
+    updateFavoriteButtons();
     if (currentFilter === 'favorites') applyFilters(searchInput.value);
     return;
   }
@@ -323,7 +318,6 @@ movieGrid.addEventListener('click', e => {
   }
 });
 
-// NEW: YouTube Trailer via API
 function openTrailerModal(movieId) {
   fetch(`${API}/movies/${movieId}/trailer`)
     .then(r => r.json())
@@ -345,7 +339,6 @@ function closeTrailerModal() {
 
 searchInput.addEventListener('input', e => applyFilters(e.target.value));
 
-// --- Admin & Player Functions ---
 function openAdminPanel() { loginModal.classList.add('active'); }
 function closeLoginModal() { loginModal.classList.remove('active'); }
 function closeAddMovieModal() { addMovieModal.classList.remove('active'); }
@@ -411,7 +404,6 @@ async function addMovie() {
   const passwords = document.getElementById('moviePassword').value.split(',').map(p => p.trim()).filter(p => p);
   const oneTimePasswords = document.getElementById('oneTimePassword').value.split(',').map(p => p.trim()).filter(p => p);
   const subtitlesEnabled = document.getElementById('subtitlesEnabled').checked;
-
   if (!title && !imdbId) return alert('Please provide title or IMDb ID');
   try {
     const res = await fetch(API + '/movies', {
