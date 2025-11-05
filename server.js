@@ -24,7 +24,7 @@ app.use(express.static(__dirname));
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;   // <-- NEW
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY; // <-- YouTube API Key
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -34,7 +34,7 @@ const pool = new Pool({
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 /* ------------------------------------------------------------------ */
-/*                     DISCORD BOT – FIXED DEPRECATION               */
+/*                     DISCORD BOT – FIXED (v14 → v15)                */
 /* ------------------------------------------------------------------ */
 function generateCode() {
   return 'om-' + Math.random().toString(36).substr(2, 12).toUpperCase();
@@ -110,7 +110,7 @@ async function deleteAllOMCodes() {
   }
 }
 
-/* ---------- Discord ready (v14 → v15 rename) ---------- */
+/* ---------- Discord clientReady (v15+) ---------- */
 client.once('clientReady', async () => {
   console.log('Discord bot ready');
   await deleteAllOMCodes();
@@ -118,10 +118,10 @@ client.once('clientReady', async () => {
   const commands = [
     new SlashCommandBuilder()
       .setName('gencode')
-      .setDescription('Generate 1 OM one-time code'),          // <-- fixed
+      .setDescription('Generate 1 OM one-time code'),
     new SlashCommandBuilder()
       .setName('toggle-codes')
-      .setDescription('Enable / disable code generation')    // <-- fixed
+      .setDescription('Enable / disable code generation')
       .addStringOption(o =>
         o.setName('state')
          .setDescription('on or off')
@@ -196,7 +196,7 @@ ensureTables();
 /*                         API ENDPOINTS                              */
 /* ------------------------------------------------------------------ */
 
-/* ----- Get Movies (includes imdb_id) ----- */
+/* ----- Get Movies ----- */
 app.get('/api/movies', async (req, res) => {
   const { rows } = await pool.query(
     'SELECT id, title, type, year, image, subtitles_enabled, imdb_id FROM movies ORDER BY created_at DESC'
@@ -285,7 +285,7 @@ app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => 
   res.json({ ok: rowCount > 0 });
 });
 
-/* ----- Episodes (TV shows) ----- */
+/* ----- Episodes ----- */
 app.get('/api/movies/:id/episodes', async (req, res) => {
   const id = req.params.id;
   const { rows } = await pool.query('SELECT imdb_id, type FROM movies WHERE id = $1', [id]);
@@ -320,7 +320,7 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
   }
 });
 
-/* ----- Authorize (password check) ----- */
+/* ----- Authorize ----- */
 app.post('/api/movies/:id/authorize', async (req, res) => {
   const { password } = req.body;
   if (!password) return res.json({ ok: false, error: 'Password required' });
@@ -336,7 +336,6 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   try { regular = JSON.parse(rows[0].password_hashes || '[]'); } catch (_) { regular = []; }
   try { ot = JSON.parse(rows[0].one_time_password_hashes || '[]'); } catch (_) { ot = []; }
 
-  // one-time passwords
   for (let i = 0; i < ot.length; i++) {
     if (await bcrypt.compare(password, ot[i])) {
       ot.splice(i, 1);
@@ -346,14 +345,12 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
     }
   }
 
-  // regular passwords
   for (const h of regular) {
     if (await bcrypt.compare(password, h)) {
       return res.json({ ok: true, token: jwt.sign({ movieId: req.params.id }, JWT_SECRET, { expiresIn: '6h' }) });
     }
   }
 
-  // global passwords
   const { rows: globals } = await pool.query('SELECT id, password_hash, is_one_time FROM global_passwords');
   for (const g of globals) {
     if (g.is_one_time && await bcrypt.compare(password, g.password_hash)) {
@@ -370,7 +367,7 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   res.json({ ok: false, error: 'Wrong password' });
 });
 
-/* ----- Embed URL (player) ----- */
+/* ----- Embed URL ----- */
 app.get('/api/movies/:id/embed', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1];
   try {
@@ -404,7 +401,7 @@ app.get('/api/movies/:id/trailer', async (req, res) => {
   const { rows } = await pool.query('SELECT title, imdb_id FROM movies WHERE id = $1', [id]);
   if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
 
-  const { title, imdb_id } = rows[0];
+  const { title } = rows[0];
   const query = encodeURIComponent(`${title} official trailer`);
 
   try {
@@ -417,7 +414,6 @@ app.get('/api/movies/:id/trailer', async (req, res) => {
       return res.json({ ok: false, error: 'No trailer found' });
     }
 
-    // Prefer the first result that contains "official" or "trailer"
     const video = data.items.find(v =>
       v.snippet.title.toLowerCase().includes('official') ||
       v.snippet.title.toLowerCase().includes('trailer')
@@ -426,7 +422,7 @@ app.get('/api/movies/:id/trailer', async (req, res) => {
     const videoId = video.id.videoId;
     const embedUrl = `https://www.youtube.com/embed/${videoId}`;
 
-    res.json({ ok: true, url: embedUrl, title: video.snippet.title });
+    res.json({ ok: true, url: embedUrl });
   } catch (err) {
     console.error('YouTube API error:', err);
     res.json({ ok: false, error: 'Failed to fetch trailer' });
