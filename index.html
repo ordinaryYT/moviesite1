@@ -53,6 +53,10 @@
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
   .bottom-left-overlay{position:absolute;bottom:10px;left:200px;width:120px;height:40px;background:#000;z-index:10;border-radius:8px;}
+  #requestSection{display:none;padding:2rem;max-width:1400px;margin:0 auto}
+  #requestInput{width:100%;max-width:500px;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem;margin-bottom:1rem}
+  #requestInput:focus{outline:none;border-color:#e50914}
+  #requestResults{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem}
 </style>
 </head>
 <body>
@@ -69,8 +73,14 @@
     <button class="filter-btn" data-type="movie">Movies</button>
     <button class="filter-btn" data-type="tv_show">TV Shows</button>
     <button class="filter-btn" data-type="favorites">Favorites</button>
+    <button class="filter-btn" data-type="request">Request</button>
   </div>
   <div id="movieGrid"></div>
+  <div id="requestSection">
+    <h2>Request New Content</h2>
+    <input type="text" id="requestInput" placeholder="Search for movie or TV show to request...">
+    <div id="requestResults"></div>
+  </div>
   <div id="adminPanel" class="admin-panel"></div>
 </main>
 
@@ -80,8 +90,15 @@
     <button class="close-modal" onclick="closeLoginModal()">X</button>
     <h2>Admin Login</h2>
     <div class="form-group">
-      <label for="adminPassword">Password:</label>
-      <input type="password" id="adminPassword" placeholder="Enter admin password">
+      <label for="loginType">Login Type:</label>
+      <select id="loginType">
+        <option value="password">Password</option>
+        <option value="code">One-time Code</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="adminPassword">Password/Code:</label>
+      <input type="password" id="adminPassword" placeholder="Enter admin password or code">
     </div>
     <button class="modal-btn" onclick="adminLogin()">Login</button>
   </div>
@@ -113,9 +130,6 @@
     <div class="form-group">
       <label for="oneTimePassword">One-Time Passwords (comma-separated, optional):</label>
       <input type="text" id="oneTimePassword" placeholder="otp1,otp2,...">
-    </div>
-    <div class="form-group">
-      <label><input type="checkbox" id="subtitlesEnabled"> Enable Subtitles (default: off)</label>
     </div>
     <button class="modal-btn" onclick="addMovie()">Add Content</button>
   </div>
@@ -189,6 +203,9 @@
 <script>
 const API = window.location.origin + '/api';
 const movieGrid = document.getElementById('movieGrid');
+const requestSection = document.getElementById('requestSection');
+const requestInput = document.getElementById('requestInput');
+const requestResults = document.getElementById('requestResults');
 const playerIframe = document.getElementById('playerIframe');
 const playerContainer = document.getElementById('playerContainer');
 const adminBtn = document.getElementById('adminBtn');
@@ -201,6 +218,7 @@ const episodeModal = document.getElementById('episodeModal');
 const trailerModal = document.getElementById('trailerModal');
 const searchInput = document.getElementById('searchInput');
 let adminToken = null;
+let adminRole = null;
 let currentMovies = [];
 let selectedMovieId = null;
 let selectedShow = null;
@@ -208,6 +226,14 @@ let episodeData = null;
 let authToken = null;
 let currentFilter = 'all';
 const FAV_KEY = 'ogmovie_favorites';
+
+function debounce(func, delay = 500) {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), delay);
+  };
+}
 
 async function getMoviePoster(title, year='') {
   try {
@@ -227,15 +253,12 @@ async function getMoviePoster(title, year='') {
   return `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(title.substring(0,20))}`;
 }
 
-async function createMovieCard(movie) {
-  let img = movie.image;
+function createMovieCard(movie) {
   const year = movie.year || 'N/A';
-  const poster = await getMoviePoster(movie.title, year);
-  if (!poster.includes('placeholder.com')) img = poster;
   const card = document.createElement('div');
   card.className = 'movie-card';
   card.innerHTML = `
-    <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+    <img src="${movie.image || 'https://via.placeholder.com/300x450/333/fff?text=No+Poster'}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
     <div class="movie-info">
       <h3>${movie.title}</h3>
       <p>${year} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p>
@@ -247,7 +270,7 @@ async function createMovieCard(movie) {
     </div>`;
   card.querySelector('.movie-info').style.cursor = 'pointer';
   card.querySelector('.movie-info').onclick = () => requestMoviePassword(movie.id, movie.title, movie.type);
-  movieGrid.appendChild(card);
+  return card;
 }
 
 function displayMovies(movies) {
@@ -256,7 +279,7 @@ function displayMovies(movies) {
     movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
     return;
   }
-  movies.forEach(createMovieCard);
+  movies.forEach(movie => movieGrid.appendChild(createMovieCard(movie)));
   updateFavoriteButtons();
 }
 
@@ -269,6 +292,15 @@ function updateFavoriteButtons() {
 }
 
 function applyFilters(search = '') {
+  if (currentFilter === 'request') {
+    movieGrid.style.display = 'none';
+    searchContainer.style.display = 'none';
+    requestSection.style.display = 'block';
+    return;
+  }
+  movieGrid.style.display = 'grid';
+  searchContainer.style.display = 'block';
+  requestSection.style.display = 'none';
   let list = currentMovies;
   const lower = search.toLowerCase();
   if (search) {
@@ -292,7 +324,7 @@ document.querySelectorAll('.filter-btn').forEach(btn => {
   });
 });
 
-movieGrid.addEventListener('click', e => {
+document.addEventListener('click', async e => {
   const btn = e.target;
   if (btn.classList.contains('favorite-btn')) {
     const id = parseInt(btn.dataset.id);
@@ -311,26 +343,53 @@ movieGrid.addEventListener('click', e => {
     requestMoviePassword(id, movie.title, movie.type);
     return;
   }
-  if (btn.classList.contains('trailer-btn') && !btn.disabled) {
-    const id = parseInt(btn.dataset.id);
-    openTrailerModal(id);
+  if (btn.classList.contains('trailer-btn')) {
+    const id = btn.dataset.id;
+    const title = btn.dataset.title;
+    let url;
+    if (id) {
+      url = `${API}/movies/${id}/trailer`;
+    } else if (title) {
+      url = `${API}/trailer?title=${encodeURIComponent(title)}`;
+    }
+    if (url) {
+      try {
+        const r = await fetch(url);
+        const data = await r.json();
+        if (data.ok) {
+          document.getElementById('trailerIframe').src = data.url;
+          trailerModal.classList.add('active');
+        } else {
+          alert('Trailer not available: ' + data.error);
+        }
+      } catch {
+        alert('Failed to load trailer');
+      }
+    }
+    return;
+  }
+  if (btn.classList.contains('wishlist-btn')) {
+    const {title, type, imdb} = btn.dataset;
+    try {
+      const res = await fetch(`${API}/wishlist`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({title, type, imdb_id: imdb})
+      });
+      const data = await res.json();
+      if (data.ok) {
+        alert('Requested! Pending review. Check back in 24 hours to see if approved.');
+        btn.disabled = true;
+        btn.textContent = 'Requested';
+      } else {
+        alert(data.error || 'Already available');
+      }
+    } catch {
+      alert('Failed to request');
+    }
     return;
   }
 });
-
-function openTrailerModal(movieId) {
-  fetch(`${API}/movies/${movieId}/trailer`)
-    .then(r => r.json())
-    .then(data => {
-      if (data.ok) {
-        document.getElementById('trailerIframe').src = data.url;
-        trailerModal.classList.add('active');
-      } else {
-        alert('Trailer not available: ' + data.error);
-      }
-    })
-    .catch(() => alert('Failed to load trailer'));
-}
 
 function closeTrailerModal() {
   trailerModal.classList.remove('active');
@@ -338,6 +397,43 @@ function closeTrailerModal() {
 }
 
 searchInput.addEventListener('input', e => applyFilters(e.target.value));
+
+requestInput.addEventListener('input', debounce(async () => {
+  const q = requestInput.value.trim();
+  if (q.length < 3) {
+    requestResults.innerHTML = '';
+    return;
+  }
+  try {
+    const res = await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    requestResults.innerHTML = '';
+    data.forEach(item => {
+      const show = item.show;
+      const title = show.name;
+      const year = show.premiered ? new Date(show.premiered).getFullYear() : 'N/A';
+      const img = show.image?.medium || 'https://via.placeholder.com/300x450/333/fff?text=No+Poster';
+      const type = (show.runtime && show.runtime > 60) ? 'movie' : 'tv_show';
+      const imdb = show.externals?.imdb || '';
+      if (currentMovies.some(m => m.imdb_id === imdb || m.title.toLowerCase() === title.toLowerCase())) return;
+      const card = document.createElement('div');
+      card.className = 'movie-card';
+      card.innerHTML = `
+        <img src="${img}">
+        <div class="movie-info">
+          <h3>${title}</h3>
+          <p>${year} (${type.charAt(0).toUpperCase() + type.slice(1)})</p>
+        </div>
+        <div class="card-actions">
+          <button class="trailer-btn" data-title="${title}" ${type === 'tv_show' ? 'disabled' : ''}>Trailer</button>
+          <button class="wishlist-btn" data-title="${title}" data-type="${type}" data-imdb="${imdb}">Wishlist</button>
+        </div>`;
+      requestResults.appendChild(card);
+    });
+  } catch {
+    requestResults.innerHTML = '<p style="text-align:center;color:#aaa;">Search failed</p>';
+  }
+}));
 
 function openAdminPanel() { loginModal.classList.add('active'); }
 function closeLoginModal() { loginModal.classList.remove('active'); }
@@ -347,23 +443,28 @@ function closeGlobalPasswordModal() { globalPasswordModal.classList.remove('acti
 function closeEpisodeModal() { episodeModal.classList.remove('active'); }
 
 async function adminLogin() {
-  const password = document.getElementById('adminPassword').value;
-  if (!password) return alert('Please enter password');
+  const loginType = document.getElementById('loginType').value;
+  const pass = document.getElementById('adminPassword').value;
+  if (!pass) return alert('Please enter password/code');
   try {
-    const res = await fetch(API + '/admin/login', {
+    const endpoint = loginType === 'password' ? '/admin/login' : '/admin/onetime-login';
+    const body = loginType === 'password' ? {password: pass} : {code: pass};
+    const res = await fetch(API + endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password })
+      body: JSON.stringify(body)
     });
     const data = await res.json();
     if (data.ok) {
       adminToken = data.token;
+      adminRole = data.role || 'admin';
       loginModal.classList.remove('active');
       showAdminPanel();
       loadAdminMovies();
-      loadGlobalPasswords();
-      checkPasswordStatus();
-    } else alert('Invalid password');
+      if (adminRole === 'admin') {
+        loadGlobalPasswords();
+      }
+    } else alert(data.error || 'Invalid credentials');
   } catch (err) {
     console.error(err);
     alert('Login failed');
@@ -372,26 +473,35 @@ async function adminLogin() {
 
 function showAdminPanel() {
   movieGrid.style.display = 'none';
+  requestSection.style.display = 'none';
   adminPanel.classList.add('active');
-  adminPanel.innerHTML = `
+  let html = `
     <h2>Admin Panel</h2>
     <div class="admin-actions">
-      <button class="admin-btn" onclick="openAddMovieModal()">Add Content</button>
+      <button class="admin-btn" onclick="openAddMovieModal()">Add Content</button>`;
+  if (adminRole === 'admin') {
+    html += `
       <button class="admin-btn" onclick="openGlobalPasswordModal()">Add Global Password</button>
-      <button class="admin-btn" id="togglePasswordBtn">Toggle Passwords</button>
       <button class="admin-btn" onclick="exitAdmin()">Exit Admin</button>
     </div>
     <h3>Content</h3>
     <div id="movieListAdmin" class="movie-list-admin"></div>
     <h3>Global Passwords</h3>
     <div id="globalPasswordList" class="movie-list-admin"></div>`;
+  } else {
+    html += `
+      <button class="admin-btn" onclick="exitAdmin()">Exit Admin</button>
+    </div>`;
+  }
+  adminPanel.innerHTML = html;
 }
 
 function exitAdmin() {
   adminToken = null;
+  adminRole = null;
   adminPanel.classList.remove('active');
   movieGrid.style.display = 'grid';
-  loadMovies();
+  applyFilters();
 }
 
 function openAddMovieModal() { addMovieModal.classList.add('active'); }
@@ -403,7 +513,6 @@ async function addMovie() {
   const type = document.getElementById('contentType').value;
   const passwords = document.getElementById('moviePassword').value.split(',').map(p => p.trim()).filter(p => p);
   const oneTimePasswords = document.getElementById('oneTimePassword').value.split(',').map(p => p.trim()).filter(p => p);
-  const subtitlesEnabled = document.getElementById('subtitlesEnabled').checked;
   if (!title && !imdbId) return alert('Please provide title or IMDb ID');
   try {
     const res = await fetch(API + '/movies', {
@@ -412,14 +521,18 @@ async function addMovie() {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${adminToken}`
       },
-      body: JSON.stringify({ name: title, imdbId, contentPasswords: passwords, oneTimePasswords, type, subtitlesEnabled })
+      body: JSON.stringify({ name: title, imdbId, contentPasswords: passwords, oneTimePasswords, type })
     });
     const data = await res.json();
     if (data.ok) {
       alert('Content added successfully');
       closeAddMovieModal();
-      document.getElementById('subtitlesEnabled').checked = false;
-      loadAdminMovies();
+      if (adminRole === 'limited_admin') {
+        alert('Your one-time access is now expired.');
+        exitAdmin();
+      } else {
+        loadAdminMovies();
+      }
       loadMovies();
     } else alert('Error: ' + data.error);
   } catch (err) {
@@ -454,56 +567,32 @@ async function addGlobalPassword() {
 }
 
 async function loadAdminMovies() {
+  if (adminRole !== 'admin') return;
   try {
     const res = await fetch(API + '/movies');
     const data = await res.json();
     if (data.ok) {
-      currentMovies = data.movies;
       const movieListAdmin = document.getElementById('movieListAdmin');
-      movieListAdmin.innerHTML = '';
-      if (data.movies.length === 0) {
-        movieListAdmin.innerHTML = '<p>No content available</p>';
-      } else {
-        data.movies.forEach(movie => {
-          const div = document.createElement('div');
-          div.className = 'movie-item-admin';
-          div.innerHTML = `
-            <div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'})</div>
-            <div>
-              <button onclick="deleteMovie(${movie.id})">Delete</button>
-              <button onclick="toggleSubtitles(${movie.id}, ${!movie.subtitles_enabled})" 
-                      style="background:${movie.subtitles_enabled ? '#28a745' : '#6c757d'}; margin-left:0.5rem;">
-                Subs ${movie.subtitles_enabled ? 'ON' : 'OFF'}
-              </button>
-            </div>`;
-          movieListAdmin.appendChild(div);
-        });
+      if (movieListAdmin) {
+        movieListAdmin.innerHTML = '';
+        if (data.movies.length === 0) {
+          movieListAdmin.innerHTML = '<p>No content available</p>';
+        } else {
+          data.movies.forEach(movie => {
+            const div = document.createElement('div');
+            div.className = 'movie-item-admin';
+            div.innerHTML = `
+              <div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'})</div>
+              <div>
+                <button onclick="deleteMovie(${movie.id})">Delete</button>
+              </div>`;
+            movieListAdmin.appendChild(div);
+          });
+        }
       }
     }
   } catch (err) {
     console.error('Failed to load admin content:', err);
-  }
-}
-
-async function toggleSubtitles(id, enable) {
-  if (!confirm(`Turn subtitles ${enable ? 'ON' : 'OFF'}?`)) return;
-  try {
-    const res = await fetch(API + `/movies/${id}/subtitles`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminToken}`
-      },
-      body: JSON.stringify({ subtitlesEnabled: enable })
-    });
-    const data = await res.json();
-    if (data.ok) {
-      loadAdminMovies();
-    } else {
-      alert('Failed: ' + data.error);
-    }
-  } catch (err) {
-    alert('Error');
   }
 }
 
@@ -533,18 +622,20 @@ async function loadGlobalPasswords() {
     const data = await res.json();
     if (data.ok) {
       const globalPasswordList = document.getElementById('globalPasswordList');
-      globalPasswordList.innerHTML = '';
-      if (data.passwords.length === 0) {
-        globalPasswordList.innerHTML = '<p>No global passwords</p>';
-      } else {
-        data.passwords.forEach(pwd => {
-          const item = document.createElement('div');
-          item.className = 'movie-item-admin';
-          item.innerHTML = `
-            <div>${pwd.is_one_time ? 'One-Time' : 'Regular'} Password (Created: ${new Date(pwd.created_at).toLocaleString()})</div>
-            <button onclick="deleteGlobalPassword(${pwd.id})">Delete</button>`;
-          globalPasswordList.appendChild(item);
-        });
+      if (globalPasswordList) {
+        globalPasswordList.innerHTML = '';
+        if (data.passwords.length === 0) {
+          globalPasswordList.innerHTML = '<p>No global passwords</p>';
+        } else {
+          data.passwords.forEach(pwd => {
+            const item = document.createElement('div');
+            item.className = 'movie-item-admin';
+            item.innerHTML = `
+              <div>${pwd.is_one_time ? 'One-Time' : 'Regular'} Password (Created: ${new Date(pwd.created_at).toLocaleString()})</div>
+              <button onclick="deleteGlobalPassword(${pwd.id})">Delete</button>`;
+            globalPasswordList.appendChild(item);
+          });
+        }
       }
     }
   } catch (err) {
@@ -565,39 +656,6 @@ async function deleteGlobalPassword(id) {
   } catch (err) {
     console.error(err);
     alert('Failed to delete global password');
-  }
-}
-
-async function checkPasswordStatus() {
-  try {
-    const res = await fetch(API + '/admin/password-status', {
-      headers: { Authorization: `Bearer ${adminToken}` }
-    });
-    const data = await res.json();
-    if (data.ok) {
-      const btn = document.getElementById('togglePasswordBtn');
-      btn.textContent = data.disabled ? 'Enable Passwords' : 'Disable Passwords';
-      btn.onclick = togglePasswords;
-    }
-  } catch (err) {
-    console.error('Failed to check password status:', err);
-  }
-}
-
-async function togglePasswords() {
-  try {
-    const res = await fetch(API + '/admin/toggle-passwords', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${adminToken}` }
-    });
-    const data = await res.json();
-    if (data.ok) {
-      const btn = document.getElementById('togglePasswordBtn');
-      btn.textContent = data.disabled ? 'Enable Passwords' : 'Disable Passwords';
-    } else alert('Error: ' + data.error);
-  } catch (err) {
-    console.error(err);
-    alert('Failed to toggle passwords');
   }
 }
 
@@ -650,7 +708,7 @@ async function requestEpisodeSelection() {
       episodeData = data.seasons;
       const seasonSelect = document.getElementById('seasonSelect');
       seasonSelect.innerHTML = '';
-      Object.keys(episodeData).forEach(season => {
+      Object.keys(episodeData).sort((a,b)=>a-b).forEach(season => {
         const option = document.createElement('option');
         option.value = season;
         option.textContent = `Season ${season}`;
@@ -730,7 +788,14 @@ async function loadMovies() {
       movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">No movies found.</p>';
       return;
     }
-    currentMovies = data.movies;
+    currentMovies = [];
+    for (const movie of data.movies) {
+      let img = movie.image;
+      const poster = await getMoviePoster(movie.title, movie.year);
+      if (!poster.includes('placeholder.com')) img = poster;
+      movie.image = img;
+      currentMovies.push(movie);
+    }
     applyFilters();
   } catch (err) {
     console.error(err);
