@@ -476,15 +476,15 @@ app.post('/api/wishlist', async (req, res) => {
 
     if (!wishlistChannel) return res.json({ ok: false, error: 'Channel not configured' });
 
-    const embed = new EmbedBuilder()
-      .setColor('#e50914')
-      .setTitle(`New ${type.charAt(0).toUpperCase() + type.slice(1)} Request`)
-      .addFields(
-        { name: 'Title', value: title, inline: true },
-        { name: 'IMDb ID', value: imdb_id || 'N/A', inline: true }
-      )
-      .setFooter({ text: 'Pending Review' })
-      .setTimestamp();
+  const embed = new EmbedBuilder()
+  .setColor('#e50914')
+  .setTitle(`New ${type.charAt(0).toUpperCase() + type.slice(1)} Request`)
+  .addFields(
+    { name: 'Title', value: title, inline: true },
+    { name: 'ID', value: imdb_id || 'N/A', inline: true }
+  )
+  .setFooter({ text: 'Pending Review' })
+  .setTimestamp();
 
     await wishlistChannel.send({ embeds: [embed] });
     res.json({ ok: true });
