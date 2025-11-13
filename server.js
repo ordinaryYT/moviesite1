@@ -25,6 +25,9 @@ const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY; // Required for trailers
+const DISCORD_WISHLIST_CHANNEL_ID = process.env.DISCORD_WISHLIST_CHANNEL_ID;
+const DISCORD_CODE_MANAGER_ROLE_ID = process.env.DISCORD_CODE_MANAGER_ROLE_ID;
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -33,9 +36,11 @@ const pool = new Pool({
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-/* ────────────────────── DISCORD BOT (FIXED) ────────────────────── */
-function generateCode() {
-  return 'om-' + Math.random().toString(36).substr(2, 12).toUpperCase();
+let wishlistChannel = null;
+
+/* ────────────────────── DISCORD BOT ────────────────────── */
+function generateCode(prefix = 'om-') {
+  return prefix + Math.random().toString(36).substr(2, 12).toUpperCase();
 }
 
 async function ensureTables() {
@@ -49,7 +54,6 @@ async function ensureTables() {
       one_time_password_hashes JSONB DEFAULT '[]',
       year TEXT,
       image TEXT,
-      subtitles_enabled BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT NOW()
     )
   `);
@@ -70,6 +74,13 @@ async function ensureTables() {
     )
   `);
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS one_time_admin_codes (
+      id SERIAL PRIMARY KEY,
+      code_hash TEXT,
+      used BOOLEAN DEFAULT FALSE
+    )
+  `);
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS bot_config (
       key TEXT PRIMARY KEY,
       value BOOLEAN DEFAULT TRUE
@@ -79,11 +90,6 @@ async function ensureTables() {
     INSERT INTO bot_config (key, value) VALUES ('codes_enabled', TRUE)
     ON CONFLICT (key) DO NOTHING
   `);
-
-  const cols = await pool.query(`SELECT column_name FROM information_schema.columns WHERE table_name = 'movies'`);
-  if (!cols.rows.find(r => r.column_name === 'subtitles_enabled')) {
-    await pool.query(`ALTER TABLE movies ADD COLUMN subtitles_enabled BOOLEAN DEFAULT FALSE`);
-  }
 }
 
 async function getCodesEnabled() {
@@ -109,7 +115,7 @@ async function deleteAllOMCodes() {
 }
 
 /* Discord Ready */
-client.once('clientReady', async () => {
+client.once('ready', async () => {
   console.log('Discord bot ready');
   await deleteAllOMCodes();
 
@@ -125,11 +131,14 @@ client.once('clientReady', async () => {
          .setDescription('on or off')
          .setRequired(true)
          .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' })
-      )
+      ),
+    new SlashCommandBuilder()
+      .setName('genadminlogincode')
+      .setDescription('Generate one-time admin login code for adding one content')
   ];
 
   try {
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
+    const rest = new REST({ version: '10' }).setToken(DISCORD_BOT_TOKEN);
     await rest.put(Routes.applicationCommands(client.user.id), {
       body: commands.map(c => c.toJSON())
     });
@@ -137,10 +146,16 @@ client.once('clientReady', async () => {
   } catch (e) {
     console.error('Failed to register commands:', e);
   }
+
+  if (DISCORD_WISHLIST_CHANNEL_ID) {
+    wishlistChannel = await client.channels.fetch(DISCORD_WISHLIST_CHANNEL_ID).catch(console.error);
+    if (wishlistChannel) console.log('Wishlist channel ready');
+    else console.error('Wishlist channel not found');
+  }
 });
 
 client.on('interactionCreate', async i => {
-  if (!i.isCommand()) return;
+  if (!i.isChatInputCommand()) return;
 
   if (i.commandName === 'gencode') {
     const enabled = await getCodesEnabled();
@@ -171,7 +186,7 @@ client.on('interactionCreate', async i => {
   }
 
   if (i.commandName === 'toggle-codes') {
-    if (!i.member.roles.cache.has(process.env.DISCORD_CODE_MANAGER_ROLE_ID))
+    if (!i.member.roles.cache.has(DISCORD_CODE_MANAGER_ROLE_ID))
       return i.reply({ content: 'No permission', ephemeral: true });
 
     const state = i.options.getString('state');
@@ -179,19 +194,57 @@ client.on('interactionCreate', async i => {
     await setCodesEnabled(enabled);
     await i.reply(`Code generation: **${enabled ? 'ENABLED' : 'DISABLED'}**`);
   }
+
+  if (i.commandName === 'genadminlogincode') {
+    if (!i.member.roles.cache.has(DISCORD_CODE_MANAGER_ROLE_ID))
+      return i.reply({ content: 'No permission', ephemeral: true });
+
+    const code = generateCode('admin-');
+    const hash = await bcrypt.hash(code, 10);
+
+    await pool.query(
+      'INSERT INTO one_time_admin_codes (code_hash, used) VALUES ($1, FALSE)',
+      [hash]
+    );
+
+    const embed = new EmbedBuilder()
+      .setColor('#e50914')
+      .setTitle('One-Time Admin Login Code')
+      .setDescription(`\`\`\`${code}\`\`\``)
+      .setFooter({ text: 'Allows adding one content item only!' });
+
+    await i.reply({ embeds: [embed] });
+  }
 });
 
-if (process.env.DISCORD_BOT_TOKEN) {
-  client.login(process.env.DISCORD_BOT_TOKEN).catch(console.error);
+if (DISCORD_BOT_TOKEN) {
+  client.login(DISCORD_BOT_TOKEN).catch(console.error);
 }
 
 /* ────────────────────── DATABASE SETUP ────────────────────── */
 ensureTables();
 
+/* ────────────────────── MIDDLEWARE ────────────────────── */
+const authMiddleware = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ ok: false, error: 'No token' });
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ ok: false, error: 'Invalid token' });
+  }
+};
+
+const requireFullAdmin = (req, res, next) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ ok: false, error: 'Insufficient permissions' });
+  next();
+};
+
 /* ────────────────────── API ENDPOINTS ────────────────────── */
 app.get('/api/movies', async (req, res) => {
   const { rows } = await pool.query(
-    'SELECT id, title, type, year, image, subtitles_enabled, imdb_id FROM movies ORDER BY created_at DESC'
+    'SELECT id, title, type, year, image, imdb_id FROM movies ORDER BY created_at DESC'
   );
   res.json({ ok: true, movies: rows });
 });
@@ -200,59 +253,61 @@ app.post('/api/admin/login', (req, res) => {
   const { password } = req.body;
   if (password === ADMIN_PASSWORD) {
     const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '12h' });
-    res.json({ ok: true, token });
+    res.json({ ok: true, token, role: 'admin' });
   } else {
     res.json({ ok: false, error: 'Wrong password' });
   }
 });
 
-const requireAdmin = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ ok: false, error: 'No token' });
+app.post('/api/admin/onetime-login', async (req, res) => {
+  const { code } = req.body;
   try {
-    jwt.verify(token, JWT_SECRET);
-    next();
-  } catch {
-    res.status(401).json({ ok: false, error: 'Invalid token' });
+    const { rows } = await pool.query('SELECT id, code_hash, used FROM one_time_admin_codes');
+    for (const r of rows) {
+      if (!r.used && await bcrypt.compare(code, r.code_hash)) {
+        const token = jwt.sign({ role: 'limited_admin', code_id: r.id }, JWT_SECRET, { expiresIn: '1h' });
+        return res.json({ ok: true, token, role: 'limited_admin' });
+      }
+    }
+    res.json({ ok: false, error: 'Invalid or used code' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: 'Server error' });
   }
-};
+});
 
-app.post('/api/movies', requireAdmin, async (req, res) => {
-  const { name, imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie', subtitlesEnabled = false } = req.body;
+app.post('/api/movies', authMiddleware, async (req, res) => {
+  const { role, code_id } = req.user;
+  if (role === 'limited_admin') {
+    const { rows } = await pool.query('SELECT used FROM one_time_admin_codes WHERE id = $1', [code_id]);
+    if (!rows[0] || rows[0].used) return res.status(403).json({ ok: false, error: 'Code already used' });
+  }
+
+  const { name, imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie' } = req.body;
   if (!name && !imdbId) return res.status(400).json({ ok: false, error: 'Title or IMDb ID required' });
 
   const hashes = await Promise.all(contentPasswords.map(p => bcrypt.hash(p, 10)));
   const otHashes = await Promise.all(oneTimePasswords.map(p => bcrypt.hash(p, 10)));
 
   const { rows } = await pool.query(
-    `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes, subtitles_enabled)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-    [name || imdbId, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes), subtitlesEnabled]
+    `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+    [name || imdbId, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes)]
   );
+
+  if (role === 'limited_admin') {
+    await pool.query('UPDATE one_time_admin_codes SET used = TRUE WHERE id = $1', [code_id]);
+  }
 
   res.json({ ok: true, movieId: rows[0].id });
 });
 
-app.patch('/api/movies/:id/subtitles', requireAdmin, async (req, res) => {
-  const { subtitlesEnabled } = req.body;
-  if (typeof subtitlesEnabled !== 'boolean') {
-    return res.status(400).json({ ok: false, error: 'subtitlesEnabled must be boolean' });
-  }
-
-  const { rowCount } = await pool.query(
-    'UPDATE movies SET subtitles_enabled = $1 WHERE id = $2',
-    [subtitlesEnabled, req.params.id]
-  );
-
-  res.json({ ok: rowCount > 0 });
-});
-
-app.delete('/api/movies/:id', requireAdmin, async (req, res) => {
+app.delete('/api/movies/:id', authMiddleware, requireFullAdmin, async (req, res) => {
   const { rowCount } = await pool.query('DELETE FROM movies WHERE id = $1', [req.params.id]);
   res.json({ ok: rowCount > 0 });
 });
 
-app.post('/api/admin/global-passwords', requireAdmin, async (req, res) => {
+app.post('/api/admin/global-passwords', authMiddleware, requireFullAdmin, async (req, res) => {
   const { password, isOneTime } = req.body;
   const hash = await bcrypt.hash(password, 10);
   const { rows } = await pool.query(
@@ -262,12 +317,12 @@ app.post('/api/admin/global-passwords', requireAdmin, async (req, res) => {
   res.json({ ok: true, id: rows[0].id });
 });
 
-app.get('/api/admin/global-passwords', requireAdmin, async (req, res) => {
+app.get('/api/admin/global-passwords', authMiddleware, requireFullAdmin, async (req, res) => {
   const { rows } = await pool.query('SELECT id, is_one_time, created_at FROM global_passwords');
   res.json({ ok: true, passwords: rows });
 });
 
-app.delete('/api/admin/global-passwords/:id', requireAdmin, async (req, res) => {
+app.delete('/api/admin/global-passwords/:id', authMiddleware, requireFullAdmin, async (req, res) => {
   const { rowCount } = await pool.query('DELETE FROM global_passwords WHERE id = $1', [req.params.id]);
   res.json({ ok: rowCount > 0 });
 });
@@ -351,30 +406,21 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   res.json({ ok: false, error: 'Wrong password' });
 });
 
-app.get('/api/movies/:id/embed', async (req, res) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  try {
-    const { movieId } = jwt.verify(token, JWT_SECRET);
-    const { rows } = await pool.query(
-      'SELECT imdb_id, type, subtitles_enabled FROM movies WHERE id = $1',
-      [movieId]
-    );
-    if (!rows[0]) return res.json({ ok: false, error: 'Not found' });
+app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
+  const { movieId } = req.user;
+  const { rows } = await pool.query(
+    'SELECT imdb_id, type FROM movies WHERE id = $1',
+    [movieId]
+  );
+  if (!rows[0]) return res.json({ ok: false, error: 'Not found' });
 
-    const { imdb_id, type, subtitles_enabled } = rows[0];
-    let url = type === 'movie'
-      ? `https://vidsrc.me/embed/movie/${imdb_id}`
-      : `https://vidsrc.me/embed/tv/${imdb_id}`;
+  const { imdb_id, type } = rows[0];
+  const base = type === 'movie' ? 'movie' : 'tv';
+  const url = `https://vidsrc.me/embed/${base}/${imdb_id}`;
 
-    if (subtitles_enabled) url += '?sub=en';
-
-    res.json({ ok: true, url });
-  } catch {
-    res.status(401).json({ ok: false, error: 'Invalid token' });
-  }
+  res.json({ ok: true, url });
 });
 
-/* ────────────────────── NEW: YouTube Trailer API ────────────────────── */
 app.get('/api/movies/:id/trailer', async (req, res) => {
   if (!YOUTUBE_API_KEY) {
     return res.json({ ok: false, error: 'YouTube API key not set' });
@@ -383,8 +429,21 @@ app.get('/api/movies/:id/trailer', async (req, res) => {
   const { rows } = await pool.query('SELECT title FROM movies WHERE id = $1', [req.params.id]);
   if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
 
-  const query = encodeURIComponent(`${rows[0].title} official trailer`);
+  await getTrailer(rows[0].title, res);
+});
 
+app.get('/api/trailer', async (req, res) => {
+  if (!YOUTUBE_API_KEY) {
+    return res.json({ ok: false, error: 'YouTube API key not set' });
+  }
+  const { title } = req.query;
+  if (!title) return res.status(400).json({ ok: false, error: 'Title required' });
+
+  await getTrailer(title, res);
+});
+
+async function getTrailer(title, res) {
+  const query = encodeURIComponent(`${title} official trailer`);
   try {
     const ytRes = await fetch(
       `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${query}&type=video&key=${YOUTUBE_API_KEY}`
@@ -404,6 +463,34 @@ app.get('/api/movies/:id/trailer', async (req, res) => {
   } catch (err) {
     console.error('YouTube API error:', err);
     res.json({ ok: false, error: 'Failed to fetch trailer' });
+  }
+}
+
+app.post('/api/wishlist', async (req, res) => {
+  const { title, type, imdb_id } = req.body;
+  if (!title || !type) return res.status(400).json({ ok: false, error: 'Title and type required' });
+
+  try {
+    const { rows } = await pool.query('SELECT 1 FROM movies WHERE LOWER(title) = LOWER($1)', [title]);
+    if (rows.length > 0) return res.json({ ok: false, error: 'Already available' });
+
+    if (!wishlistChannel) return res.json({ ok: false, error: 'Channel not configured' });
+
+    const embed = new EmbedBuilder()
+      .setColor('#e50914')
+      .setTitle(`New ${type.charAt(0).toUpperCase() + type.slice(1)} Request`)
+      .addFields(
+        { name: 'Title', value: title, inline: true },
+        { name: 'IMDb ID', value: imdb_id || 'N/A', inline: true }
+      )
+      .setFooter({ text: 'Pending Review' })
+      .setTimestamp();
+
+    await wishlistChannel.send({ embeds: [embed] });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Wishlist error:', err);
+    res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
 
