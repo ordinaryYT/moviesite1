@@ -24,7 +24,7 @@ app.use(express.static(__dirname));
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY; // Required for trailers
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 const DISCORD_WISHLIST_CHANNEL_ID = process.env.DISCORD_WISHLIST_CHANNEL_ID;
 const DISCORD_CODE_MANAGER_ROLE_ID = process.env.DISCORD_CODE_MANAGER_ROLE_ID;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -38,7 +38,6 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 let wishlistChannel = null;
 
-/* ────────────────────── DISCORD BOT ────────────────────── */
 function generateCode(prefix = 'om-') {
   return prefix + Math.random().toString(36).substr(2, 12).toUpperCase();
 }
@@ -114,7 +113,6 @@ async function deleteAllOMCodes() {
   }
 }
 
-/* Discord Ready */
 client.once('ready', async () => {
   console.log('Discord bot ready');
   await deleteAllOMCodes();
@@ -221,10 +219,8 @@ if (DISCORD_BOT_TOKEN) {
   client.login(DISCORD_BOT_TOKEN).catch(console.error);
 }
 
-/* ────────────────────── DATABASE SETUP ────────────────────── */
 ensureTables();
 
-/* ────────────────────── MIDDLEWARE ────────────────────── */
 const authMiddleware = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ ok: false, error: 'No token' });
@@ -241,7 +237,6 @@ const requireFullAdmin = (req, res, next) => {
   next();
 };
 
-/* ────────────────────── API ENDPOINTS ────────────────────── */
 app.get('/api/movies', async (req, res) => {
   const { rows } = await pool.query(
     'SELECT id, title, type, year, image, imdb_id FROM movies ORDER BY created_at DESC'
@@ -283,8 +278,10 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
     if (!rows[0] || rows[0].used) return res.status(403).json({ ok: false, error: 'Code already used' });
   }
 
-  const { name, imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie' } = req.body;
-  if (!name && !imdbId) return res.status(400).json({ ok: false, error: 'Title or IMDb ID required' });
+  let { name, imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie' } = req.body;
+  if (!name && !imdbId) return res.status(400).json({ ok: false, error: 'Title or ID required' });
+
+  if (imdbId && !imdbId.startsWith('tt')) imdbId = 'tt' + imdbId;
 
   const hashes = await Promise.all(contentPasswords.map(p => bcrypt.hash(p, 10)));
   const otHashes = await Promise.all(oneTimePasswords.map(p => bcrypt.hash(p, 10)));
@@ -421,17 +418,6 @@ app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
   res.json({ ok: true, url });
 });
 
-app.get('/api/movies/:id/trailer', async (req, res) => {
-  if (!YOUTUBE_API_KEY) {
-    return res.json({ ok: false, error: 'YouTube API key not set' });
-  }
-
-  const { rows } = await pool.query('SELECT title FROM movies WHERE id = $1', [req.params.id]);
-  if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
-
-  await getTrailer(rows[0].title, res);
-});
-
 app.get('/api/trailer', async (req, res) => {
   if (!YOUTUBE_API_KEY) {
     return res.json({ ok: false, error: 'YouTube API key not set' });
@@ -439,11 +425,7 @@ app.get('/api/trailer', async (req, res) => {
   const { title } = req.query;
   if (!title) return res.status(400).json({ ok: false, error: 'Title required' });
 
-  await getTrailer(title, res);
-});
-
-async function getTrailer(title, res) {
-  const query = encodeURIComponent(`${title} official trailer`);
+  const query = encodeURIComponent(title);
   try {
     const ytRes = await fetch(
       `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${query}&type=video&key=${YOUTUBE_API_KEY}`
@@ -464,7 +446,7 @@ async function getTrailer(title, res) {
     console.error('YouTube API error:', err);
     res.json({ ok: false, error: 'Failed to fetch trailer' });
   }
-}
+});
 
 app.post('/api/wishlist', async (req, res) => {
   const { title, type, imdb_id } = req.body;
@@ -476,12 +458,14 @@ app.post('/api/wishlist', async (req, res) => {
 
     if (!wishlistChannel) return res.json({ ok: false, error: 'Channel not configured' });
 
+    const displayId = imdb_id ? imdb_id.replace(/^tt/, '') : 'N/A';
+
     const embed = new EmbedBuilder()
       .setColor('#e50914')
       .setTitle(`New ${type.charAt(0).toUpperCase() + type.slice(1)} Request`)
       .addFields(
         { name: 'Title', value: title, inline: true },
-        { name: 'IMDb ID', value: imdb_id || 'N/A', inline: true }
+        { name: 'ID', value: displayId, inline: true }
       )
       .setFooter({ text: 'Pending Review' })
       .setTimestamp();
@@ -494,12 +478,10 @@ app.post('/api/wishlist', async (req, res) => {
   }
 });
 
-/* ────────────────────── SERVE HTML ────────────────────── */
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-/* ────────────────────── START SERVER ────────────────────── */
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
