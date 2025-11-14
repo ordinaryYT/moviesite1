@@ -113,8 +113,8 @@
       <input type="text" id="movieTitle" placeholder="Enter movie or TV show title">
     </div>
     <div class="form-group">
-      <label for="movieImdbId">IMDb ID (optional):</label>
-      <input type="text" id="movieImdbId" placeholder="tt1234567">
+      <label for="movieImdbId">ID (optional):</label>
+      <input type="text" id="movieImdbId" placeholder="1234567">
     </div>
     <div class="form-group">
       <label for="contentType">Type:</label>
@@ -227,7 +227,7 @@ let authToken = null;
 let currentFilter = 'all';
 const FAV_KEY = 'ogmovie_favorites';
 
-function debounce(func, delay = 500) {
+function debounce(func, delay = 600) {
   let timeout;
   return (...args) => {
     clearTimeout(timeout);
@@ -241,13 +241,6 @@ async function getMoviePoster(title, year='') {
     const data = await response.json();
     if(data.length>0 && data[0].show.image && data[0].show.image.medium){
       return data[0].show.image.medium;
-    }
-  } catch (err) {}
-  try {
-    const wikiResponse = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g,'_'))}`);
-    const wikiData = await wikiResponse.json();
-    if(wikiData.thumbnail && wikiData.thumbnail.source){
-      return wikiData.thumbnail.source;
     }
   } catch (err) {}
   return `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(title.substring(0,20))}`;
@@ -264,7 +257,7 @@ function createMovieCard(movie) {
       <p>${year} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p>
     </div>
     <div class="card-actions">
-      <button class="favorite-btn" data-id="${movie.id}">♡</button>
+      <button class="favorite-btn" data-id="${movie.id}">Heart</button>
       <button class="trailer-btn" data-id="${movie.id}" ${movie.type === 'tv_show' ? 'disabled' : ''}>Trailer</button>
       <button class="play-btn" data-id="${movie.id}">Play</button>
     </div>`;
@@ -287,19 +280,19 @@ function updateFavoriteButtons() {
   const favs = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
   document.querySelectorAll('.favorite-btn').forEach(btn => {
     const id = parseInt(btn.dataset.id);
-    btn.textContent = favs.includes(id) ? '❤️' : '♡';
+    btn.textContent = favs.includes(id) ? 'Heart' : 'Heart';
   });
 }
 
 function applyFilters(search = '') {
   if (currentFilter === 'request') {
     movieGrid.style.display = 'none';
-    searchContainer.style.display = 'none';
+    document.getElementById('searchContainer').style.display = 'none';
     requestSection.style.display = 'block';
     return;
   }
   movieGrid.style.display = 'grid';
-  searchContainer.style.display = 'block';
+  document.getElementById('searchContainer').style.display = 'block';
   requestSection.style.display = 'none';
   let list = currentMovies;
   const lower = search.toLowerCase();
@@ -347,11 +340,8 @@ document.addEventListener('click', async e => {
     const id = btn.dataset.id;
     const title = btn.dataset.title;
     let url;
-    if (id) {
-      url = `${API}/movies/${id}/trailer`;
-    } else if (title) {
-      url = `${API}/trailer?title=${encodeURIComponent(title)}`;
-    }
+    if (id) url = `${API}/movies/${id}/trailer`;
+    else if (title) url = `${API}/trailer?title=${encodeURIComponent(title)}`;
     if (url) {
       try {
         const r = await fetch(url);
@@ -378,7 +368,7 @@ document.addEventListener('click', async e => {
       });
       const data = await res.json();
       if (data.ok) {
-        alert('Requested! Pending review. Check back in 24 hours to see if approved.');
+        alert('Requested! Pending review. Check back in 24 hours.');
         btn.disabled = true;
         btn.textContent = 'Requested';
       } else {
@@ -398,40 +388,65 @@ function closeTrailerModal() {
 
 searchInput.addEventListener('input', e => applyFilters(e.target.value));
 
+// ——— REQUEST TAB: IMDb SEARCH + FALLBACK ———
 requestInput.addEventListener('input', debounce(async () => {
   const q = requestInput.value.trim();
   if (q.length < 3) {
     requestResults.innerHTML = '';
     return;
   }
+
+  let data;
   try {
-    const res = await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    requestResults.innerHTML = '';
-    data.forEach(item => {
-      const show = item.show;
-      const title = show.name;
-      const year = show.premiered ? new Date(show.premiered).getFullYear() : 'N/A';
-      const img = show.image?.medium || 'https://via.placeholder.com/300x450/333/fff?text=No+Poster';
-      const type = (show.runtime && show.runtime > 60) ? 'movie' : 'tv_show';
-      const imdb = show.externals?.imdb || '';
-      if (currentMovies.some(m => m.imdb_id === imdb || m.title.toLowerCase() === title.toLowerCase())) return;
-      const card = document.createElement('div');
-      card.className = 'movie-card';
-      card.innerHTML = `
-        <img src="${img}">
-        <div class="movie-info">
-          <h3>${title}</h3>
-          <p>${year} (${type.charAt(0).toUpperCase() + type.slice(1)})</p>
-        </div>
-        <div class="card-actions">
-          <button class="trailer-btn" data-title="${title}" ${type === 'tv_show' ? 'disabled' : ''}>Trailer</button>
-          <button class="wishlist-btn" data-title="${title}" data-type="${type}" data-imdb="${imdb}">Wishlist</button>
-        </div>`;
-      requestResults.appendChild(card);
-    });
+    const res = await fetch(`https://v2.sg.media-imdb.com/suggestion/${encodeURIComponent(q)}/1.json`);
+    data = await res.json();
   } catch {
-    requestResults.innerHTML = '<p style="text-align:center;color:#aaa;">Search failed</p>';
+    // Fallback to TV-Maze
+    try {
+      const res = await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(q)}`);
+      const tvData = await res.json();
+      data = { d: tvData.map(s => ({
+        l: s.show.name,
+        y: s.show.premiered ? new Date(s.show.premiered).getFullYear() : null,
+        id: s.show.externals?.imdb,
+        q: s.show.type === 'Scripted' ? 'tvSeries' : 'movie',
+        i: { imageUrl: s.show.image?.medium }
+      })) };
+    } catch {
+      requestResults.innerHTML = '<p style="text-align:center;color:#aaa;">Search failed</p>';
+      return;
+    }
+  }
+
+  requestResults.innerHTML = '';
+  const existing = new Set(currentMovies.map(m => m.imdb_id).filter(Boolean));
+
+  (data.d || []).forEach(item => {
+    if (!['movie', 'tvSeries', 'tvMiniSeries'].includes(item.q)) return;
+    const title = item.l;
+    const year = item.y || 'N/A';
+    const imdbId = item.id || '';
+    const type = item.q === 'movie' ? 'movie' : 'tv_show';
+    const img = item.i?.imageUrl || `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(title.substring(0,12))}`;
+    if (existing.has(imdbId)) return;
+
+    const card = document.createElement('div');
+    card.className = 'movie-card';
+    card.innerHTML = `
+      <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+      <div class="movie-info">
+        <h3>${title}</h3>
+        <p>${year} (${type === 'movie' ? 'Movie' : 'TV Show'})</p>
+      </div>
+      <div class="card-actions">
+        <button class="trailer-btn" data-title="${title}" ${type === 'tv_show' ? 'disabled' : ''}>Trailer</button>
+        <button class="wishlist-btn" data-title="${title}" data-type="${type}" data-imdb="${imdbId}">Wishlist</button>
+      </div>`;
+    requestResults.appendChild(card);
+  });
+
+  if (!(data.d || []).length) {
+    requestResults.innerHTML = '<p style="text-align:center;color:#aaa;">No results found</p>';
   }
 }));
 
@@ -461,9 +476,7 @@ async function adminLogin() {
       loginModal.classList.remove('active');
       showAdminPanel();
       loadAdminMovies();
-      if (adminRole === 'admin') {
-        loadGlobalPasswords();
-      }
+      if (adminRole === 'admin') loadGlobalPasswords();
     } else alert(data.error || 'Invalid credentials');
   } catch (err) {
     console.error(err);
@@ -508,12 +521,15 @@ function openAddMovieModal() { addMovieModal.classList.add('active'); }
 function openGlobalPasswordModal() { globalPasswordModal.classList.add('active'); }
 
 async function addMovie() {
+  let imdbId = document.getElementById('movieImdbId').value.trim();
+  if (imdbId && !imdbId.startsWith('tt')) {
+    imdbId = 'tt' + imdbId.replace(/^0+/, ''); // auto-add tt, remove leading zeros
+  }
   const title = document.getElementById('movieTitle').value;
-  const imdbId = document.getElementById('movieImdbId').value;
   const type = document.getElementById('contentType').value;
   const passwords = document.getElementById('moviePassword').value.split(',').map(p => p.trim()).filter(p => p);
   const oneTimePasswords = document.getElementById('oneTimePassword').value.split(',').map(p => p.trim()).filter(p => p);
-  if (!title && !imdbId) return alert('Please provide title or IMDb ID');
+  if (!title && !imdbId) return alert('Please provide title or ID');
   try {
     const res = await fetch(API + '/movies', {
       method: 'POST',
