@@ -13,7 +13,6 @@ const {
   REST,
   Routes
 } = require('discord.js');
-
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const app = express();
@@ -24,7 +23,7 @@ app.use(express.static(__dirname));
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY; // Required for trailers
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 const DISCORD_WISHLIST_CHANNEL_ID = process.env.DISCORD_WISHLIST_CHANNEL_ID;
 const DISCORD_CODE_MANAGER_ROLE_ID = process.env.DISCORD_CODE_MANAGER_ROLE_ID;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -35,7 +34,6 @@ const pool = new Pool({
 });
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-
 let wishlistChannel = null;
 
 /* ────────────────────── DISCORD BOT ────────────────────── */
@@ -162,33 +160,27 @@ client.on('interactionCreate', async i => {
     if (!enabled) {
       return i.reply({ content: 'Code generation is **DISABLED** by admin.', ephemeral: true });
     }
-
     const code = generateCode();
     const hash = await bcrypt.hash(code, 10);
-
     const { rows: [gp] } = await pool.query(
       'INSERT INTO global_passwords (password_hash, is_one_time) VALUES ($1, true) RETURNING id',
       [hash]
     );
-
     await pool.query(
       'INSERT INTO om_codes (code, global_password_id, used) VALUES ($1, $2, FALSE)',
       [code, gp.id]
     );
-
     const embed = new EmbedBuilder()
       .setColor('#e50914')
       .setTitle('OM One-Time Code')
       .setDescription(`\`\`\`${code}\`\`\``)
       .setFooter({ text: 'One-time use only!' });
-
     await i.reply({ embeds: [embed] });
   }
 
   if (i.commandName === 'toggle-codes') {
     if (!i.member.roles.cache.has(DISCORD_CODE_MANAGER_ROLE_ID))
       return i.reply({ content: 'No permission', ephemeral: true });
-
     const state = i.options.getString('state');
     const enabled = state === 'on';
     await setCodesEnabled(enabled);
@@ -198,21 +190,17 @@ client.on('interactionCreate', async i => {
   if (i.commandName === 'genadminlogincode') {
     if (!i.member.roles.cache.has(DISCORD_CODE_MANAGER_ROLE_ID))
       return i.reply({ content: 'No permission', ephemeral: true });
-
     const code = generateCode('admin-');
     const hash = await bcrypt.hash(code, 10);
-
     await pool.query(
       'INSERT INTO one_time_admin_codes (code_hash, used) VALUES ($1, FALSE)',
       [hash]
     );
-
     const embed = new EmbedBuilder()
       .setColor('#e50914')
       .setTitle('One-Time Admin Login Code')
       .setDescription(`\`\`\`${code}\`\`\``)
       .setFooter({ text: 'Allows adding one content item only!' });
-
     await i.reply({ embeds: [embed] });
   }
 });
@@ -282,9 +270,8 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
     const { rows } = await pool.query('SELECT used FROM one_time_admin_codes WHERE id = $1', [code_id]);
     if (!rows[0] || rows[0].used) return res.status(403).json({ ok: false, error: 'Code already used' });
   }
-
   const { name, imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie' } = req.body;
-  if (!name && !imdbId) return res.status(400).json({ ok: false, error: 'Title or IMDb ID required' });
+  if (!name && !imdbId) return res.status(400).json({ ok: false, error: 'Title or ID required' });
 
   const hashes = await Promise.all(contentPasswords.map(p => bcrypt.hash(p, 10)));
   const otHashes = await Promise.all(oneTimePasswords.map(p => bcrypt.hash(p, 10)));
@@ -333,17 +320,14 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
   if (!rows[0] || rows[0].type !== 'tv_show') {
     return res.json({ ok: false, error: 'Not a TV show' });
   }
-
   const imdbId = rows[0].imdb_id;
   try {
     const showRes = await fetch(`https://api.tvmaze.com/lookup/shows?imdb=${imdbId}`);
     if (!showRes.ok) throw new Error();
     const show = await showRes.json();
-
     const epRes = await fetch(`https://api.tvmaze.com/shows/${show.id}/episodes`);
     if (!epRes.ok) throw new Error();
     const eps = await epRes.json();
-
     const seasons = {};
     eps.forEach(ep => {
       const s = ep.season.toString();
@@ -353,7 +337,6 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
         name: ep.name || `Episode ${ep.number}`
       });
     });
-
     res.json({ ok: true, seasons });
   } catch (err) {
     console.error('Episodes API error:', err);
@@ -364,7 +347,6 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
 app.post('/api/movies/:id/authorize', async (req, res) => {
   const { password } = req.body;
   if (!password) return res.json({ ok: false, error: 'Password required' });
-
   const { rows } = await pool.query(
     'SELECT password_hashes, one_time_password_hashes FROM movies WHERE id = $1',
     [req.params.id]
@@ -397,6 +379,7 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
       return res.json({ ok: true, token: jwt.sign({ movieId: req.params.id }, JWT_SECRET, { expiresIn: '6h' }) });
     }
   }
+
   for (const g of globals) {
     if (!g.is_one_time && await bcrypt.compare(password, g.password_hash)) {
       return res.json({ ok: true, token: jwt.sign({ movieId: req.params.id }, JWT_SECRET, { expiresIn: '6h' }) });
@@ -413,11 +396,9 @@ app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
     [movieId]
   );
   if (!rows[0]) return res.json({ ok: false, error: 'Not found' });
-
   const { imdb_id, type } = rows[0];
   const base = type === 'movie' ? 'movie' : 'tv';
   const url = `https://vidsrc.me/embed/${base}/${imdb_id}`;
-
   res.json({ ok: true, url });
 });
 
@@ -425,10 +406,8 @@ app.get('/api/movies/:id/trailer', async (req, res) => {
   if (!YOUTUBE_API_KEY) {
     return res.json({ ok: false, error: 'YouTube API key not set' });
   }
-
   const { rows } = await pool.query('SELECT title FROM movies WHERE id = $1', [req.params.id]);
   if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
-
   await getTrailer(rows[0].title, res);
 });
 
@@ -438,7 +417,6 @@ app.get('/api/trailer', async (req, res) => {
   }
   const { title } = req.query;
   if (!title) return res.status(400).json({ ok: false, error: 'Title required' });
-
   await getTrailer(title, res);
 });
 
@@ -449,16 +427,13 @@ async function getTrailer(title, res) {
       `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${query}&type=video&key=${YOUTUBE_API_KEY}`
     );
     const data = await ytRes.json();
-
     if (!data.items?.length) {
       return res.json({ ok: false, error: 'No trailer found' });
     }
-
     const video = data.items.find(v =>
       v.snippet.title.toLowerCase().includes('official') ||
       v.snippet.title.toLowerCase().includes('trailer')
     ) || data.items[0];
-
     res.json({ ok: true, url: `https://www.youtube.com/embed/${video.id.videoId}` });
   } catch (err) {
     console.error('YouTube API error:', err);
@@ -476,12 +451,15 @@ app.post('/api/wishlist', async (req, res) => {
 
     if (!wishlistChannel) return res.json({ ok: false, error: 'Channel not configured' });
 
+    // Show only the number part in Discord
+    const displayId = imdb_id ? imdb_id.replace(/^tt0*/, '') : 'N/A';
+
     const embed = new EmbedBuilder()
       .setColor('#e50914')
       .setTitle(`New ${type.charAt(0).toUpperCase() + type.slice(1)} Request`)
       .addFields(
         { name: 'Title', value: title, inline: true },
-        { name: 'IMDb ID', value: imdb_id || 'N/A', inline: true }
+        { name: 'ID', value: displayId, inline: true }
       )
       .setFooter({ text: 'Pending Review' })
       .setTimestamp();
