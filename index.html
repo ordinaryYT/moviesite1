@@ -57,6 +57,7 @@
   #requestInput{width:100%;max-width:500px;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem;margin-bottom:1rem}
   #requestInput:focus{outline:none;border-color:#e50914}
   #requestResults{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem}
+  .request-note{color:#aaa;font-size:.9rem;margin-top:.5rem;}
 </style>
 </head>
 <body>
@@ -79,6 +80,10 @@
   <div id="requestSection">
     <h2>Request New Content</h2>
     <input type="text" id="requestInput" placeholder="Search for movie or TV show to request...">
+    <p class="request-note">
+      <strong>Note:</strong> Some images may be broken or show the wrong thing. 
+      If this happens please watch the trailer to make sure it’s the correct film/TV show.
+    </p>
     <div id="requestResults"></div>
   </div>
   <div id="adminPanel" class="admin-panel"></div>
@@ -113,8 +118,8 @@
       <input type="text" id="movieTitle" placeholder="Enter movie or TV show title">
     </div>
     <div class="form-group">
-      <label for="movieImdbId">IMDb ID (optional):</label>
-      <input type="text" id="movieImdbId" placeholder="tt1234567">
+      <label for="movieImdbId">ID (optional):</label>
+      <input type="text" id="movieImdbId" placeholder="1234567 or tt1234567">
     </div>
     <div class="form-group">
       <label for="contentType">Type:</label>
@@ -227,6 +232,9 @@ let authToken = null;
 let currentFilter = 'all';
 const FAV_KEY = 'ogmovie_favorites';
 
+// ====== OMDb API KEY (CHANGE THIS) ======
+const OMDb_KEY = 'YOUR_OMDB_KEY_HERE';  // Get from https://www.omdbapi.com/apikey.aspx
+
 function debounce(func, delay = 500) {
   let timeout;
   return (...args) => {
@@ -243,13 +251,6 @@ async function getMoviePoster(title, year='') {
       return data[0].show.image.medium;
     }
   } catch (err) {}
-  try {
-    const wikiResponse = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g,'_'))}`);
-    const wikiData = await wikiResponse.json();
-    if(wikiData.thumbnail && wikiData.thumbnail.source){
-      return wikiData.thumbnail.source;
-    }
-  } catch (err) {}
   return `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(title.substring(0,20))}`;
 }
 
@@ -264,8 +265,8 @@ function createMovieCard(movie) {
       <p>${year} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p>
     </div>
     <div class="card-actions">
-      <button class="favorite-btn" data-id="${movie.id}">♡</button>
-      <button class="trailer-btn" data-id="${movie.id}" ${movie.type === 'tv_show' ? 'disabled' : ''}>Trailer</button>
+      <button class="favorite-btn" data-id="${movie.id}">Heart</button>
+      <button class="trailer-btn" data-id="${movie.id}">Trailer</button>
       <button class="play-btn" data-id="${movie.id}">Play</button>
     </div>`;
   card.querySelector('.movie-info').style.cursor = 'pointer';
@@ -287,25 +288,23 @@ function updateFavoriteButtons() {
   const favs = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
   document.querySelectorAll('.favorite-btn').forEach(btn => {
     const id = parseInt(btn.dataset.id);
-    btn.textContent = favs.includes(id) ? '❤️' : '♡';
+    btn.textContent = favs.includes(id) ? 'Heart' : 'Heart';
   });
 }
 
 function applyFilters(search = '') {
   if (currentFilter === 'request') {
     movieGrid.style.display = 'none';
-    searchContainer.style.display = 'none';
+    document.getElementById('searchContainer').style.display = 'none';
     requestSection.style.display = 'block';
     return;
   }
   movieGrid.style.display = 'grid';
-  searchContainer.style.display = 'block';
+  document.getElementById('searchContainer').style.display = 'block';
   requestSection.style.display = 'none';
   let list = currentMovies;
   const lower = search.toLowerCase();
-  if (search) {
-    list = list.filter(m => m.title.toLowerCase().includes(lower));
-  }
+  if (search) list = list.filter(m => m.title.toLowerCase().includes(lower));
   if (currentFilter === 'movie') list = list.filter(m => m.type === 'movie');
   if (currentFilter === 'tv_show') list = list.filter(m => m.type === 'tv_show');
   if (currentFilter === 'favorites') {
@@ -345,26 +344,19 @@ document.addEventListener('click', async e => {
   }
   if (btn.classList.contains('trailer-btn')) {
     const id = btn.dataset.id;
-    const title = btn.dataset.title;
-    let url;
-    if (id) {
-      url = `${API}/movies/${id}/trailer`;
-    } else if (title) {
-      url = `${API}/trailer?title=${encodeURIComponent(title)}`;
-    }
-    if (url) {
-      try {
-        const r = await fetch(url);
-        const data = await r.json();
-        if (data.ok) {
-          document.getElementById('trailerIframe').src = data.url;
-          trailerModal.classList.add('active');
-        } else {
-          alert('Trailer not available: ' + data.error);
-        }
-      } catch {
-        alert('Failed to load trailer');
+    const title = currentMovies.find(m => m.id == id)?.title || btn.dataset.title;
+    if (!title) return alert('Title not found');
+    try {
+      const res = await fetch(`${API}/trailer?title=${encodeURIComponent(title + ' official trailer')}`);
+      const data = await res.json();
+      if (data.ok) {
+        document.getElementById('trailerIframe').src = data.url;
+        trailerModal.classList.add('active');
+      } else {
+        alert('Trailer not available: ' + data.error);
       }
+    } catch {
+      alert('Failed to load trailer');
     }
     return;
   }
@@ -400,22 +392,23 @@ searchInput.addEventListener('input', e => applyFilters(e.target.value));
 
 requestInput.addEventListener('input', debounce(async () => {
   const q = requestInput.value.trim();
-  if (q.length < 3) {
-    requestResults.innerHTML = '';
-    return;
-  }
+  if (q.length < 3) { requestResults.innerHTML = ''; return; }
+
   try {
-    const res = await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(q)}`);
+    const res = await fetch(`https://www.omdbapi.com/?s=${encodeURIComponent(q)}&apikey=${OMDb_KEY}`);
     const data = await res.json();
+    if (!data.Search) { requestResults.innerHTML = '<p style="color:#aaa;">No results</p>'; return; }
+
     requestResults.innerHTML = '';
-    data.forEach(item => {
-      const show = item.show;
-      const title = show.name;
-      const year = show.premiered ? new Date(show.premiered).getFullYear() : 'N/A';
-      const img = show.image?.medium || 'https://via.placeholder.com/300x450/333/fff?text=No+Poster';
-      const type = (show.runtime && show.runtime > 60) ? 'movie' : 'tv_show';
-      const imdb = show.externals?.imdb || '';
-      if (currentMovies.some(m => m.imdb_id === imdb || m.title.toLowerCase() === title.toLowerCase())) return;
+    data.Search.forEach(item => {
+      const title = item.Title;
+      const year  = item.Year || 'N/A';
+      const img   = item.Poster && item.Poster !== 'N/A' ? item.Poster : 'https://via.placeholder.com/300x450/333/fff?text=No+Poster';
+      const type  = item.Type === 'movie' ? 'movie' : 'tv_show';
+      const imdb  = item.imdbID;
+
+      if (currentMovies.some(m => m.imdb_id === imdb)) return;
+
       const card = document.createElement('div');
       card.className = 'movie-card';
       card.innerHTML = `
@@ -425,15 +418,15 @@ requestInput.addEventListener('input', debounce(async () => {
           <p>${year} (${type.charAt(0).toUpperCase() + type.slice(1)})</p>
         </div>
         <div class="card-actions">
-          <button class="trailer-btn" data-title="${title}" ${type === 'tv_show' ? 'disabled' : ''}>Trailer</button>
+          <button class="trailer-btn" data-title="${title}">Trailer</button>
           <button class="wishlist-btn" data-title="${title}" data-type="${type}" data-imdb="${imdb}">Wishlist</button>
         </div>`;
       requestResults.appendChild(card);
     });
   } catch {
-    requestResults.innerHTML = '<p style="text-align:center;color:#aaa;">Search failed</p>';
+    requestResults.innerHTML = '<p style="color:#aaa;">Search failed</p>';
   }
-}));
+}, 600));
 
 function openAdminPanel() { loginModal.classList.add('active'); }
 function closeLoginModal() { loginModal.classList.remove('active'); }
@@ -461,9 +454,7 @@ async function adminLogin() {
       loginModal.classList.remove('active');
       showAdminPanel();
       loadAdminMovies();
-      if (adminRole === 'admin') {
-        loadGlobalPasswords();
-      }
+      if (adminRole === 'admin') loadGlobalPasswords();
     } else alert(data.error || 'Invalid credentials');
   } catch (err) {
     console.error(err);
@@ -508,12 +499,16 @@ function openAddMovieModal() { addMovieModal.classList.add('active'); }
 function openGlobalPasswordModal() { globalPasswordModal.classList.add('active'); }
 
 async function addMovie() {
+  let imdbId = document.getElementById('movieImdbId').value.trim();
+  if (imdbId && !imdbId.startsWith('tt')) imdbId = 'tt' + imdbId;
+
   const title = document.getElementById('movieTitle').value;
-  const imdbId = document.getElementById('movieImdbId').value;
-  const type = document.getElementById('contentType').value;
-  const passwords = document.getElementById('moviePassword').value.split(',').map(p => p.trim()).filter(p => p);
-  const oneTimePasswords = document.getElementById('oneTimePassword').value.split(',').map(p => p.trim()).filter(p => p);
-  if (!title && !imdbId) return alert('Please provide title or IMDb ID');
+  const type  = document.getElementById('contentType').value;
+  const passwords = document.getElementById('moviePassword').value.split(',').map(p=>p.trim()).filter(p=>p);
+  const oneTimePasswords = document.getElementById('oneTimePassword').value.split(',').map(p=>p.trim()).filter(p=>p);
+
+  if (!title && !imdbId) return alert('Please provide title or ID');
+
   try {
     const res = await fetch(API + '/movies', {
       method: 'POST',
