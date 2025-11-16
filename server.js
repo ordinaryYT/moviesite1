@@ -28,6 +28,7 @@ const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 const DISCORD_WISHLIST_CHANNEL_ID = process.env.DISCORD_WISHLIST_CHANNEL_ID;
 const DISCORD_CODE_MANAGER_ROLE_ID = process.env.DISCORD_CODE_MANAGER_ROLE_ID;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const OMDb_KEY = '7f93c41d';
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -286,10 +287,33 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
   const hashes = await Promise.all(contentPasswords.map(p => bcrypt.hash(p, 10)));
   const otHashes = await Promise.all(oneTimePasswords.map(p => bcrypt.hash(p, 10)));
 
+  let year = null;
+
   const { rows } = await pool.query(
     `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes)
      VALUES ($1, $2, $3, $4, $5) RETURNING id`,
     [name || imdbId, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes)]
+  );
+
+  let posterUrl = null;
+  let finalTitle = name || imdbId;
+  if (imdbId) {
+    try {
+      const omdbRes = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${OMDb_KEY}`);
+      const omdbData = await omdbRes.json();
+      if (omdbData.Poster && omdbData.Poster !== 'N/A') {
+        posterUrl = omdbData.Poster;
+      }
+      if (!name && omdbData.Title) finalTitle = omdbData.Title;
+      if (omdbData.Year) year = omdbData.Year;
+    } catch (err) {
+      console.error('OMDb fetch failed:', err);
+    }
+  }
+
+  await pool.query(
+    'UPDATE movies SET image = $1, title = $2, year = $3 WHERE id = $4',
+    [posterUrl, finalTitle, year, rows[0].id]
   );
 
   if (role === 'limited_admin') {
@@ -478,10 +502,45 @@ app.post('/api/wishlist', async (req, res) => {
   }
 });
 
+// === ONE-TIME POSTER FIX ENDPOINT ===
+app.get('/api/fix-posters', async (req, res) => {
+  const pass = req.query.pass;
+  if (pass !== ADMIN_PASSWORD) {
+    return res.status(403).json({ ok: false, error: 'Invalid password' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, imdb_id FROM movies WHERE imdb_id IS NOT NULL AND (image IS NULL OR image = \'\' OR image = \'N/A\')'
+    );
+
+    let fixed = 0;
+    for (const movie of rows) {
+      try {
+        const omdbRes = await fetch(`https://www.omdbapi.com/?i=${movie.imdb_id}&apikey=${OMDb_KEY}`);
+        const data = await omdbRes.json();
+        if (data.Poster && data.Poster !== 'N/A') {
+          await pool.query('UPDATE movies SET image = $1 WHERE id = $2', [data.Poster, movie.id]);
+          fixed++;
+        }
+      } catch (err) {
+        console.error(`Failed for ${movie.id}:`, err.message);
+      }
+    }
+
+    res.json({ ok: true, fixed, message: `Fixed ${fixed} posters. Refresh site.` });
+  } catch (err) {
+    console.error('Fix posters error:', err);
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+// === END FIX ENDPOINT ===
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Fix posters: /api/fix-posters?pass=${ADMIN_PASSWORD}`);
 });
