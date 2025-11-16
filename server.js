@@ -1,3 +1,4 @@
+// server.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -279,36 +280,33 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
     if (!rows[0] || rows[0].used) return res.status(403).json({ ok: false, error: 'Code already used' });
   }
 
-  let { name, imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie' } = req.body;
-  if (!name && !imdbId) return res.status(400).json({ ok: false, error: 'Title or ID required' });
+  let { imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie' } = req.body;
+  if (!imdbId) return res.status(400).json({ ok: false, error: 'IMDb ID required' });
 
-  if (imdbId && !imdbId.startsWith('tt')) imdbId = 'tt' + imdbId;
+  if (!imdbId.startsWith('tt')) imdbId = 'tt' + imdbId;
 
   const hashes = await Promise.all(contentPasswords.map(p => bcrypt.hash(p, 10)));
   const otHashes = await Promise.all(oneTimePasswords.map(p => bcrypt.hash(p, 10)));
 
   let year = null;
+  let finalTitle = imdbId;
 
   const { rows } = await pool.query(
     `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes)
      VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [name || imdbId, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes)]
+    [finalTitle, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes)]
   );
 
+  // Fetch poster, title, year from OMDb
   let posterUrl = null;
-  let finalTitle = name || imdbId;
-  if (imdbId) {
-    try {
-      const omdbRes = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${OMDb_KEY}`);
-      const omdbData = await omdbRes.json();
-      if (omdbData.Poster && omdbData.Poster !== 'N/A') {
-        posterUrl = omdbData.Poster;
-      }
-      if (!name && omdbData.Title) finalTitle = omdbData.Title;
-      if (omdbData.Year) year = omdbData.Year;
-    } catch (err) {
-      console.error('OMDb fetch failed:', err);
-    }
+  try {
+    const omdbRes = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${OMDb_KEY}`);
+    const omdbData = await omdbRes.json();
+    if (omdbData.Poster && omdbData.Poster !== 'N/A') posterUrl = omdbData.Poster;
+    if (omdbData.Title) finalTitle = omdbData.Title;
+    if (omdbData.Year) year = omdbData.Year;
+  } catch (err) {
+    console.error('OMDb fetch failed:', err);
   }
 
   await pool.query(
@@ -502,7 +500,7 @@ app.post('/api/wishlist', async (req, res) => {
   }
 });
 
-// === ONE-TIME POSTER FIX ENDPOINT ===
+// ONE-TIME POSTER FIX
 app.get('/api/fix-posters', async (req, res) => {
   const pass = req.query.pass;
   if (pass !== ADMIN_PASSWORD) {
@@ -534,7 +532,6 @@ app.get('/api/fix-posters', async (req, res) => {
     res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
-// === END FIX ENDPOINT ===
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
