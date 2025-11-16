@@ -58,6 +58,14 @@
   #requestInput:focus{outline:none;border-color:#e50914}
   #requestResults{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem}
   .request-note{color:#aaa;font-size:.9rem;margin-top:.5rem;}
+
+  /* New Add-Content Search Modal */
+  #addContentSearchModal .modal-content{max-width:600px;}
+  #addSearchInput{width:100%;padding:0.75rem;margin-bottom:1rem;}
+  #addSearchResults{max-height:400px;overflow-y:auto;}
+  .add-search-item{display:flex;align-items:center;gap:1rem;padding:0.75rem;background:#1a1a1a;border-radius:8px;margin-bottom:0.5rem;cursor:pointer;transition:.2s;}
+  .add-search-item:hover{background:#333;}
+  .add-search-item img{width:60px;height:90px;object-fit:cover;border-radius:4px;}
 </style>
 </head>
 <body>
@@ -109,34 +117,36 @@
   </div>
 </div>
 
-<div id="addMovieModal" class="modal">
+<!-- NEW: Add-Content Search Modal -->
+<div id="addContentSearchModal" class="modal">
   <div class="modal-content">
-    <button class="close-modal" onclick="closeAddMovieModal()">X</button>
+    <button class="close-modal" onclick="closeAddContentSearchModal()">X</button>
+    <h2>Search for Movie / TV Show</h2>
+    <input type="text" id="addSearchInput" placeholder="Enter title…" />
+    <div id="addSearchResults"></div>
+  </div>
+</div>
+
+<!-- NEW: Final Add Modal -->
+<div id="finalAddModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeFinalAddModal()">X</button>
     <h2>Add Content</h2>
+    <div style="text-align:center;margin-bottom:1rem;">
+      <img id="finalPoster" src="" style="max-height:300px;border-radius:8px;" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+    </div>
+    <p><strong id="finalTitle"></strong> (<span id="finalYear"></span>)</p>
+    <input type="hidden" id="finalImdb">
+    <input type="hidden" id="finalType">
     <div class="form-group">
-      <label for="movieTitle">Title:</label>
-      <input type="text" id="movieTitle" placeholder="Enter movie or TV show title">
+      <label>Passwords (comma-separated):</label>
+      <input type="text" id="finalPasswords" placeholder="pass1,pass2">
     </div>
     <div class="form-group">
-      <label for="movieImdbId">ID (optional):</label>
-      <input type="text" id="movieImdbId" placeholder="1234567 or tt1234567">
+      <label>One-Time Passwords (optional):</label>
+      <input type="text" id="finalOneTime" placeholder="otp1,otp2">
     </div>
-    <div class="form-group">
-      <label for="contentType">Type:</label>
-      <select id="contentType">
-        <option value="movie">Movie</option>
-        <option value="tv_show">TV Show</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label for="moviePassword">Passwords (comma-separated):</label>
-      <input type="text" id="moviePassword" placeholder="pass1,pass2,...">
-    </div>
-    <div class="form-group">
-      <label for="oneTimePassword">One-Time Passwords (comma-separated, optional):</label>
-      <input type="text" id="oneTimePassword" placeholder="otp1,otp2,...">
-    </div>
-    <button class="modal-btn" onclick="addMovie()">Add Content</button>
+    <button class="modal-btn" onclick="submitFinalAdd()">Add to Library</button>
   </div>
 </div>
 
@@ -207,6 +217,7 @@
 
 <script>
 const API = window.location.origin + '/api';
+const OMDb_KEY = '7f93c41d';
 const movieGrid = document.getElementById('movieGrid');
 const requestSection = document.getElementById('requestSection');
 const requestInput = document.getElementById('requestInput');
@@ -216,7 +227,6 @@ const playerContainer = document.getElementById('playerContainer');
 const adminBtn = document.getElementById('adminBtn');
 const adminPanel = document.getElementById('adminPanel');
 const loginModal = document.getElementById('loginModal');
-const addMovieModal = document.getElementById('addMovieModal');
 const passwordModal = document.getElementById('passwordModal');
 const globalPasswordModal = document.getElementById('globalPasswordModal');
 const episodeModal = document.getElementById('episodeModal');
@@ -231,9 +241,6 @@ let episodeData = null;
 let authToken = null;
 let currentFilter = 'all';
 const FAV_KEY = 'ogmovie_favorites';
-
-// OMDb Key (yours)
-const OMDb_KEY = '7f93c41d';
 
 function debounce(func, delay = 500) {
   let timeout;
@@ -416,9 +423,88 @@ requestInput.addEventListener('input', debounce(async () => {
   }
 }, 600));
 
+/* ────── ADD CONTENT SEARCH ────── */
+function openAddContentModal() {
+  document.getElementById('addContentSearchModal').classList.add('active');
+  document.getElementById('addSearchInput').focus();
+}
+function closeAddContentSearchModal() {
+  document.getElementById('addContentSearchModal').classList.remove('active');
+  document.getElementById('addSearchInput').value = '';
+  document.getElementById('addSearchResults').innerHTML = '';
+}
+document.getElementById('addSearchInput').addEventListener('input', debounce(async () => {
+  const q = document.getElementById('addSearchInput').value.trim();
+  if (q.length < 2) {
+    document.getElementById('addSearchResults').innerHTML = '';
+    return;
+  }
+  try {
+    const res = await fetch(`https://www.omdbapi.com/?s=${encodeURIComponent(q)}&apikey=${OMDb_KEY}`);
+    const data = await res.json();
+    if (!data.Search) {
+      document.getElementById('addSearchResults').innerHTML = '<p style="color:#aaa">No results</p>';
+      return;
+    }
+    const html = data.Search.map(item => {
+      const img = item.Poster && item.Poster !== 'N/A' ? item.Poster : 'https://via.placeholder.com/100x150/333/fff?text=No+Poster';
+      return `
+        <div class="add-search-item" data-imdb="${item.imdbID}" data-title="${item.Title}" data-year="${item.Year||''}" data-poster="${item.Poster||''}" data-type="${item.Type==='series'?'tv_show':'movie'}">
+          <img src="${img}" onerror="this.src='https://via.placeholder.com/100x150/333/fff?text=No+Poster'">
+          <div>
+            <strong>${item.Title}</strong><br>
+            <small>${item.Year||'?'} • ${item.Type==='series'?'TV Show':'Movie'}</small>
+          </div>
+        </div>`;
+    }).join('');
+    document.getElementById('addSearchResults').innerHTML = html;
+  } catch {
+    document.getElementById('addSearchResults').innerHTML = '<p style="color:#aaa">Search failed</p>';
+  }
+}, 500));
+
+document.getElementById('addSearchResults').addEventListener('click', e => {
+  const item = e.target.closest('.add-search-item');
+  if (!item) return;
+  const { imdb, title, year, poster, type } = item.dataset;
+  document.getElementById('finalTitle').textContent = title;
+  document.getElementById('finalYear').textContent = year || '—';
+  document.getElementById('finalPoster').src = poster && poster !== 'N/A' ? poster : 'https://via.placeholder.com/300x450/333/fff?text=No+Poster';
+  document.getElementById('finalImdb').value = imdb;
+  document.getElementById('finalType').value = type;
+  closeAddContentSearchModal();
+  document.getElementById('finalAddModal').classList.add('active');
+});
+
+function closeFinalAddModal() {
+  document.getElementById('finalAddModal').classList.remove('active');
+  document.getElementById('finalPasswords').value = '';
+  document.getElementById('finalOneTime').value = '';
+}
+async function submitFinalAdd() {
+  const imdbId = document.getElementById('finalImdb').value;
+  const type = document.getElementById('finalType').value;
+  const passwords = document.getElementById('finalPasswords').value.split(',').map(p=>p.trim()).filter(p=>p);
+  const oneTime = document.getElementById('finalOneTime').value.split(',').map(p=>p.trim()).filter(p=>p);
+  if (!imdbId) return alert('IMDb ID missing');
+  try {
+    const res = await fetch(API + '/movies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ imdbId, contentPasswords: passwords, oneTimePasswords: oneTime, type })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      alert('Added!');
+      closeFinalAddModal();
+      loadMovies();
+    } else alert(data.error || 'Failed');
+  } catch { alert('Network error'); }
+}
+
+/* ────── ADMIN ────── */
 function openAdminPanel() { loginModal.classList.add('active'); }
 function closeLoginModal() { loginModal.classList.remove('active'); }
-function closeAddMovieModal() { addMovieModal.classList.remove('active'); }
 function closePasswordModal() { passwordModal.classList.remove('active'); }
 function closeGlobalPasswordModal() { globalPasswordModal.classList.remove('active'); }
 function closeEpisodeModal() { episodeModal.classList.remove('active'); }
@@ -456,7 +542,7 @@ function showAdminPanel() {
   let html = `
     <h2>Admin Panel</h2>
     <div class="admin-actions">
-      <button class="admin-btn" onclick="openAddMovieModal()">Add Content</button>`;
+      <button class="admin-btn" onclick="openAddContentModal()">Add Content</button>`;
   if (adminRole === 'admin') {
     html += `
       <button class="admin-btn" onclick="openGlobalPasswordModal()">Add Global Password</button>
@@ -482,45 +568,7 @@ function exitAdmin() {
   applyFilters();
 }
 
-function openAddMovieModal() { addMovieModal.classList.add('active'); }
 function openGlobalPasswordModal() { globalPasswordModal.classList.add('active'); }
-
-async function addMovie() {
-  let imdbId = document.getElementById('movieImdbId').value.trim();
-  if (imdbId && !imdbId.startsWith('tt')) imdbId = 'tt' + imdbId;
-
-  const title = document.getElementById('movieTitle').value;
-  const type  = document.getElementById('contentType').value;
-  const passwords = document.getElementById('moviePassword').value.split(',').map(p=>p.trim()).filter(p=>p);
-  const oneTimePasswords = document.getElementById('oneTimePassword').value.split(',').map(p=>p.trim()).filter(p=>p);
-
-  if (!title && !imdbId) return alert('Please provide title or ID');
-
-  try {
-    const res = await fetch(API + '/movies', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminToken}`
-      },
-      body: JSON.stringify({ name: title, imdbId, contentPasswords: passwords, oneTimePasswords, type })
-    });
-    const data = await res.json();
-    if (data.ok) {
-      alert('Content added successfully');
-      closeAddMovieModal();
-      if (adminRole === 'limited_admin') {
-        alert('Your one-time access is now expired.');
-        exitAdmin();
-      } else {
-        loadAdminMovies();
-      }
-      loadMovies();
-    } else alert('Error: ' + data.error);
-  } catch (err) {
-    alert('Failed to add content');
-  }
-}
 
 async function addGlobalPassword() {
   const password = document.getElementById('globalPassword').value;
@@ -773,7 +821,7 @@ async function loadMovies() {
 adminBtn.addEventListener('click', openAdminPanel);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    [loginModal, addMovieModal, passwordModal, globalPasswordModal, episodeModal, trailerModal, playerContainer].forEach(m => m.classList.remove('active'));
+    [loginModal, addContentSearchModal, finalAddModal, passwordModal, globalPasswordModal, episodeModal, trailerModal, playerContainer].forEach(m => m.classList.remove('active'));
   }
 });
 
