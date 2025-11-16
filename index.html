@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ogmovie</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#000;color:#fff;font-family:Arial,sans-serif}
+  header{text-align:center;padding:2rem;position:relative}
+  h1{color:#e50914;font-size:2.5rem}
+  #adminBtn{position:absolute;top:2rem;right:2rem;background:#e50914;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;font-weight:bold}
+  #searchContainer{max-width:500px;margin:0 auto 1rem auto;padding:0 2rem}
+  #searchInput{width:100%;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem}
+  #searchInput:focus{outline:none;border-color:#e50914}
+  #filterTabs{text-align:center;margin:1rem 0;}
+  #filterTabs button{margin:0 .25rem;padding:.5rem 1rem;background:#1a1a1a;border:none;color:#fff;border-radius:4px;cursor:pointer}
+  #filterTabs button.active{background:#e50914}
+  #movieGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem;padding:2rem;max-width:1400px;margin:0 auto}
+  .movie-card{cursor:pointer;border-radius:12px;overflow:hidden;background:#1a1a1a;transition:.3s;position:relative}
+  .movie-card:hover{transform:scale(1.05);box-shadow:0 0 20px rgba(229,9,20,.5)}
+  .movie-card img{width:100%;height:300px;object-fit:cover}
+  .movie-info{padding:1rem;text-align:center;position:relative}
+  .movie-info h3{font-size:1.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .movie-info p{color:#aaa;font-size:.9rem}
+  .card-actions{position:absolute;bottom:8px;right:8px;display:flex;gap:4px;opacity:0;transition:opacity .2s}
+  .movie-card:hover .card-actions{opacity:1}
+  .card-actions button{background:rgba(0,0,0,.6);border:none;color:#fff;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:.9rem}
+  .card-actions button:hover{background:#e50914}
+  .favorite-btn.filled{color:#e50914}
+  .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center}
+  .modal.active{display:flex}
+  .modal-content{background:#1a1a1a;padding:2rem;border-radius:12px;width:90%;max-width:400px;position:relative}
+  .close-modal{position:absolute;top:10px;right:15px;background:none;border:none;color:#fff;font-size:1.5rem;cursor:pointer}
+  .modal h2{margin-bottom:1.5rem;color:#e50914}
+  .form-group{margin-bottom:1rem}
+  .form-group label{display:block;margin-bottom:0.5rem;color:#ccc}
+  .form-group input{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
+  .form-group select{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
+  .modal-btn{width:100%;padding:0.75rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-top:1rem}
+  #adminPanel{display:none;padding:2rem;max-width:1400px;margin:0 auto}
+  #adminPanel.active{display:block}
+  .admin-actions{margin-bottom:2rem;display:flex;gap:1rem;flex-wrap:wrap}
+  .admin-btn{padding:0.75rem 1.5rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold}
+  .movie-list-admin{margin-top:2rem}
+  .movie-item-admin{display:flex;justify-content:space-between;align-items:center;padding:1rem;background:#1a1a1a;margin-bottom:1rem;border-radius:8px}
+  .movie-item-admin button{background:#ff4444;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer}
+  .movie-item-admin button + button{margin-left:0.5rem}
+  .player-container{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:999}
+  .player-container.active{display:block}
+  .close-btn{position:absolute;top:10px;right:10px;background:none;border:none;color:#fff;font-size:1.5rem;cursor:pointer;z-index:1001}
+  .player-wrapper{position:relative;width:100%;height:100%}
+  #playerIframe{width:100%;height:100%;border:none}
+  .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
+  .bottom-left-overlay{position:absolute;bottom:10px;left:200px;width:120px;height:40px;background:#000;z-index:10;border-radius:8px;}
+  #requestSection{display:none;padding:2rem;max-width:1400px;margin:0 auto}
+  #requestInput{width:100%;max-width:500px;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem;margin-bottom:1rem}
+  #requestInput:focus{outline:none;border-color:#e50914}
+  #requestResults{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem}
+  .request-note{color:#aaa;font-size:.9rem;margin-top:.5rem;}
+
+  /* New Add-Content Search Modal */
+  #addContentSearchModal .modal-content{max-width:600px;}
+  #addSearchInput{width:100%;padding:0.75rem;margin-bottom:1rem;}
+  #addSearchResults{max-height:400px;overflow-y:auto;}
+  .add-search-item{display:flex;align-items:center;gap:1rem;padding:0.75rem;background:#1a1a1a;border-radius:8px;margin-bottom:0.5rem;cursor:pointer;transition:.2s;}
+  .add-search-item:hover{background:#333;}
+  .add-search-item img{width:60px;height:90px;object-fit:cover;border-radius:4px;}
+</style>
+</head>
+<body>
+<header>
+  <h1>ogmovie</h1>
+  <button id="adminBtn">Admin</button>
+</header>
+<main>
+  <div id="searchContainer">
+    <input type="text" id="searchInput" placeholder="Search for movies or TV shows..." />
+  </div>
+  <div id="filterTabs">
+    <button class="filter-btn active" data-type="all">All</button>
+    <button class="filter-btn" data-type="movie">Movies</button>
+    <button class="filter-btn" data-type="tv_show">TV Shows</button>
+    <button class="filter-btn" data-type="favorites">Favorites</button>
+    <button class="filter-btn" data-type="request">Request</button>
+  </div>
+  <div id="movieGrid"></div>
+  <div id="requestSection">
+    <h2>Request New Content</h2>
+    <input type="text" id="requestInput" placeholder="Search for movie or TV show to request...">
+    <p class="request-note">
+      <strong>Note:</strong> Some images may be broken or show the wrong thing. 
+      If this happens please watch the trailer to make sure it's the correct film/TV show.
+    </p>
+    <div id="requestResults"></div>
+  </div>
+  <div id="adminPanel" class="admin-panel"></div>
+</main>
+
+<!-- Modals -->
+<div id="loginModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeLoginModal()">X</button>
+    <h2>Admin Login</h2>
+    <div class="form-group">
+      <label for="loginType">Login Type:</label>
+      <select id="loginType">
+        <option value="password">Password</option>
+        <option value="code">One-time Code</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="adminPassword">Password/Code:</label>
+      <input type="password" id="adminPassword" placeholder="Enter admin password or code">
+    </div>
+    <button class="modal-btn" onclick="adminLogin()">Login</button>
+  </div>
+</div>
+
+<!-- NEW: Add-Content Search Modal -->
+<div id="addContentSearchModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeAddContentSearchModal()">X</button>
+    <h2>Search for Movie / TV Show</h2>
+    <input type="text" id="addSearchInput" placeholder="Enter title…" />
+    <div id="addSearchResults"></div>
+  </div>
+</div>
+
+<!-- NEW: Final Add Modal -->
+<div id="finalAddModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeFinalAddModal()">X</button>
+    <h2>Add Content</h2>
+    <div style="text-align:center;margin-bottom:1rem;">
+      <img id="finalPoster" src="" style="max-height:300px;border-radius:8px;" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+    </div>
+    <p><strong id="finalTitle"></strong> (<span id="finalYear"></span>)</p>
+    <input type="hidden" id="finalImdb">
+    <input type="hidden" id="finalType">
+    <div class="form-group">
+      <label>Passwords (comma-separated):</label>
+      <input type="text" id="finalPasswords" placeholder="pass1,pass2">
+    </div>
+    <div class="form-group">
+      <label>One-Time Passwords (optional):</label>
+      <input type="text" id="finalOneTime" placeholder="otp1,otp2">
+    </div>
+    <button class="modal-btn" onclick="submitFinalAdd()">Add to Library</button>
+  </div>
+</div>
+
+<div id="passwordModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closePasswordModal()">X</button>
+    <h2>Enter Password</h2>
+    <p id="passwordMovieTitle" style="margin-bottom:1rem;color:#ccc"></p>
+    <div class="form-group">
+      <label for="moviePasswordInput">Password:</label>
+      <input type="password" id="moviePasswordInput" placeholder="Enter password">
+    </div>
+    <button class="modal-btn" onclick="verifyMoviePassword()">Watch</button>
+  </div>
+</div>
+
+<div id="globalPasswordModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeGlobalPasswordModal()">X</button>
+    <h2>Add Global Password</h2>
+    <div class="form-group">
+      <label for="globalPassword">Password:</label>
+      <input type="password" id="globalPassword" placeholder="Enter global password">
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" id="isOneTime"> One-Time Password</label>
+    </div>
+    <button class="modal-btn" onclick="addGlobalPassword()">Add Global Password</button>
+  </div>
+</div>
+
+<div id="episodeModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeEpisodeModal()">X</button>
+    <h2>Select Episode</h2>
+    <p id="episodeShowTitle" style="margin-bottom:1rem;color:#ccc"></p>
+    <div class="form-group">
+      <label for="seasonSelect">Season:</label>
+      <select id="seasonSelect" onchange="updateEpisodeSelect()"></select>
+    </div>
+    <div class="form-group">
+      <label for="episodeSelect">Episode:</label>
+      <select id="episodeSelect"></select>
+    </div>
+    <button class="modal-btn" onclick="playSelectedEpisode()">Watch Episode</button>
+  </div>
+</div>
+
+<div id="trailerModal" class="modal">
+  <div class="modal-content" style="max-width:800px;">
+    <button class="close-modal" onclick="closeTrailerModal()">X</button>
+    <h2>Trailer</h2>
+    <div style="position:relative;padding-bottom:56.25%;height:0;">
+      <iframe id="trailerIframe" style="position:absolute;top:0;left:0;width:100%;height:100%;" 
+              src="" frameborder="0" allowfullscreen></iframe>
+    </div>
+  </div>
+</div>
+
+<div id="playerContainer" class="player-container">
+  <button class="close-btn" onclick="closePlayer()">X</button>
+  <div class="player-wrapper">
+    <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+    <div class="iframe-overlay">ogmovie</div>
+    <div class="bottom-left-overlay"></div>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin + '/api';
+const OMDb_KEY = '7f93c41d';
+const movieGrid = document.getElementById('movieGrid');
+const requestSection = document.getElementById('requestSection');
+const requestInput = document.getElementById('requestInput');
+const requestResults = document.getElementById('requestResults');
+const playerIframe = document.getElementById('playerIframe');
+const playerContainer = document.getElementById('playerContainer');
+const adminBtn = document.getElementById('adminBtn');
+const adminPanel = document.getElementById('adminPanel');
+const loginModal = document.getElementById('loginModal');
+const passwordModal = document.getElementById('passwordModal');
+const globalPasswordModal = document.getElementById('globalPasswordModal');
+const episodeModal = document.getElementById('episodeModal');
+const trailerModal = document.getElementById('trailerModal');
+const searchInput = document.getElementById('searchInput');
+let adminToken = null;
+let adminRole = null;
+let currentMovies = [];
+let selectedMovieId = null;
+let selectedShow = null;
+let episodeData = null;
+let authToken = null;
+let currentFilter = 'all';
+const FAV_KEY = 'ogmovie_favorites';
+
+function debounce(func, delay = 500) {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), delay);
+  };
+}
+
+function createMovieCard(movie) {
+  const year = movie.year || 'N/A';
+  const card = document.createElement('div');
+  card.className = 'movie-card';
+  card.innerHTML = `
+    <img src="${movie.image || 'https://via.placeholder.com/300x450/333/fff?text=No+Poster'}" 
+         onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+    <div class="movie-info">
+      <h3>${movie.title}</h3>
+      <p>${year} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p>
+    </div>
+    <div class="card-actions">
+      <button class="favorite-btn" data-id="${movie.id}">Heart</button>
+      <button class="trailer-btn" data-id="${movie.id}">Trailer</button>
+      <button class="play-btn" data-id="${movie.id}">Play</button>
+    </div>`;
+  card.querySelector('.movie-info').onclick = () => requestMoviePassword(movie.id, movie.title, movie.type);
+  return card;
+}
+
+function displayMovies(movies) {
+  movieGrid.innerHTML = '';
+  if (movies.length === 0) {
+    movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
+    return;
+  }
+  movies.forEach(movie => movieGrid.appendChild(createMovieCard(movie)));
+  updateFavoriteButtons();
+}
+
+function updateFavoriteButtons() {
+  const favs = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
+  document.querySelectorAll('.favorite-btn').forEach(btn => {
+    const id = parseInt(btn.dataset.id);
+    btn.textContent = favs.includes(id) ? 'Heart' : 'Heart';
+  });
+}
+
+function applyFilters(search = '') {
+  if (currentFilter === 'request') {
+    movieGrid.style.display = 'none';
+    document.getElementById('searchContainer').style.display = 'none';
+    requestSection.style.display = 'block';
+    return;
+  }
+  movieGrid.style.display = 'grid';
+  document.getElementById('searchContainer').style.display = 'block';
+  requestSection.style.display = 'none';
+  let list = currentMovies;
+  const lower = search.toLowerCase();
+  if (search) list = list.filter(m => m.title.toLowerCase().includes(lower));
+  if (currentFilter === 'movie') list = list.filter(m => m.type === 'movie');
+  if (currentFilter === 'tv_show') list = list.filter(m => m.type === 'tv_show');
+  if (currentFilter === 'favorites') {
+    const favIds = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || '[]'));
+    list = list.filter(m => favIds.has(m.id));
+  }
+  displayMovies(list);
+}
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.type;
+    applyFilters(searchInput.value);
+  });
+});
+
+document.addEventListener('click', async e => {
+  const btn = e.target;
+  if (btn.classList.contains('favorite-btn')) {
+    const id = parseInt(btn.dataset.id);
+    let favs = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
+    const idx = favs.indexOf(id);
+    if (idx > -1) favs.splice(idx, 1);
+    else favs.push(id);
+    localStorage.setItem(FAV_KEY, JSON.stringify(favs));
+    updateFavoriteButtons();
+    if (currentFilter === 'favorites') applyFilters(searchInput.value);
+    return;
+  }
+  if (btn.classList.contains('play-btn')) {
+    const id = parseInt(btn.dataset.id);
+    const movie = currentMovies.find(m => m.id === id);
+    requestMoviePassword(id, movie.title, movie.type);
+    return;
+  }
+  if (btn.classList.contains('trailer-btn')) {
+    const id = btn.dataset.id;
+    const title = currentMovies.find(m => m.id == id)?.title || btn.dataset.title;
+    if (!title) return alert('Title not found');
+    try {
+      const res = await fetch(`${API}/trailer?title=${encodeURIComponent(title + ' official trailer')}`);
+      const data = await res.json();
+      if (data.ok) {
+        document.getElementById('trailerIframe').src = data.url;
+        trailerModal.classList.add('active');
+      } else {
+        alert('Trailer not available');
+      }
+    } catch {
+      alert('Failed to load trailer');
+    }
+    return;
+  }
+  if (btn.classList.contains('wishlist-btn')) {
+    const {title, type, imdb} = btn.dataset;
+    try {
+      const res = await fetch(`${API}/wishlist`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({title, type, imdb_id: imdb})
+      });
+      const data = await res.json();
+      if (data.ok) {
+        alert('Requested! Pending review.');
+        btn.disabled = true;
+        btn.textContent = 'Requested';
+      } else {
+        alert(data.error || 'Already available');
+      }
+    } catch {
+      alert('Failed to request');
+    }
+  }
+});
+
+function closeTrailerModal() {
+  trailerModal.classList.remove('active');
+  document.getElementById('trailerIframe').src = '';
+}
+
+searchInput.addEventListener('input', e => applyFilters(e.target.value));
+
+requestInput.addEventListener('input', debounce(async () => {
+  const q = requestInput.value.trim();
+  if (q.length < 3) { requestResults.innerHTML = ''; return; }
+
+  try {
+    const res = await fetch(`https://www.omdbapi.com/?s=${encodeURIComponent(q)}&apikey=${OMDb_KEY}`);
+    const data = await res.json();
+    if (!data.Search) { requestResults.innerHTML = '<p style="color:#aaa;">No results</p>'; return; }
+
+    requestResults.innerHTML = '';
+    data.Search.forEach(item => {
+      const title = item.Title;
+      const year  = item.Year || 'N/A';
+      const img   = item.Poster && item.Poster !== 'N/A' ? item.Poster : 'https://via.placeholder.com/300x450/333/fff?text=No+Poster';
+      const type  = item.Type === 'movie' ? 'movie' : 'tv_show';
+      const imdb  = item.imdbID;
+
+      if (currentMovies.some(m => m.imdb_id === imdb)) return;
+
+      const card = document.createElement('div');
+      card.className = 'movie-card';
+      card.innerHTML = `
+        <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+        <div class="movie-info">
+          <h3>${title}</h3>
+          <p>${year} (${type.charAt(0).toUpperCase() + type.slice(1)})</p>
+        </div>
+        <div class="card-actions">
+          <button class="trailer-btn" data-title="${title}">Trailer</button>
+          <button class="wishlist-btn" data-title="${title}" data-type="${type}" data-imdb="${imdb}">Wishlist</button>
+        </div>`;
+      requestResults.appendChild(card);
+    });
+  } catch {
+    requestResults.innerHTML = '<p style="color:#aaa;">Search failed</p>';
+  }
+}, 600));
+
+/* ────── ADD CONTENT SEARCH ────── */
+function openAddContentModal() {
+  document.getElementById('addContentSearchModal').classList.add('active');
+  document.getElementById('addSearchInput').focus();
+}
+function closeAddContentSearchModal() {
+  document.getElementById('addContentSearchModal').classList.remove('active');
+  document.getElementById('addSearchInput').value = '';
+  document.getElementById('addSearchResults').innerHTML = '';
+}
+document.getElementById('addSearchInput').addEventListener('input', debounce(async () => {
+  const q = document.getElementById('addSearchInput').value.trim();
+  if (q.length < 2) {
+    document.getElementById('addSearchResults').innerHTML = '';
+    return;
+  }
+  try {
+    const res = await fetch(`https://www.omdbapi.com/?s=${encodeURIComponent(q)}&apikey=${OMDb_KEY}`);
+    const data = await res.json();
+    if (!data.Search) {
+      document.getElementById('addSearchResults').innerHTML = '<p style="color:#aaa">No results</p>';
+      return;
+    }
+    const html = data.Search.map(item => {
+      const img = item.Poster && item.Poster !== 'N/A' ? item.Poster : 'https://via.placeholder.com/100x150/333/fff?text=No+Poster';
+      return `
+        <div class="add-search-item" data-imdb="${item.imdbID}" data-title="${item.Title}" data-year="${item.Year||''}" data-poster="${item.Poster||''}" data-type="${item.Type==='series'?'tv_show':'movie'}">
+          <img src="${img}" onerror="this.src='https://via.placeholder.com/100x150/333/fff?text=No+Poster'">
+          <div>
+            <strong>${item.Title}</strong><br>
+            <small>${item.Year||'?'} • ${item.Type==='series'?'TV Show':'Movie'}</small>
+          </div>
+        </div>`;
+    }).join('');
+    document.getElementById('addSearchResults').innerHTML = html;
+  } catch {
+    document.getElementById('addSearchResults').innerHTML = '<p style="color:#aaa">Search failed</p>';
+  }
+}, 500));
+
+document.getElementById('addSearchResults').addEventListener('click', e => {
+  const item = e.target.closest('.add-search-item');
+  if (!item) return;
+  const { imdb, title, year, poster, type } = item.dataset;
+  document.getElementById('finalTitle').textContent = title;
+  document.getElementById('finalYear').textContent = year || '—';
+  document.getElementById('finalPoster').src = poster && poster !== 'N/A' ? poster : 'https://via.placeholder.com/300x450/333/fff?text=No+Poster';
+  document.getElementById('finalImdb').value = imdb;
+  document.getElementById('finalType').value = type;
+  closeAddContentSearchModal();
+  document.getElementById('finalAddModal').classList.add('active');
+});
+
+function closeFinalAddModal() {
+  document.getElementById('finalAddModal').classList.remove('active');
+  document.getElementById('finalPasswords').value = '';
+  document.getElementById('finalOneTime').value = '';
+}
+async function submitFinalAdd() {
+  const imdbId = document.getElementById('finalImdb').value;
+  const type = document.getElementById('finalType').value;
+  const passwords = document.getElementById('finalPasswords').value.split(',').map(p=>p.trim()).filter(p=>p);
+  const oneTime = document.getElementById('finalOneTime').value.split(',').map(p=>p.trim()).filter(p=>p);
+  if (!imdbId) return alert('IMDb ID missing');
+  try {
+    const res = await fetch(API + '/movies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ imdbId, contentPasswords: passwords, oneTimePasswords: oneTime, type })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      alert('Added!');
+      closeFinalAddModal();
+      loadMovies();
+    } else alert(data.error || 'Failed');
+  } catch { alert('Network error'); }
+}
+
+/* ────── ADMIN ────── */
+function openAdminPanel() { loginModal.classList.add('active'); }
+function closeLoginModal() { loginModal.classList.remove('active'); }
+function closePasswordModal() { passwordModal.classList.remove('active'); }
+function closeGlobalPasswordModal() { globalPasswordModal.classList.remove('active'); }
+function closeEpisodeModal() { episodeModal.classList.remove('active'); }
+
+async function adminLogin() {
+  const loginType = document.getElementById('loginType').value;
+  const pass = document.getElementById('adminPassword').value;
+  if (!pass) return alert('Please enter password/code');
+  try {
+    const endpoint = loginType === 'password' ? '/admin/login' : '/admin/onetime-login';
+    const body = loginType === 'password' ? {password: pass} : {code: pass};
+    const res = await fetch(API + endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.ok) {
+      adminToken = data.token;
+      adminRole = data.role || 'admin';
+      loginModal.classList.remove('active');
+      showAdminPanel();
+      loadAdminMovies();
+      if (adminRole === 'admin') loadGlobalPasswords();
+    } else alert(data.error || 'Invalid credentials');
+  } catch (err) {
+    alert('Login failed');
+  }
+}
+
+function showAdminPanel() {
+  movieGrid.style.display = 'none';
+  requestSection.style.display = 'none';
+  adminPanel.classList.add('active');
+  let html = `
+    <h2>Admin Panel</h2>
+    <div class="admin-actions">
+      <button class="admin-btn" onclick="openAddContentModal()">Add Content</button>`;
+  if (adminRole === 'admin') {
+    html += `
+      <button class="admin-btn" onclick="openGlobalPasswordModal()">Add Global Password</button>
+      <button class="admin-btn" onclick="exitAdmin()">Exit Admin</button>
+    </div>
+    <h3>Content</h3>
+    <div id="movieListAdmin" class="movie-list-admin"></div>
+    <h3>Global Passwords</h3>
+    <div id="globalPasswordList" class="movie-list-admin"></div>`;
+  } else {
+    html += `
+      <button class="admin-btn" onclick="exitAdmin()">Exit Admin</button>
+    </div>`;
+  }
+  adminPanel.innerHTML = html;
+}
+
+function exitAdmin() {
+  adminToken = null;
+  adminRole = null;
+  adminPanel.classList.remove('active');
+  movieGrid.style.display = 'grid';
+  applyFilters();
+}
+
+function openGlobalPasswordModal() { globalPasswordModal.classList.add('active'); }
+
+async function addGlobalPassword() {
+  const password = document.getElementById('globalPassword').value;
+  const isOneTime = document.getElementById('isOneTime').checked;
+  if (!password) return alert('Please enter a password');
+  try {
+    const res = await fetch(API + '/admin/global-passwords', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ password, isOneTime })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      alert('Global password added');
+      closeGlobalPasswordModal();
+      loadGlobalPasswords();
+    } else alert('Error: ' + data.error);
+  } catch (err) {
+    alert('Failed to add global password');
+  }
+}
+
+async function loadAdminMovies() {
+  if (adminRole !== 'admin') return;
+  try {
+    const res = await fetch(API + '/movies');
+    const data = await res.json();
+    if (data.ok) {
+      const movieListAdmin = document.getElementById('movieListAdmin');
+      if (movieListAdmin) {
+        movieListAdmin.innerHTML = '';
+        if (data.movies.length === 0) {
+          movieListAdmin.innerHTML = '<p>No content available</p>';
+        } else {
+          data.movies.forEach(movie => {
+            const div = document.createElement('div');
+            div.className = 'movie-item-admin';
+            div.innerHTML = `
+              <div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'})</div>
+              <div>
+                <button onclick="deleteMovie(${movie.id})">Delete</button>
+              </div>`;
+            movieListAdmin.appendChild(div);
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load admin content:', err);
+  }
+}
+
+async function deleteMovie(id) {
+  if (!confirm('Are you sure?')) return;
+  try {
+    const res = await fetch(API + '/movies/' + id, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (data.ok) {
+      loadAdminMovies();
+      loadMovies();
+    } else alert('Error: ' + data.error);
+  } catch (err) {
+    alert('Delete failed');
+  }
+}
+
+async function loadGlobalPasswords() {
+  try {
+    const res = await fetch(API + '/admin/global-passwords', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const globalPasswordList = document.getElementById('globalPasswordList');
+      if (globalPasswordList) {
+        globalPasswordList.innerHTML = '';
+        if (data.passwords.length === 0) {
+          globalPasswordList.innerHTML = '<p>No global passwords</p>';
+        } else {
+          data.passwords.forEach(pwd => {
+            const item = document.createElement('div');
+            item.className = 'movie-item-admin';
+            item.innerHTML = `
+              <div>${pwd.is_one_time ? 'One-Time' : 'Regular'} Password (Created: ${new Date(pwd.created_at).toLocaleString()})</div>
+              <button onclick="deleteGlobalPassword(${pwd.id})">Delete</button>`;
+            globalPasswordList.appendChild(item);
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load global passwords:', err);
+  }
+}
+
+async function deleteGlobalPassword(id) {
+  if (!confirm('Delete this global password?')) return;
+  try {
+    const res = await fetch(API + '/admin/global-passwords/' + id, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (data.ok) loadGlobalPasswords();
+    else alert('Error: ' + data.error);
+  } catch (err) {
+    alert('Failed to delete global password');
+  }
+}
+
+function requestMoviePassword(movieId, title, type) {
+  selectedMovieId = movieId;
+  selectedShow = { id: movieId, title, type };
+  document.getElementById('passwordMovieTitle').textContent = title;
+  passwordModal.classList.add('active');
+}
+
+async function verifyMoviePassword() {
+  const password = document.getElementById('moviePasswordInput').value;
+  if (!password) return alert('Please enter password');
+  try {
+    const res = await fetch(API + '/movies/' + selectedMovieId + '/authorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      authToken = data.token;
+      if (selectedShow.type === 'movie') {
+        const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
+          headers: { Authorization: `Bearer ${authToken}` }
+        });
+        const embedData = await embedRes.json();
+        if (embedData.ok) {
+          showPlayer(embedData.url);
+        } else {
+          alert('Error: ' + embedData.error);
+        }
+      } else {
+        await requestEpisodeSelection();
+      }
+    } else {
+      alert('Wrong password');
+    }
+  } catch (err) {
+    alert('Verification failed');
+  }
+}
+
+async function requestEpisodeSelection() {
+  try {
+    const res = await fetch(API + '/movies/' + selectedMovieId + '/episodes');
+    const data = await res.json();
+    if (data.ok) {
+      episodeData = data.seasons;
+      const seasonSelect = document.getElementById('seasonSelect');
+      seasonSelect.innerHTML = '';
+      Object.keys(episodeData).sort((a,b)=>a-b).forEach(season => {
+        const option = document.createElement('option');
+        option.value = season;
+        option.textContent = `Season ${season}`;
+        seasonSelect.appendChild(option);
+      });
+      updateEpisodeSelect();
+      episodeModal.classList.add('active');
+    } else {
+      alert('Error: ' + data.error);
+    }
+  } catch (err) {
+    alert('Failed to load episodes');
+  }
+}
+
+function updateEpisodeSelect() {
+  const season = document.getElementById('seasonSelect').value;
+  const episodeSelect = document.getElementById('episodeSelect');
+  episodeSelect.innerHTML = '';
+  if (episodeData && episodeData[season]) {
+    episodeData[season].forEach(ep => {
+      const option = document.createElement('option');
+      option.value = ep.episode;
+      option.textContent = `${ep.name} (E${ep.episode})`;
+      episodeSelect.appendChild(option);
+    });
+  }
+}
+
+async function playSelectedEpisode() {
+  const season = document.getElementById('seasonSelect').value;
+  const episode = document.getElementById('episodeSelect').value;
+  try {
+    if (authToken) {
+      const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      const embedData = await embedRes.json();
+      if (embedData.ok) {
+        const url = `${embedData.url}/${season}/${episode}`;
+        showPlayer(url);
+        episodeModal.classList.remove('active');
+      } else {
+        alert('Error: ' + embedData.error);
+      }
+    } else {
+      alert('Authorization token missing, please try again.');
+    }
+  } catch (err) {
+    alert('Failed to play episode');
+  }
+}
+
+function showPlayer(url) {
+  playerIframe.src = url;
+  playerContainer.classList.add('active');
+  passwordModal.classList.remove('active');
+  document.getElementById('moviePasswordInput').value = '';
+}
+
+function closePlayer() {
+  playerContainer.classList.remove('active');
+  playerIframe.src = '';
+  episodeData = null;
+  selectedShow = null;
+  authToken = null;
+}
+
+async function loadMovies() {
+  movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">Loading...</p>';
+  try {
+    const res = await fetch(API + '/movies');
+    const data = await res.json();
+    if (!data.ok || !data.movies.length) {
+      movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">No movies found.</p>';
+      return;
+    }
+    currentMovies = data.movies;
+    applyFilters();
+  } catch (err) {
+    movieGrid.innerHTML = '<p style="color:red;">Failed to load</p>';
+  }
+}
+
+adminBtn.addEventListener('click', openAdminPanel);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    [loginModal, addContentSearchModal, finalAddModal, passwordModal, globalPasswordModal, episodeModal, trailerModal, playerContainer].forEach(m => m.classList.remove('active'));
+  }
+});
+
+loadMovies();
+</script>
+</body>
+</html>
