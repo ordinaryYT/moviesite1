@@ -82,7 +82,7 @@
     <input type="text" id="requestInput" placeholder="Search for movie or TV show to request...">
     <p class="request-note">
       <strong>Note:</strong> Some images may be broken or show the wrong thing. 
-      If this happens please watch the trailer to make sure it’s the correct film/TV show.
+      If this happens please watch the trailer to make sure it's the correct film/TV show.
     </p>
     <div id="requestResults"></div>
   </div>
@@ -232,8 +232,8 @@ let authToken = null;
 let currentFilter = 'all';
 const FAV_KEY = 'ogmovie_favorites';
 
-// ====== OMDb API KEY (CHANGE THIS) ======
-const OMDb_KEY = 'YOUR_OMDB_KEY_HERE';  // Get from https://www.omdbapi.com/apikey.aspx
+// OMDb Key (yours)
+const OMDb_KEY = '7f93c41d';
 
 function debounce(func, delay = 500) {
   let timeout;
@@ -243,23 +243,13 @@ function debounce(func, delay = 500) {
   };
 }
 
-async function getMoviePoster(title, year='') {
-  try {
-    const response = await fetch(`https://api.tvmaze.com/search/shows?q=${encodeURIComponent(title)}`);
-    const data = await response.json();
-    if(data.length>0 && data[0].show.image && data[0].show.image.medium){
-      return data[0].show.image.medium;
-    }
-  } catch (err) {}
-  return `https://via.placeholder.com/300x450/333/fff?text=${encodeURIComponent(title.substring(0,20))}`;
-}
-
 function createMovieCard(movie) {
   const year = movie.year || 'N/A';
   const card = document.createElement('div');
   card.className = 'movie-card';
   card.innerHTML = `
-    <img src="${movie.image || 'https://via.placeholder.com/300x450/333/fff?text=No+Poster'}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+    <img src="${movie.image || 'https://via.placeholder.com/300x450/333/fff?text=No+Poster'}" 
+         onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
     <div class="movie-info">
       <h3>${movie.title}</h3>
       <p>${year} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p>
@@ -269,7 +259,6 @@ function createMovieCard(movie) {
       <button class="trailer-btn" data-id="${movie.id}">Trailer</button>
       <button class="play-btn" data-id="${movie.id}">Play</button>
     </div>`;
-  card.querySelector('.movie-info').style.cursor = 'pointer';
   card.querySelector('.movie-info').onclick = () => requestMoviePassword(movie.id, movie.title, movie.type);
   return card;
 }
@@ -353,7 +342,7 @@ document.addEventListener('click', async e => {
         document.getElementById('trailerIframe').src = data.url;
         trailerModal.classList.add('active');
       } else {
-        alert('Trailer not available: ' + data.error);
+        alert('Trailer not available');
       }
     } catch {
       alert('Failed to load trailer');
@@ -370,7 +359,7 @@ document.addEventListener('click', async e => {
       });
       const data = await res.json();
       if (data.ok) {
-        alert('Requested! Pending review. Check back in 24 hours to see if approved.');
+        alert('Requested! Pending review.');
         btn.disabled = true;
         btn.textContent = 'Requested';
       } else {
@@ -379,7 +368,6 @@ document.addEventListener('click', async e => {
     } catch {
       alert('Failed to request');
     }
-    return;
   }
 });
 
@@ -412,7 +400,7 @@ requestInput.addEventListener('input', debounce(async () => {
       const card = document.createElement('div');
       card.className = 'movie-card';
       card.innerHTML = `
-        <img src="${img}">
+        <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
         <div class="movie-info">
           <h3>${title}</h3>
           <p>${year} (${type.charAt(0).toUpperCase() + type.slice(1)})</p>
@@ -457,7 +445,6 @@ async function adminLogin() {
       if (adminRole === 'admin') loadGlobalPasswords();
     } else alert(data.error || 'Invalid credentials');
   } catch (err) {
-    console.error(err);
     alert('Login failed');
   }
 }
@@ -531,7 +518,6 @@ async function addMovie() {
       loadMovies();
     } else alert('Error: ' + data.error);
   } catch (err) {
-    console.error(err);
     alert('Failed to add content');
   }
 }
@@ -556,7 +542,6 @@ async function addGlobalPassword() {
       loadGlobalPasswords();
     } else alert('Error: ' + data.error);
   } catch (err) {
-    console.error(err);
     alert('Failed to add global password');
   }
 }
@@ -604,7 +589,6 @@ async function deleteMovie(id) {
       loadMovies();
     } else alert('Error: ' + data.error);
   } catch (err) {
-    console.error(err);
     alert('Delete failed');
   }
 }
@@ -649,7 +633,6 @@ async function deleteGlobalPassword(id) {
     if (data.ok) loadGlobalPasswords();
     else alert('Error: ' + data.error);
   } catch (err) {
-    console.error(err);
     alert('Failed to delete global password');
   }
 }
@@ -690,7 +673,6 @@ async function verifyMoviePassword() {
       alert('Wrong password');
     }
   } catch (err) {
-    console.error(err);
     alert('Verification failed');
   }
 }
@@ -715,7 +697,6 @@ async function requestEpisodeSelection() {
       alert('Error: ' + data.error);
     }
   } catch (err) {
-    console.error(err);
     alert('Failed to load episodes');
   }
 }
@@ -754,7 +735,6 @@ async function playSelectedEpisode() {
       alert('Authorization token missing, please try again.');
     }
   } catch (err) {
-    console.error(err);
     alert('Failed to play episode');
   }
 }
@@ -783,31 +763,17 @@ async function loadMovies() {
       movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">No movies found.</p>';
       return;
     }
-    currentMovies = [];
-    for (const movie of data.movies) {
-      let img = movie.image;
-      const poster = await getMoviePoster(movie.title, movie.year);
-      if (!poster.includes('placeholder.com')) img = poster;
-      movie.image = img;
-      currentMovies.push(movie);
-    }
+    currentMovies = data.movies;
     applyFilters();
   } catch (err) {
-    console.error(err);
-    alert('Error loading movies');
+    movieGrid.innerHTML = '<p style="color:red;">Failed to load</p>';
   }
 }
 
 adminBtn.addEventListener('click', openAdminPanel);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    closePlayer();
-    closeLoginModal();
-    closeAddMovieModal();
-    closePasswordModal();
-    closeGlobalPasswordModal();
-    closeEpisodeModal();
-    closeTrailerModal();
+    [loginModal, addMovieModal, passwordModal, globalPasswordModal, episodeModal, trailerModal, playerContainer].forEach(m => m.classList.remove('active'));
   }
 });
 
