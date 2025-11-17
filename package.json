@@ -1,11 +1,10 @@
 {
-  "name": "movie-streamer",
-  "version": "2.0.0",
-  "description": "Movie streaming site with per-movie passwords and admin panel",
+  "name": "ogmovie",
+  "version": "2.1.0",
+  "description": "OGMovie with Watch Together",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "migrate": "psql $DATABASE_URL -f migration.sql"
+    "start": "node server.js"
   },
   "dependencies": {
     "bcrypt": "^5.1.1",
@@ -15,7 +14,9 @@
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "node-fetch": "^3.3.2",
-    "pg": "^8.11.5"
+    "pg": "^8.11.5",
+    "socket.io": "^4.7.5",
+    "uuid": "^10.0.0"
   },
   "engines": {
     "node": ">=18"
