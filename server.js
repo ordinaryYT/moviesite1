@@ -413,6 +413,86 @@ app.post('/api/watch-together/room-exists', (req, res) => {
   res.json({ ok: true, exists: !!room, isFull: room ? room.viewers.size >= room.maxViewers : false });
 });
 
+// New endpoint for watch together movie authorization
+app.post('/api/watch-together/authorize-movie', async (req, res) => {
+  const { movieId, password } = req.body;
+  if (!movieId || !password) {
+    return res.json({ ok: false, error: 'Movie ID and password required' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT password_hashes, one_time_password_hashes, imdb_id, type FROM movies WHERE id = $1',
+      [movieId]
+    );
+    if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
+
+    let regular = [], ot = [];
+    try { regular = JSON.parse(rows[0].password_hashes || '[]'); } catch (_) { regular = []; }
+    try { ot = JSON.parse(rows[0].one_time_password_hashes || '[]'); } catch (_) { ot = []; }
+
+    // Check regular passwords
+    for (const h of regular) {
+      if (await bcrypt.compare(password, h)) {
+        const base = rows[0].type === 'movie' ? 'movie' : 'tv';
+        const embedUrl = `https://vidsrc.me/embed/${base}/${rows[0].imdb_id}`;
+        return res.json({ 
+          ok: true, 
+          embedUrl: embedUrl,
+          token: jwt.sign({ movieId: movieId }, JWT_SECRET, { expiresIn: '6h' })
+        });
+      }
+    }
+
+    // Check one-time passwords
+    for (let i = 0; i < ot.length; i++) {
+      if (await bcrypt.compare(password, ot[i])) {
+        ot.splice(i, 1);
+        await pool.query('UPDATE movies SET one_time_password_hashes = $1 WHERE id = $2',
+          [JSON.stringify(ot), movieId]);
+        const base = rows[0].type === 'movie' ? 'movie' : 'tv';
+        const embedUrl = `https://vidsrc.me/embed/${base}/${rows[0].imdb_id}`;
+        return res.json({ 
+          ok: true, 
+          embedUrl: embedUrl,
+          token: jwt.sign({ movieId: movieId }, JWT_SECRET, { expiresIn: '6h' })
+        });
+      }
+    }
+
+    // Check global passwords
+    const { rows: globals } = await pool.query('SELECT id, password_hash, is_one_time FROM global_passwords');
+    for (const g of globals) {
+      if (g.is_one_time && await bcrypt.compare(password, g.password_hash)) {
+        await pool.query('DELETE FROM global_passwords WHERE id = $1', [g.id]);
+        const base = rows[0].type === 'movie' ? 'movie' : 'tv';
+        const embedUrl = `https://vidsrc.me/embed/${base}/${rows[0].imdb_id}`;
+        return res.json({ 
+          ok: true, 
+          embedUrl: embedUrl,
+          token: jwt.sign({ movieId: movieId }, JWT_SECRET, { expiresIn: '6h' })
+        });
+      }
+    }
+    for (const g of globals) {
+      if (!g.is_one_time && await bcrypt.compare(password, g.password_hash)) {
+        const base = rows[0].type === 'movie' ? 'movie' : 'tv';
+        const embedUrl = `https://vidsrc.me/embed/${base}/${rows[0].imdb_id}`;
+        return res.json({ 
+          ok: true, 
+          embedUrl: embedUrl,
+          token: jwt.sign({ movieId: movieId }, JWT_SECRET, { expiresIn: '6h' })
+        });
+      }
+    }
+
+    res.json({ ok: false, error: 'Wrong password' });
+  } catch (err) {
+    console.error('Watch together authorization error:', err);
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
 const authMiddleware = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ ok: false, error: 'No token' });
