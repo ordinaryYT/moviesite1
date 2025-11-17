@@ -252,16 +252,8 @@ io.on('connection', (socket) => {
       hostName: data.hostName || 'Host',
       isPublic: data.isPublic || false,
       movieTitle: data.movieTitle || 'Unknown',
-      movieId: data.movieId,
-      movieType: data.movieType,
-      embedUrl: data.embedUrl,
       maxViewers: 9,
       viewers: new Map(),
-      playerState: {
-        isPlaying: false,
-        currentTime: 0,
-        isHostControlling: true
-      },
       createdAt: new Date()
     };
     
@@ -271,7 +263,7 @@ io.on('connection', (socket) => {
     socket.join(roomCode);
     socket.emit('room-created', { roomCode, room });
     
-    console.log(`Room created: ${roomCode} by ${socket.id} for movie ${data.movieId}`);
+    console.log(`Room created: ${roomCode} by ${socket.id}`);
   });
 
   socket.on('join-room', (data) => {
@@ -293,7 +285,7 @@ io.on('connection', (socket) => {
     });
 
     socket.join(data.roomCode);
-    socket.emit('room-joined', { room, playerState: room.playerState });
+    socket.emit('room-joined', { room });
     
     // Notify all viewers about new viewer
     socket.to(data.roomCode).emit('viewer-joined', {
@@ -308,45 +300,36 @@ io.on('connection', (socket) => {
     console.log(`User ${socket.id} joined room ${data.roomCode}`);
   });
 
-  // Player control events
-  socket.on('player-play', (data) => {
-    const room = watchTogetherRooms.get(data.roomCode);
-    if (room && room.host === socket.id) {
-      room.playerState.isPlaying = true;
-      room.playerState.currentTime = data.currentTime || 0;
-      socket.to(data.roomCode).emit('player-play', {
-        currentTime: room.playerState.currentTime
-      });
-    }
+  // WebRTC signaling
+  socket.on('webrtc-offer', (data) => {
+    socket.to(data.target).emit('webrtc-offer', {
+      offer: data.offer,
+      sender: socket.id
+    });
   });
 
-  socket.on('player-pause', (data) => {
-    const room = watchTogetherRooms.get(data.roomCode);
-    if (room && room.host === socket.id) {
-      room.playerState.isPlaying = false;
-      room.playerState.currentTime = data.currentTime || 0;
-      socket.to(data.roomCode).emit('player-pause', {
-        currentTime: room.playerState.currentTime
-      });
-    }
+  socket.on('webrtc-answer', (data) => {
+    socket.to(data.target).emit('webrtc-answer', {
+      answer: data.answer,
+      sender: socket.id
+    });
   });
 
-  socket.on('player-seek', (data) => {
-    const room = watchTogetherRooms.get(data.roomCode);
-    if (room && room.host === socket.id) {
-      room.playerState.currentTime = data.currentTime;
-      socket.to(data.roomCode).emit('player-seek', {
-        currentTime: data.currentTime
-      });
-    }
+  socket.on('webrtc-ice-candidate', (data) => {
+    socket.to(data.target).emit('webrtc-ice-candidate', {
+      candidate: data.candidate,
+      sender: socket.id
+    });
   });
 
-  socket.on('player-time-update', (data) => {
-    const room = watchTogetherRooms.get(data.roomCode);
-    if (room && room.host === socket.id) {
-      room.playerState.currentTime = data.currentTime;
-      // Don't broadcast to avoid echo, just update room state
-    }
+  socket.on('host-screen-started', (data) => {
+    socket.to(data.roomCode).emit('host-screen-started', {
+      hostId: socket.id
+    });
+  });
+
+  socket.on('host-screen-stopped', (data) => {
+    socket.to(data.roomCode).emit('host-screen-stopped');
   });
 
   socket.on('chat-message', (data) => {
@@ -384,7 +367,7 @@ io.on('connection', (socket) => {
               watchTogetherRooms.delete(roomCode);
               console.log(`Room ${roomCode} closed - no viewers`);
             }
-          }, 300000); // 5 minutes
+          }, 300000);
         }
       }
     }
@@ -411,86 +394,6 @@ app.post('/api/watch-together/room-exists', (req, res) => {
   const { roomCode } = req.body;
   const room = watchTogetherRooms.get(roomCode);
   res.json({ ok: true, exists: !!room, isFull: room ? room.viewers.size >= room.maxViewers : false });
-});
-
-// New endpoint for watch together movie authorization
-app.post('/api/watch-together/authorize-movie', async (req, res) => {
-  const { movieId, password } = req.body;
-  if (!movieId || !password) {
-    return res.json({ ok: false, error: 'Movie ID and password required' });
-  }
-
-  try {
-    const { rows } = await pool.query(
-      'SELECT password_hashes, one_time_password_hashes, imdb_id, type FROM movies WHERE id = $1',
-      [movieId]
-    );
-    if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
-
-    let regular = [], ot = [];
-    try { regular = JSON.parse(rows[0].password_hashes || '[]'); } catch (_) { regular = []; }
-    try { ot = JSON.parse(rows[0].one_time_password_hashes || '[]'); } catch (_) { ot = []; }
-
-    // Check regular passwords
-    for (const h of regular) {
-      if (await bcrypt.compare(password, h)) {
-        const base = rows[0].type === 'movie' ? 'movie' : 'tv';
-        const embedUrl = `https://vidsrc.me/embed/${base}/${rows[0].imdb_id}`;
-        return res.json({ 
-          ok: true, 
-          embedUrl: embedUrl,
-          token: jwt.sign({ movieId: movieId }, JWT_SECRET, { expiresIn: '6h' })
-        });
-      }
-    }
-
-    // Check one-time passwords
-    for (let i = 0; i < ot.length; i++) {
-      if (await bcrypt.compare(password, ot[i])) {
-        ot.splice(i, 1);
-        await pool.query('UPDATE movies SET one_time_password_hashes = $1 WHERE id = $2',
-          [JSON.stringify(ot), movieId]);
-        const base = rows[0].type === 'movie' ? 'movie' : 'tv';
-        const embedUrl = `https://vidsrc.me/embed/${base}/${rows[0].imdb_id}`;
-        return res.json({ 
-          ok: true, 
-          embedUrl: embedUrl,
-          token: jwt.sign({ movieId: movieId }, JWT_SECRET, { expiresIn: '6h' })
-        });
-      }
-    }
-
-    // Check global passwords
-    const { rows: globals } = await pool.query('SELECT id, password_hash, is_one_time FROM global_passwords');
-    for (const g of globals) {
-      if (g.is_one_time && await bcrypt.compare(password, g.password_hash)) {
-        await pool.query('DELETE FROM global_passwords WHERE id = $1', [g.id]);
-        const base = rows[0].type === 'movie' ? 'movie' : 'tv';
-        const embedUrl = `https://vidsrc.me/embed/${base}/${rows[0].imdb_id}`;
-        return res.json({ 
-          ok: true, 
-          embedUrl: embedUrl,
-          token: jwt.sign({ movieId: movieId }, JWT_SECRET, { expiresIn: '6h' })
-        });
-      }
-    }
-    for (const g of globals) {
-      if (!g.is_one_time && await bcrypt.compare(password, g.password_hash)) {
-        const base = rows[0].type === 'movie' ? 'movie' : 'tv';
-        const embedUrl = `https://vidsrc.me/embed/${base}/${rows[0].imdb_id}`;
-        return res.json({ 
-          ok: true, 
-          embedUrl: embedUrl,
-          token: jwt.sign({ movieId: movieId }, JWT_SECRET, { expiresIn: '6h' })
-        });
-      }
-    }
-
-    res.json({ ok: false, error: 'Wrong password' });
-  } catch (err) {
-    console.error('Watch together authorization error:', err);
-    res.status(500).json({ ok: false, error: 'Server error' });
-  }
 });
 
 const authMiddleware = (req, res, next) => {
