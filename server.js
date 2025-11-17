@@ -252,8 +252,16 @@ io.on('connection', (socket) => {
       hostName: data.hostName || 'Host',
       isPublic: data.isPublic || false,
       movieTitle: data.movieTitle || 'Unknown',
+      movieId: data.movieId,
+      movieType: data.movieType,
+      embedUrl: data.embedUrl,
       maxViewers: 9,
       viewers: new Map(),
+      playerState: {
+        isPlaying: false,
+        currentTime: 0,
+        isHostControlling: true
+      },
       createdAt: new Date()
     };
     
@@ -263,7 +271,7 @@ io.on('connection', (socket) => {
     socket.join(roomCode);
     socket.emit('room-created', { roomCode, room });
     
-    console.log(`Room created: ${roomCode} by ${socket.id}`);
+    console.log(`Room created: ${roomCode} by ${socket.id} for movie ${data.movieId}`);
   });
 
   socket.on('join-room', (data) => {
@@ -285,7 +293,7 @@ io.on('connection', (socket) => {
     });
 
     socket.join(data.roomCode);
-    socket.emit('room-joined', { room });
+    socket.emit('room-joined', { room, playerState: room.playerState });
     
     // Notify all viewers about new viewer
     socket.to(data.roomCode).emit('viewer-joined', {
@@ -297,55 +305,48 @@ io.on('connection', (socket) => {
       viewers: Array.from(room.viewers.values()) 
     });
 
-    // Notify host about new viewer
-    socket.to(room.host).emit('viewer-joined', {
-      viewer: { id: socket.id, name: data.viewerName || `Viewer${room.viewers.size}` }
-    });
-
     console.log(`User ${socket.id} joined room ${data.roomCode}`);
   });
 
-  // WebRTC signaling - FIXED VERSION
-  socket.on('webrtc-offer', (data) => {
-    console.log(`WebRTC offer from ${socket.id} to ${data.target}`);
-    socket.to(data.target).emit('webrtc-offer', {
-      offer: data.offer,
-      sender: socket.id
-    });
+  // Player control events
+  socket.on('player-play', (data) => {
+    const room = watchTogetherRooms.get(data.roomCode);
+    if (room && room.host === socket.id) {
+      room.playerState.isPlaying = true;
+      room.playerState.currentTime = data.currentTime || 0;
+      socket.to(data.roomCode).emit('player-play', {
+        currentTime: room.playerState.currentTime
+      });
+    }
   });
 
-  socket.on('webrtc-answer', (data) => {
-    console.log(`WebRTC answer from ${socket.id} to ${data.target}`);
-    socket.to(data.target).emit('webrtc-answer', {
-      answer: data.answer,
-      sender: socket.id
-    });
+  socket.on('player-pause', (data) => {
+    const room = watchTogetherRooms.get(data.roomCode);
+    if (room && room.host === socket.id) {
+      room.playerState.isPlaying = false;
+      room.playerState.currentTime = data.currentTime || 0;
+      socket.to(data.roomCode).emit('player-pause', {
+        currentTime: room.playerState.currentTime
+      });
+    }
   });
 
-  socket.on('webrtc-ice-candidate', (data) => {
-    socket.to(data.target).emit('webrtc-ice-candidate', {
-      candidate: data.candidate,
-      sender: socket.id
-    });
+  socket.on('player-seek', (data) => {
+    const room = watchTogetherRooms.get(data.roomCode);
+    if (room && room.host === socket.id) {
+      room.playerState.currentTime = data.currentTime;
+      socket.to(data.roomCode).emit('player-seek', {
+        currentTime: data.currentTime
+      });
+    }
   });
 
-  socket.on('host-screen-started', (data) => {
-    console.log(`Host ${socket.id} started screen sharing in room ${data.roomCode}`);
-    socket.to(data.roomCode).emit('host-screen-started', {
-      hostId: socket.id
-    });
-  });
-
-  socket.on('host-screen-stopped', (data) => {
-    console.log(`Host ${socket.id} stopped screen sharing`);
-    socket.to(data.roomCode).emit('host-screen-stopped');
-  });
-
-  socket.on('request-screen-stream', (data) => {
-    console.log(`Viewer ${socket.id} requesting screen stream from host ${data.hostId}`);
-    socket.to(data.hostId).emit('viewer-requested-stream', {
-      viewerId: socket.id
-    });
+  socket.on('player-time-update', (data) => {
+    const room = watchTogetherRooms.get(data.roomCode);
+    if (room && room.host === socket.id) {
+      room.playerState.currentTime = data.currentTime;
+      // Don't broadcast to avoid echo, just update room state
+    }
   });
 
   socket.on('chat-message', (data) => {
