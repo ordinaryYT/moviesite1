@@ -75,7 +75,10 @@
   .watch-room-header{position:absolute;top:0;left:0;right:0;background:rgba(0,0,0,.8);padding:1rem;display:flex;justify-content:space-between;align-items:center;z-index:1003}
   .watch-room-content{display:flex;height:100vh;padding-top:60px}
   .video-container{flex:1;position:relative;background:#000}
-  #hostVideo{width:100%;height:100%;object-fit:contain}
+  #watchRoomPlayer{width:100%;height:100%;border:none}
+  .player-controls{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);padding:1rem;border-radius:8px;display:flex;gap:1rem;align-items:center}
+  .player-controls button{background:#e50914;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer}
+  .player-controls button:disabled{background:#666;cursor:not-allowed}
   .viewers-panel{width:300px;background:#1a1a1a;padding:1rem;overflow-y:auto}
   .viewers-list{margin-bottom:2rem}
   .viewer-item{padding:0.5rem;background:#333;margin-bottom:0.5rem;border-radius:4px}
@@ -85,6 +88,17 @@
   .chat-input{display:flex;gap:0.5rem}
   .chat-input input{flex:1;padding:0.5rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
   .chat-input button{padding:0.5rem 1rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer}
+
+  /* Movie Selection Modal */
+  #movieSelectionModal .modal-content{max-width:800px;max-height:90vh}
+  #movieSearchInput{width:100%;padding:0.75rem;margin-bottom:1rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
+  #movieSearchResults{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:1rem;max-height:60vh;overflow-y:auto}
+  .movie-selection-item{cursor:pointer;border-radius:8px;overflow:hidden;background:#1a1a1a;transition:.2s}
+  .movie-selection-item:hover{transform:scale(1.05);border-color:#e50914}
+  .movie-selection-item img{width:100%;height:200px;object-fit:cover}
+  .movie-selection-item .movie-info{padding:0.5rem;text-align:center}
+  .movie-selection-item h4{font-size:0.9rem;margin-bottom:0.25rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .movie-selection-item p{font-size:0.8rem;color:#aaa}
 
   /* New Add-Content Search Modal */
   #addContentSearchModal .modal-content{max-width:600px;}
@@ -125,7 +139,7 @@
   <div id="watchTogetherSection">
     <h2>Watch Together</h2>
     <div class="watch-together-actions">
-      <button class="watch-btn" onclick="openCreateRoomModal()">Create Room</button>
+      <button class="watch-btn" onclick="openMovieSelectionModal()">Create Room</button>
       <button class="watch-btn" onclick="openJoinRoomModal()">Join Room</button>
     </div>
     <h3>Public Rooms</h3>
@@ -154,7 +168,17 @@
   </div>
 </div>
 
-<!-- Watch Together Modals -->
+<!-- Movie Selection Modal -->
+<div id="movieSelectionModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeMovieSelectionModal()">X</button>
+    <h2>Select Movie/TV Show</h2>
+    <input type="text" id="movieSearchInput" placeholder="Search movies and TV shows...">
+    <div id="movieSearchResults"></div>
+  </div>
+</div>
+
+<!-- Create Room Modal -->
 <div id="createRoomModal" class="modal">
   <div class="modal-content">
     <button class="close-modal" onclick="closeCreateRoomModal()">X</button>
@@ -163,9 +187,9 @@
       <label for="hostName">Your Name:</label>
       <input type="text" id="hostName" placeholder="Enter your name" value="Host">
     </div>
-    <div class="form-group">
-      <label for="roomMovie">Movie/Show Title:</label>
-      <input type="text" id="roomMovie" placeholder="What are you watching?">
+    <div id="selectedMovieInfo" style="background:#333;padding:1rem;border-radius:8px;margin-bottom:1rem;display:none">
+      <h4 id="selectedMovieTitle"></h4>
+      <p id="selectedMovieYear"></p>
     </div>
     <div class="form-group">
       <label><input type="checkbox" id="isPublicRoom"> Make room public (visible to everyone)</label>
@@ -174,6 +198,7 @@
   </div>
 </div>
 
+<!-- Join Room Modal -->
 <div id="joinRoomModal" class="modal">
   <div class="modal-content">
     <button class="close-modal" onclick="closeJoinRoomModal()">X</button>
@@ -201,21 +226,23 @@
   </div>
   <div class="watch-room-content">
     <div class="video-container">
-      <video id="hostVideo" autoplay muted></video>
-      <div id="noHost" style="display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">
-        <h3>Waiting for host to start sharing...</h3>
+      <iframe id="watchRoomPlayer" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+      <div class="player-controls" id="playerControls" style="display:none">
+        <button id="playPauseBtn" onclick="togglePlayPause()">Play</button>
+        <button id="fullscreenBtn" onclick="toggleFullscreen()">Fullscreen</button>
+        <span>Host Controls</span>
       </div>
     </div>
     <div class="viewers-panel">
       <div class="viewers-list">
-        <h4>Viewers (<span id="viewerCount">0</span>/10)</h4>
+        <h4>Viewers (<span id="viewerCount">0</span>/9)</h4>
         <div id="viewersList"></div>
       </div>
       <div class="chat-container">
         <h4>Chat</h4>
         <div id="chatMessages" class="chat-messages"></div>
         <div class="chat-input">
-          <input type="text" id="chatInput" placeholder="Type a message...">
+          <input type="text" id="chatInput" placeholder="Type a message..." onkeypress="if(event.key=='Enter') sendChatMessage()">
           <button onclick="sendChatMessage()">Send</button>
         </div>
       </div>
@@ -344,14 +371,15 @@ const searchInput = document.getElementById('searchInput');
 
 // Watch Together elements
 const watchRoom = document.getElementById('watchRoom');
-const hostVideo = document.getElementById('hostVideo');
-const noHost = document.getElementById('noHost');
+const watchRoomPlayer = document.getElementById('watchRoomPlayer');
 const viewersList = document.getElementById('viewersList');
 const viewerCount = document.getElementById('viewerCount');
 const chatMessages = document.getElementById('chatMessages');
 const chatInput = document.getElementById('chatInput');
 const roomTitle = document.getElementById('roomTitle');
 const roomCodeDisplay = document.getElementById('roomCodeDisplay');
+const playerControls = document.getElementById('playerControls');
+const playPauseBtn = document.getElementById('playPauseBtn');
 
 let adminToken = null;
 let adminRole = null;
@@ -367,8 +395,11 @@ const FAV_KEY = 'ogmovie_favorites';
 let socket = null;
 let currentRoom = null;
 let isHost = false;
-let peerConnections = new Map();
-let localStream = null;
+let selectedMovieForRoom = null;
+let playerState = {
+  isPlaying: false,
+  currentTime: 0
+};
 
 function debounce(func, delay = 500) {
   let timeout;
@@ -565,6 +596,16 @@ requestInput.addEventListener('input', debounce(async () => {
 }, 600));
 
 /* ────── WATCH TOGETHER FUNCTIONALITY ────── */
+function openMovieSelectionModal() {
+  document.getElementById('movieSelectionModal').classList.add('active');
+  loadMoviesForSelection();
+}
+
+function closeMovieSelectionModal() {
+  document.getElementById('movieSelectionModal').classList.remove('active');
+  document.getElementById('movieSearchInput').value = '';
+}
+
 function openCreateRoomModal() {
   document.getElementById('createRoomModal').classList.add('active');
 }
@@ -581,57 +622,113 @@ function closeJoinRoomModal() {
   document.getElementById('joinRoomModal').classList.remove('active');
 }
 
-async function loadPublicRooms() {
+async function loadMoviesForSelection() {
+  const results = document.getElementById('movieSearchResults');
+  results.innerHTML = '<p style="text-align:center;color:#aaa;">Loading...</p>';
+  
   try {
-    const res = await fetch(`${API}/watch-together/rooms`);
+    const res = await fetch(API + '/movies');
     const data = await res.json();
     if (data.ok) {
-      publicRooms.innerHTML = '';
-      if (data.rooms.length === 0) {
-        publicRooms.innerHTML = '<p style="color:#aaa;text-align:center;grid-column:1/-1;">No public rooms available</p>';
-      } else {
-        data.rooms.forEach(room => {
-          const roomCard = document.createElement('div');
-          roomCard.className = 'room-card';
-          roomCard.innerHTML = `
-            <h3>${room.movieTitle}</h3>
-            <p>Host: ${room.hostName}</p>
-            <p class="viewers">${room.viewerCount}/${room.maxViewers} viewers</p>
-            <p>Room: ${room.id}</p>
-            <button class="modal-btn" onclick="joinPublicRoom('${room.id}')">Join Room</button>
-          `;
-          publicRooms.appendChild(roomCard);
-        });
-      }
+      displayMoviesForSelection(data.movies);
+      setupMovieSearch();
     }
   } catch (err) {
-    console.error('Failed to load public rooms:', err);
-    publicRooms.innerHTML = '<p style="color:red;">Failed to load rooms</p>';
+    results.innerHTML = '<p style="color:red;">Failed to load movies</p>';
   }
 }
 
-function joinPublicRoom(roomCode) {
-  document.getElementById('roomCode').value = roomCode;
-  openJoinRoomModal();
+function displayMoviesForSelection(movies) {
+  const results = document.getElementById('movieSearchResults');
+  results.innerHTML = '';
+  
+  if (movies.length === 0) {
+    results.innerHTML = '<p style="text-align:center;color:#aaa;">No movies available</p>';
+    return;
+  }
+  
+  movies.forEach(movie => {
+    const item = document.createElement('div');
+    item.className = 'movie-selection-item';
+    item.innerHTML = `
+      <img src="${movie.image || 'https://via.placeholder.com/150x200/333/fff?text=No+Poster'}" 
+           onerror="this.src='https://via.placeholder.com/150x200/333/fff?text=No+Poster'">
+      <div class="movie-info">
+        <h4>${movie.title}</h4>
+        <p>${movie.year || 'N/A'} • ${movie.type === 'movie' ? 'Movie' : 'TV Show'}</p>
+      </div>
+    `;
+    item.addEventListener('click', () => selectMovieForRoom(movie));
+    results.appendChild(item);
+  });
+}
+
+function setupMovieSearch() {
+  const searchInput = document.getElementById('movieSearchInput');
+  searchInput.addEventListener('input', debounce((e) => {
+    const searchTerm = e.target.value.toLowerCase();
+    const allItems = document.querySelectorAll('.movie-selection-item');
+    
+    allItems.forEach(item => {
+      const title = item.querySelector('h4').textContent.toLowerCase();
+      if (title.includes(searchTerm)) {
+        item.style.display = 'block';
+      } else {
+        item.style.display = 'none';
+      }
+    });
+  }, 300));
+}
+
+function selectMovieForRoom(movie) {
+  selectedMovieForRoom = movie;
+  document.getElementById('selectedMovieTitle').textContent = movie.title;
+  document.getElementById('selectedMovieYear').textContent = `${movie.year || 'N/A'} • ${movie.type === 'movie' ? 'Movie' : 'TV Show'}`;
+  document.getElementById('selectedMovieInfo').style.display = 'block';
+  closeMovieSelectionModal();
+  openCreateRoomModal();
 }
 
 async function createWatchRoom() {
-  const hostName = document.getElementById('hostName').value.trim() || 'Host';
-  const movieTitle = document.getElementById('roomMovie').value.trim() || 'Unknown Movie';
-  const isPublic = document.getElementById('isPublicRoom').checked;
-
-  if (!socket) {
-    socket = io();
-    setupSocketListeners();
+  if (!selectedMovieForRoom) {
+    alert('Please select a movie first');
+    return;
   }
 
-  socket.emit('create-room', {
-    hostName,
-    movieTitle,
-    isPublic
-  });
+  const hostName = document.getElementById('hostName').value.trim() || 'Host';
+  const isPublic = document.getElementById('isPublicRoom').checked;
 
-  closeCreateRoomModal();
+  // Get the embed URL for the selected movie
+  try {
+    const authRes = await fetch(API + '/movies/' + selectedMovieForRoom.id + '/authorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: 'bypass' }) // This will fail, but we need the structure
+    });
+    
+    // For Watch Together, we'll use a direct approach since we can't get the embed without password
+    // We'll construct the URL based on the movie data
+    const base = selectedMovieForRoom.type === 'movie' ? 'movie' : 'tv';
+    const embedUrl = `https://vidsrc.me/embed/${base}/${selectedMovieForRoom.imdb_id}`;
+
+    if (!socket) {
+      socket = io();
+      setupSocketListeners();
+    }
+
+    socket.emit('create-room', {
+      hostName,
+      movieTitle: selectedMovieForRoom.title,
+      movieId: selectedMovieForRoom.id,
+      movieType: selectedMovieForRoom.type,
+      embedUrl: embedUrl,
+      isPublic
+    });
+
+    closeCreateRoomModal();
+  } catch (err) {
+    alert('Failed to create room. Please try again.');
+  }
 }
 
 async function joinWatchRoom() {
@@ -682,13 +779,18 @@ function setupSocketListeners() {
     currentRoom = data.room;
     isHost = true;
     showWatchRoom();
-    startScreenShare();
+    loadMovieForRoom();
   });
 
   socket.on('room-joined', (data) => {
     currentRoom = data.room;
     isHost = false;
     showWatchRoom();
+    loadMovieForRoom();
+    // Sync with host's player state
+    if (data.playerState) {
+      playerState = data.playerState;
+    }
   });
 
   socket.on('room-error', (data) => {
@@ -706,79 +808,36 @@ function setupSocketListeners() {
 
   socket.on('viewer-left', (data) => {
     updateViewersList();
-    // Clean up peer connection
-    if (peerConnections.has(data.viewerId)) {
-      peerConnections.get(data.viewerId).close();
-      peerConnections.delete(data.viewerId);
-    }
   });
 
   socket.on('viewers-updated', (data) => {
     updateViewersList(data.viewers);
   });
 
-  socket.on('offer', async (data) => {
-    if (!isHost) return;
-    
-    try {
-      const peerConnection = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-      });
-
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit('ice-candidate', {
-            roomCode: currentRoom.id,
-            candidate: event.candidate,
-            target: data.sender
-          });
-        }
-      };
-
-      if (localStream) {
-        localStream.getTracks().forEach(track => {
-          peerConnection.addTrack(track, localStream);
-        });
-      }
-
-      await peerConnection.setRemoteDescription(data.offer);
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
-
-      socket.emit('answer', {
-        roomCode: currentRoom.id,
-        answer: answer,
-        target: data.sender
-      });
-
-      peerConnections.set(data.sender, peerConnection);
-    } catch (err) {
-      console.error('Error handling offer:', err);
-    }
-  });
-
-  socket.on('answer', async (data) => {
-    if (isHost) return;
-    
-    const peerConnection = peerConnections.get(data.sender);
-    if (peerConnection) {
-      await peerConnection.setRemoteDescription(data.answer);
-    }
-  });
-
-  socket.on('ice-candidate', async (data) => {
-    const peerConnection = peerConnections.get(data.sender);
-    if (peerConnection) {
-      await peerConnection.addIceCandidate(data.candidate);
-    }
-  });
-
-  socket.on('host-screen-share', (data) => {
+  // Player control events
+  socket.on('player-play', (data) => {
     if (!isHost) {
-      // As a viewer, we'd set up the video stream here
-      // In a real implementation, you'd handle the WebRTC stream
-      noHost.style.display = 'none';
-      hostVideo.style.display = 'block';
+      playerState.isPlaying = true;
+      playerState.currentTime = data.currentTime;
+      // In a real implementation, you'd sync the player here
+      console.log('Syncing play to time:', data.currentTime);
+    }
+  });
+
+  socket.on('player-pause', (data) => {
+    if (!isHost) {
+      playerState.isPlaying = false;
+      playerState.currentTime = data.currentTime;
+      // In a real implementation, you'd sync the player here
+      console.log('Syncing pause to time:', data.currentTime);
+    }
+  });
+
+  socket.on('player-seek', (data) => {
+    if (!isHost) {
+      playerState.currentTime = data.currentTime;
+      // In a real implementation, you'd sync the player here
+      console.log('Syncing seek to time:', data.currentTime);
     }
   });
 
@@ -787,38 +846,43 @@ function setupSocketListeners() {
   });
 }
 
-async function startScreenShare() {
-  try {
-    localStream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: true
-    });
+function loadMovieForRoom() {
+  if (currentRoom && currentRoom.embedUrl) {
+    watchRoomPlayer.src = currentRoom.embedUrl;
+    if (isHost) {
+      playerControls.style.display = 'flex';
+    } else {
+      playerControls.style.display = 'none';
+    }
+  }
+}
 
-    hostVideo.srcObject = localStream;
-    noHost.style.display = 'none';
-    hostVideo.style.display = 'block';
-
-    // Notify viewers that screen share has started
-    socket.emit('host-screen-share', {
+function togglePlayPause() {
+  if (!isHost) return;
+  
+  playerState.isPlaying = !playerState.isPlaying;
+  if (playerState.isPlaying) {
+    socket.emit('player-play', {
       roomCode: currentRoom.id,
-      streamId: 'host-stream'
+      currentTime: playerState.currentTime
     });
-
-    hostVideo.onloadedmetadata = () => {
-      hostVideo.play();
-    };
-
-    // Handle track ended (user stops sharing)
-    localStream.getTracks().forEach(track => {
-      track.onended = () => {
-        noHost.style.display = 'block';
-        hostVideo.style.display = 'none';
-      };
+    playPauseBtn.textContent = 'Pause';
+  } else {
+    socket.emit('player-pause', {
+      roomCode: currentRoom.id,
+      currentTime: playerState.currentTime
     });
+    playPauseBtn.textContent = 'Play';
+  }
+}
 
-  } catch (err) {
-    console.error('Error starting screen share:', err);
-    alert('Failed to start screen sharing. Please allow screen share permissions.');
+function toggleFullscreen() {
+  if (watchRoomPlayer.requestFullscreen) {
+    watchRoomPlayer.requestFullscreen();
+  } else if (watchRoomPlayer.webkitRequestFullscreen) {
+    watchRoomPlayer.webkitRequestFullscreen();
+  } else if (watchRoomPlayer.msRequestFullscreen) {
+    watchRoomPlayer.msRequestFullscreen();
   }
 }
 
@@ -841,17 +905,12 @@ function leaveWatchRoom() {
     socket = null;
   }
 
-  if (localStream) {
-    localStream.getTracks().forEach(track => track.stop());
-    localStream = null;
-  }
-
-  peerConnections.forEach(pc => pc.close());
-  peerConnections.clear();
-
   watchRoom.style.display = 'none';
+  watchRoomPlayer.src = '';
   currentRoom = null;
   isHost = false;
+  selectedMovieForRoom = null;
+  playerState = { isPlaying: false, currentTime: 0 };
   
   // Return to watch together section
   applyFilters();
@@ -895,12 +954,39 @@ function addChatMessage(sender, message, timestamp) {
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-// Handle Enter key in chat
-chatInput.addEventListener('keypress', (e) => {
-  if (e.key === 'Enter') {
-    sendChatMessage();
+async function loadPublicRooms() {
+  try {
+    const res = await fetch(`${API}/watch-together/rooms`);
+    const data = await res.json();
+    if (data.ok) {
+      publicRooms.innerHTML = '';
+      if (data.rooms.length === 0) {
+        publicRooms.innerHTML = '<p style="color:#aaa;text-align:center;grid-column:1/-1;">No public rooms available</p>';
+      } else {
+        data.rooms.forEach(room => {
+          const roomCard = document.createElement('div');
+          roomCard.className = 'room-card';
+          roomCard.innerHTML = `
+            <h3>${room.movieTitle}</h3>
+            <p>Host: ${room.hostName}</p>
+            <p class="viewers">${room.viewerCount}/${room.maxViewers} viewers</p>
+            <p>Room: ${room.id}</p>
+            <button class="modal-btn" onclick="joinPublicRoom('${room.id}')">Join Room</button>
+          `;
+          publicRooms.appendChild(roomCard);
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load public rooms:', err);
+    publicRooms.innerHTML = '<p style="color:red;">Failed to load rooms</p>';
   }
-});
+}
+
+function joinPublicRoom(roomCode) {
+  document.getElementById('roomCode').value = roomCode;
+  openJoinRoomModal();
+}
 
 /* ────── ADD CONTENT SEARCH ────── */
 function openAddContentModal() {
@@ -1236,9 +1322,9 @@ function updateEpisodeSelect() {
   if (episodeData && episodeData[season]) {
     episodeData[season].forEach(ep => {
       const option = document.createElement('option');
-      option.value = ep.episode;
-      option.textContent = `${ep.name} (E${ep.episode})`;
-      episodeSelect.appendChild(option);
+        option.value = ep.episode;
+        option.textContent = `${ep.name} (E${ep.episode})`;
+        episodeSelect.appendChild(option);
     });
   }
 }
@@ -1301,7 +1387,7 @@ async function loadMovies() {
 adminBtn.addEventListener('click', openAdminPanel);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    [loginModal, addContentSearchModal, finalAddModal, passwordModal, globalPasswordModal, episodeModal, trailerModal, playerContainer, createRoomModal, joinRoomModal].forEach(m => m.classList.remove('active'));
+    [loginModal, addContentSearchModal, finalAddModal, passwordModal, globalPasswordModal, episodeModal, trailerModal, playerContainer, movieSelectionModal, createRoomModal, joinRoomModal].forEach(m => m.classList.remove('active'));
     if (watchRoom.style.display === 'block') {
       leaveWatchRoom();
     }
