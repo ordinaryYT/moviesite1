@@ -297,33 +297,54 @@ io.on('connection', (socket) => {
       viewers: Array.from(room.viewers.values()) 
     });
 
+    // Notify host about new viewer
+    socket.to(room.host).emit('viewer-joined', {
+      viewer: { id: socket.id, name: data.viewerName || `Viewer${room.viewers.size}` }
+    });
+
     console.log(`User ${socket.id} joined room ${data.roomCode}`);
   });
 
-  socket.on('offer', (data) => {
-    socket.to(data.roomCode).emit('offer', {
+  // WebRTC signaling - FIXED VERSION
+  socket.on('webrtc-offer', (data) => {
+    console.log(`WebRTC offer from ${socket.id} to ${data.target}`);
+    socket.to(data.target).emit('webrtc-offer', {
       offer: data.offer,
       sender: socket.id
     });
   });
 
-  socket.on('answer', (data) => {
-    socket.to(data.roomCode).emit('answer', {
+  socket.on('webrtc-answer', (data) => {
+    console.log(`WebRTC answer from ${socket.id} to ${data.target}`);
+    socket.to(data.target).emit('webrtc-answer', {
       answer: data.answer,
       sender: socket.id
     });
   });
 
-  socket.on('ice-candidate', (data) => {
-    socket.to(data.roomCode).emit('ice-candidate', {
+  socket.on('webrtc-ice-candidate', (data) => {
+    socket.to(data.target).emit('webrtc-ice-candidate', {
       candidate: data.candidate,
       sender: socket.id
     });
   });
 
-  socket.on('host-screen-share', (data) => {
-    socket.to(data.roomCode).emit('host-screen-share', {
-      streamId: data.streamId
+  socket.on('host-screen-started', (data) => {
+    console.log(`Host ${socket.id} started screen sharing in room ${data.roomCode}`);
+    socket.to(data.roomCode).emit('host-screen-started', {
+      hostId: socket.id
+    });
+  });
+
+  socket.on('host-screen-stopped', (data) => {
+    console.log(`Host ${socket.id} stopped screen sharing`);
+    socket.to(data.roomCode).emit('host-screen-stopped');
+  });
+
+  socket.on('request-screen-stream', (data) => {
+    console.log(`Viewer ${socket.id} requesting screen stream from host ${data.hostId}`);
+    socket.to(data.hostId).emit('viewer-requested-stream', {
+      viewerId: socket.id
     });
   });
 
