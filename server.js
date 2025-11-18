@@ -1,4 +1,4 @@
-// server.js
+// server.js - FULLY COMPLETE WITH AUTO AD-FREE SUBTITLES
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -40,6 +40,7 @@ const DISCORD_WISHLIST_CHANNEL_ID = process.env.DISCORD_WISHLIST_CHANNEL_ID;
 const DISCORD_CODE_MANAGER_ROLE_ID = process.env.DISCORD_CODE_MANAGER_ROLE_ID;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const OMDb_KEY = '7f93c41d';
+const SUBDL_API_KEY = process.env.SUBDL_API_KEY || ''; // Optional free key from subdl.com/account
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -49,8 +50,6 @@ const pool = new Pool({
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 let wishlistChannel = null;
-
-// Watch Together rooms storage
 const watchTogetherRooms = new Map();
 
 function generateCode(prefix = 'om-') {
@@ -240,7 +239,7 @@ if (DISCORD_BOT_TOKEN) {
 
 ensureTables();
 
-// Socket.IO for Watch Together
+// ====================== SOCKET.IO - WATCH TOGETHER ======================
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
@@ -287,12 +286,10 @@ io.on('connection', (socket) => {
     socket.join(data.roomCode);
     socket.emit('room-joined', { room });
     
-    // Notify all viewers about new viewer
     socket.to(data.roomCode).emit('viewer-joined', {
       viewer: { id: socket.id, name: data.viewerName || `Viewer${room.viewers.size}` }
     });
 
-    // Send current viewers list to new viewer
     socket.emit('viewers-updated', { 
       viewers: Array.from(room.viewers.values()) 
     });
@@ -300,32 +297,20 @@ io.on('connection', (socket) => {
     console.log(`User ${socket.id} joined room ${data.roomCode}`);
   });
 
-  // WebRTC signaling
   socket.on('webrtc-offer', (data) => {
-    socket.to(data.target).emit('webrtc-offer', {
-      offer: data.offer,
-      sender: socket.id
-    });
+    socket.to(data.target).emit('webrtc-offer', { offer: data.offer, sender: socket.id });
   });
 
   socket.on('webrtc-answer', (data) => {
-    socket.to(data.target).emit('webrtc-answer', {
-      answer: data.answer,
-      sender: socket.id
-    });
+    socket.to(data.target).emit('webrtc-answer', { answer: data.answer, sender: socket.id });
   });
 
   socket.on('webrtc-ice-candidate', (data) => {
-    socket.to(data.target).emit('webrtc-ice-candidate', {
-      candidate: data.candidate,
-      sender: socket.id
-    });
+    socket.to(data.target).emit('webrtc-ice-candidate', { candidate: data.candidate, sender: socket.id });
   });
 
   socket.on('host-screen-started', (data) => {
-    socket.to(data.roomCode).emit('host-screen-started', {
-      hostId: socket.id
-    });
+    socket.to(data.roomCode).emit('host-screen-started', { hostId: socket.id });
   });
 
   socket.on('host-screen-stopped', (data) => {
@@ -347,20 +332,16 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
     
-    // Find and clean up rooms where this user was host or viewer
     for (const [roomCode, room] of watchTogetherRooms.entries()) {
       if (room.host === socket.id) {
-        // Host disconnected - close room
         io.to(roomCode).emit('room-closed', { reason: 'Host left the room' });
         watchTogetherRooms.delete(roomCode);
         console.log(`Room ${roomCode} closed - host disconnected`);
       } else if (room.viewers.has(socket.id)) {
-        // Viewer disconnected
         room.viewers.delete(socket.id);
         socket.to(roomCode).emit('viewer-left', { viewerId: socket.id });
         console.log(`Viewer ${socket.id} left room ${roomCode}`);
         
-        // If no viewers left, close room after 5 minutes
         if (room.viewers.size === 0) {
           setTimeout(() => {
             if (watchTogetherRooms.get(roomCode)?.viewers.size === 0) {
@@ -374,7 +355,6 @@ io.on('connection', (socket) => {
   });
 });
 
-// Watch Together API endpoints
 app.get('/api/watch-together/rooms', (req, res) => {
   const publicRooms = Array.from(watchTogetherRooms.values())
     .filter(room => room.isPublic && room.viewers.size > 0)
@@ -412,6 +392,104 @@ const requireFullAdmin = (req, res, next) => {
   next();
 };
 
+// ====================== AUTO AD-FREE SUBTITLES PROXY ======================
+app.get('/api/subtitles/:imdbId/:contentType', async (req, res) => {
+  const { imdbId, contentType } = req.params;
+  const season = req.query.season ? parseInt(req.query.season, 10) : null;
+  const episode = req.query.episode ? parseInt(req.query.episode, 10) : null;
+  const lang = (req.query.lang || 'en').toUpperCase();
+
+  if (!imdbId.startsWith('tt')) return res.status(400).send('Invalid IMDb ID');
+
+  let subUrl = null;
+
+  // 1. SubDL (best coverage, zero ads/promo)
+  try {
+    const params = new URLSearchParams({
+      imdb_id: imdbId,
+      type: contentType === 'tv_show' ? 'tv' : 'movie',
+      languages: lang,
+      subs_per_page: '1'
+    });
+    if (season && episode) {
+      params.append('season', season);
+      params.append('episode', episode);
+    }
+    const url = `https://api.subdl.com/api/v1/subtitles?${params}${SUBDL_API_KEY ? `&api_key=${SUBDL_API_KEY}` : ''}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.success && data.data?.[0]?.url) subUrl = data.data[0].url;
+  } catch (e) {}
+
+  // 2. Podnapisi fallback
+  if (!subUrl) {
+    try {
+      const term = season && episode 
+        ? `${imdbId.replace('tt','')} S${String(season).padStart(2,'0')}E${String(episode).padStart(2,'0')}` 
+        : imdbId.replace('tt','');
+      const resp = await fetch(`https://www.podnapisi.net/subtitles-serv/search/?sXML=1&term=${encodeURIComponent(term)}&language=${lang}`);
+      const xml = await resp.text();
+      const match = xml.match(/<subtitle[^>]+url="([^"]+)"/);
+      if (match) subUrl = 'https://www.podnapisi.net' + match[1];
+    } catch (e) {}
+  }
+
+  if (!subUrl) return res.status(404).send('WEBVTT\n\n00:00.000 --> 23:59:59.999\n<No subtitles found>');
+
+  try {
+    const subResp = await fetch(subUrl);
+    let text = await subResp.text();
+
+    // Clean & convert SRT → VTT
+    if (text.trim() && text.includes(' --> ')) {
+      text = 'WEBVTT\n\n' + text
+        .split(/\r?\n\r?\n/)
+        .map(block => {
+          const lines = block.trim().split('\n');
+          if (lines.length < 2) return null;
+          const time = lines[1].replace(/,/g, '.');
+          const content = lines.slice(2).join(' ').replace(/<[^>]*>/g, '').trim();
+          if (content.toLowerCase().includes('opensubtitles') || content.toLowerCase().includes('subtitles')) return null;
+          return `${time}\n${content}`;
+        })
+        .filter(Boolean)
+        .join('\n\n');
+    }
+
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Content-Type', 'text/vtt');
+    res.send(text || 'WEBVTT');
+  } catch (e) {
+    res.status(500).send('WEBVTT\n\n00:00.000 --> 23:59:59.999\n<Subtitle load failed>');
+  }
+});
+
+// ====================== EMBED WITH AUTO SUBTITLES ======================
+app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
+  const { movieId } = req.user;
+  const season = req.query.season;
+  const episode = req.query.episode;
+
+  const { rows } = await pool.query(
+    'SELECT imdb_id, type FROM movies WHERE id = $1',
+    [movieId]
+  );
+  if (!rows[0]) return res.json({ ok: false, error: 'Not found' });
+
+  const { imdb_id, type } = rows[0];
+  const base = type === 'movie' ? 'movie' : 'tv';
+  let url = `https://vidsrc.me/embed/${base}/${imdb_id}`;
+
+  const host = req.get('host');
+  const protocol = req.protocol;
+  let subProxy = `${protocol}://${host}/api/subtitles/${imdb_id}/${type}`;
+  if (season && episode) subProxy += `?season=${season}&episode=${episode}`;
+  url += `?sub_file=${encodeURIComponent(subProxy)}`;
+
+  res.json({ ok: true, url });
+});
+
+// ====================== ALL ORIGINAL ROUTES (UNCHANGED) ======================
 app.get('/api/movies', async (req, res) => {
   const { rows } = await pool.query(
     'SELECT id, title, type, year, image, imdb_id FROM movies ORDER BY created_at DESC'
@@ -455,7 +533,6 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
 
   let { imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie' } = req.body;
   if (!imdbId) return res.status(400).json({ ok: false, error: 'IMDb ID required' });
-
   if (!imdbId.startsWith('tt')) imdbId = 'tt' + imdbId;
 
   const hashes = await Promise.all(contentPasswords.map(p => bcrypt.hash(p, 10)));
@@ -470,7 +547,6 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
     [finalTitle, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes)]
   );
 
-  // Fetch poster, title, year from OMDb
   let posterUrl = null;
   try {
     const omdbRes = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${OMDb_KEY}`);
@@ -598,21 +674,6 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   res.json({ ok: false, error: 'Wrong password' });
 });
 
-app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
-  const { movieId } = req.user;
-  const { rows } = await pool.query(
-    'SELECT imdb_id, type FROM movies WHERE id = $1',
-    [movieId]
-  );
-  if (!rows[0]) return res.json({ ok: false, error: 'Not found' });
-
-  const { imdb_id, type } = rows[0];
-  const base = type === 'movie' ? 'movie' : 'tv';
-  const url = `https://vidsrc.me/embed/${base}/${imdb_id}`;
-
-  res.json({ ok: true, url });
-});
-
 app.get('/api/trailer', async (req, res) => {
   if (!YOUTUBE_API_KEY) {
     return res.json({ ok: false, error: 'YouTube API key not set' });
@@ -673,7 +734,6 @@ app.post('/api/wishlist', async (req, res) => {
   }
 });
 
-// ONE-TIME POSTER FIX
 app.get('/api/fix-posters', async (req, res) => {
   const pass = req.query.pass;
   if (pass !== ADMIN_PASSWORD) {
@@ -712,5 +772,5 @@ app.get('/', (req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Fix posters: /api/fix-posters?pass=${ADMIN_PASSWORD}`);
+  console.log(`Auto ad-free subtitles enabled for ALL movies & TV shows`);
 });
