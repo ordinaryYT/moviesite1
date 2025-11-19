@@ -52,8 +52,8 @@
   .player-wrapper{position:relative;width:100%;height:100%}
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
-  .iframe-overlay-right{position:absolute;top:5px;right:0;width:320px;height:55px;background:#000;z-index:3;border-radius:8px;}
   .bottom-left-overlay{position:absolute;bottom:10px;left:200px;width:120px;height:40px;background:#000;z-index:10;border-radius:8px;}
+  .bottom-right-overlay{position:absolute;bottom:10px;right:200px;width:240px;height:40px;background:#000;z-index:10;border-radius:8px;}
   #requestSection{display:none;padding:2rem;max-width:1400px;margin:0 auto}
   #requestInput{width:100%;max-width:500px;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem;margin-bottom:1rem}
   #requestInput:focus{outline:none;border-color:#e50914}
@@ -329,8 +329,8 @@
   <div class="player-wrapper">
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
-    <div class="iframe-overlay-right"></div>
     <div class="bottom-left-overlay"></div>
+    <div class="bottom-right-overlay"></div>
   </div>
 </div>
 
@@ -551,30 +551,30 @@ requestInput.addEventListener('input', debounce(async () => {
     const data = await res.json();
     if (!data.Search) { requestResults.innerHTML = '<p style="color:#aaa;">No results</p>'; return; }
 
-    requestResults.innerHTML = '';
-    data.Search.forEach(item => {
-      const title = item.Title;
-      const year  = item.Year || 'N/A';
-      const img   = item.Poster && item.Poster !== 'N/A' ? item.Poster : 'https://via.placeholder.com/300x450/333/fff?text=No+Poster';
-      const type  = item.Type === 'movie' ? 'movie' : 'tv_show';
-      const imdb  = item.imdbID;
+  requestResults.innerHTML = '';
+  data.Search.forEach(item => {
+    const title = item.Title;
+    const year  = item.Year || 'N/A';
+    const img   = item.Poster && item.Poster !== 'N/A' ? item.Poster : 'https://via.placeholder.com/300x450/333/fff?text=No+Poster';
+    const type  = item.Type === 'movie' ? 'movie' : 'tv_show';
+    const imdb  = item.imdbID;
 
-      if (currentMovies.some(m => m.imdb_id === imdb)) return;
+    if (currentMovies.some(m => m.imdb_id === imdb)) return;
 
-      const card = document.createElement('div');
-      card.className = 'movie-card';
-      card.innerHTML = `
-        <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
-        <div class="movie-info">
-          <h3>${title}</h3>
-          <p>${year} (${type.charAt(0).toUpperCase() + type.slice(1)})</p>
-        </div>
-        <div class="card-actions">
-          <button class="trailer-btn" data-title="${title}">Trailer</button>
-          <button class="wishlist-btn" data-title="${title}" data-type="${type}" data-imdb="${imdb}">Wishlist</button>
-        </div>`;
-      requestResults.appendChild(card);
-    });
+    const card = document.createElement('div');
+    card.className = 'movie-card';
+    card.innerHTML = `
+      <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+      <div class="movie-info">
+        <h3>${title}</h3>
+        <p>${year} (${type.charAt(0).toUpperCase() + type.slice(1)})</p>
+      </div>
+      <div class="card-actions">
+        <button class="trailer-btn" data-title="${title}">Trailer</button>
+        <button class="wishlist-btn" data-title="${title}" data-type="${type}" data-imdb="${imdb}">Wishlist</button>
+      </div>`;
+    requestResults.appendChild(card);
+  });
   } catch {
     requestResults.innerHTML = '<p style="color:#aaa;">Search failed</p>';
   }
