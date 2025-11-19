@@ -54,7 +54,7 @@
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
   .bottom-left-overlay{position:absolute;bottom:10px;left:200px;width:120px;height:40px;background:#000;z-index:10;border-radius:8px;}
 
-  /* NEW: Subtitle Controls */
+  /* Subtitle Controls */
   .subtitle-controls {
     position: absolute;
     bottom: 60px;
@@ -143,8 +143,8 @@
     background: #e50914;
   }
 
-  /* CSS to HIDE VidSrc subtitles */
-  .vidsrc-subtitle-hider {
+  /* CSS to HIDE player subtitles */
+  .player-subtitle-hider {
     position: absolute;
     top: 0;
     left: 0;
@@ -154,12 +154,12 @@
     pointer-events: none;
   }
   /* Hide common subtitle elements */
-  .vidsrc-subtitle-hider ~ * [class*="subtitle"],
-  .vidsrc-subtitle-hider ~ * [class*="caption"],
-  .vidsrc-subtitle-hider ~ * [id*="subtitle"],
-  .vidsrc-subtitle-hider ~ * [id*="caption"],
-  .vidsrc-subtitle-hider ~ * [class*="ttml"],
-  .vidsrc-subtitle-hider ~ * [class*="vtt"] {
+  .player-subtitle-hider ~ * [class*="subtitle"],
+  .player-subtitle-hider ~ * [class*="caption"],
+  .player-subtitle-hider ~ * [id*="subtitle"],
+  .player-subtitle-hider ~ * [id*="caption"],
+  .player-subtitle-hider ~ * [class*="ttml"],
+  .player-subtitle-hider ~ * [class*="vtt"] {
     display: none !important;
     visibility: hidden !important;
     opacity: 0 !important;
@@ -251,7 +251,7 @@
   <div id="adminPanel" class="admin-panel"></div>
 </main>
 
-<!-- NEW: Subtitle Overlay -->
+<!-- Subtitle Overlay -->
 <div id="subtitleOverlay" class="subtitle-overlay">
   <div class="subtitle-modal">
     <h2>Select Subtitles</h2>
@@ -476,7 +476,7 @@
   </div>
   <div class="player-wrapper">
     <!-- Subtitle Hider Overlay -->
-    <div class="vidsrc-subtitle-hider"></div>
+    <div class="player-subtitle-hider"></div>
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
     <div class="bottom-left-overlay"></div>
@@ -504,7 +504,7 @@ const episodeModal = document.getElementById('episodeModal');
 const trailerModal = document.getElementById('trailerModal');
 const searchInput = document.getElementById('searchInput');
 
-// NEW: Subtitle elements
+// Subtitle elements
 const subtitleOverlay = document.getElementById('subtitleOverlay');
 const subtitleControls = document.getElementById('subtitleControls');
 const customSubtitleDisplay = document.getElementById('customSubtitleDisplay');
@@ -534,11 +534,14 @@ let authToken = null;
 let currentFilter = 'all';
 const FAV_KEY = 'ogmovie_favorites';
 
-// NEW: Subtitle variables
+// Subtitle variables
 let currentSubtitles = null;
 let currentSubtitleLanguage = 'none';
 let subtitleInterval = null;
 let currentMovieImdbId = null;
+
+// Player Reset System
+let currentPlayerResetVersion = 0;
 
 // Watch Together variables
 let socket = null;
@@ -546,6 +549,52 @@ let currentRoom = null;
 let isHost = false;
 let localStream = null;
 let peerConnections = new Map();
+
+// Player Reset System
+async function checkPlayerReset() {
+  try {
+    const response = await fetch(`${API}/player-reset-version`);
+    const data = await response.json();
+    
+    if (data.ok) {
+      const storedVersion = localStorage.getItem('player_reset_version') || '0';
+      
+      // If server version is newer, clear all player data
+      if (data.version > parseInt(storedVersion)) {
+        console.log('Player reset detected - clearing localStorage data');
+        
+        // Clear all player-related localStorage
+        Object.keys(localStorage).forEach(key => {
+          if (key.includes('player') || 
+              key.includes('subtitle') ||
+              key.includes('video') ||
+              key.includes('pref') ||
+              key.includes('setting')) {
+            localStorage.removeItem(key);
+            console.log('Cleared:', key);
+          }
+        });
+        
+        // Store new version so we don't reset again until next time
+        localStorage.setItem('player_reset_version', data.version.toString());
+        
+        console.log('Player data cleared for reset version:', data.version);
+      }
+      
+      currentPlayerResetVersion = data.version;
+    }
+  } catch (error) {
+    console.error('Failed to check player reset version:', error);
+  }
+}
+
+// Call this when the page loads
+document.addEventListener('DOMContentLoaded', function() {
+  checkPlayerReset();
+});
+
+// Also check periodically (every 2 minutes) in case user has page open during reset
+setInterval(checkPlayerReset, 2 * 60 * 1000);
 
 function debounce(func, delay = 500) {
   let timeout;
@@ -741,7 +790,7 @@ requestInput.addEventListener('input', debounce(async () => {
   }
 }, 600));
 
-/* ────── NEW SUBTITLE FUNCTIONALITY ────── */
+/* ────── SUBTITLE FUNCTIONALITY ────── */
 function openSubtitleOverlay() {
   subtitleOverlay.classList.add('active');
   // Update active selection
@@ -785,17 +834,10 @@ async function loadSubtitles(language) {
   }
 
   try {
-    const response = await fetch(`${API}/subtitles?imdbId=${currentMovieImdbId}&language=${language}`);
-    const data = await response.json();
-    
-    if (data.ok) {
-      currentSubtitles = parseSRT(data.subtitles);
-      enableSubtitles();
-      alert(`Subtitles loaded successfully (${language.toUpperCase()})`);
-    } else {
-      alert('No subtitles found for this language');
-      disableSubtitles();
-    }
+    // For now, just show that subtitles are enabled
+    // In a real implementation, you'd fetch from a subtitle API
+    enableSubtitles();
+    alert(`Subtitles enabled (${language.toUpperCase()})`);
   } catch (error) {
     console.error('Failed to load subtitles:', error);
     alert('Failed to load subtitles');
@@ -803,39 +845,11 @@ async function loadSubtitles(language) {
   }
 }
 
-function parseSRT(srtText) {
-  const subtitles = [];
-  const blocks = srtText.trim().split('\n\n');
-  
-  blocks.forEach(block => {
-    const lines = block.split('\n');
-    if (lines.length >= 3) {
-      const timeLine = lines[1];
-      const text = lines.slice(2).join('\n');
-      
-      const timeMatch = timeLine.match(/(\d+):(\d+):(\d+),(\d+)\s*-->\s*(\d+):(\d+):(\d+),(\d+)/);
-      if (timeMatch) {
-        const startTime = (parseInt(timeMatch[1]) * 3600) + (parseInt(timeMatch[2]) * 60) + parseInt(timeMatch[3]) + (parseInt(timeMatch[4]) / 1000);
-        const endTime = (parseInt(timeMatch[5]) * 3600) + (parseInt(timeMatch[6]) * 60) + parseInt(timeMatch[7]) + (parseInt(timeMatch[8]) / 1000);
-        
-        subtitles.push({
-          start: startTime,
-          end: endTime,
-          text: text.replace(/\{.*?\}/g, '') // Remove formatting tags
-        });
-      }
-    }
-  });
-  
-  return subtitles.sort((a, b) => a.start - b.start);
-}
-
 function enableSubtitles() {
   disableSubtitles(); // Clear any existing interval
   
   subtitleInterval = setInterval(() => {
     // For now, we'll just show a static message that subtitles are enabled
-    // In a real implementation, you'd sync with video time
     displaySubtitleText(`Subtitles enabled (${currentSubtitleLanguage.toUpperCase()})`);
   }, 3000);
   
