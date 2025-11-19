@@ -55,20 +55,117 @@
   .bottom-left-overlay{position:absolute;bottom:10px;left:200px;width:120px;height:40px;background:#000;z-index:10;border-radius:8px;}
 
   /* NEW: Subtitle Controls */
-  .subtitle-controls{position:absolute;bottom:10px;right:10px;z-index:1002;background:rgba(0,0,0,0.8);padding:10px;border-radius:5px;display:none}
-  .subtitle-btn{background:#e50914;color:white;border:none;padding:8px 12px;border-radius:4px;cursor:pointer;font-size:0.9rem}
-  .subtitle-btn:hover{background:#ff1a1a}
-  .subtitle-overlay{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:1003;display:none;align-items:center;justify-content:center}
-  .subtitle-overlay.active{display:flex}
-  .subtitle-modal{background:#1a1a1a;padding:2rem;border-radius:12px;width:90%;max-width:400px}
-  .subtitle-options{margin:1rem 0}
-  .subtitle-option{padding:1rem;background:#333;margin-bottom:0.5rem;border-radius:4px;cursor:pointer;transition:background 0.2s}
-  .subtitle-option:hover{background:#444}
-  .subtitle-option.active{background:#e50914}
-  .custom-subtitle-display{position:absolute;bottom:80px;left:0;width:100%;text-align:center;z-index:1002;pointer-events:none;display:none}
-  .subtitle-text{background:rgba(0,0,0,0.7);color:white;padding:10px 20px;border-radius:4px;font-size:1.2rem;display:inline-block;max-width:80%}
+  .subtitle-controls {
+    position: absolute;
+    bottom: 60px;
+    right: 10px;
+    z-index: 1002;
+    background: rgba(0,0,0,0.8);
+    padding: 10px;
+    border-radius: 5px;
+    display: none;
+  }
+  .subtitle-btn {
+    background: #e50914;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  .subtitle-btn:hover {
+    background: #ff1a1a;
+  }
 
-  /* Rest of your existing styles remain the same... */
+  /* Custom Subtitle Display */
+  .custom-subtitle-display {
+    position: absolute;
+    bottom: 100px;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    z-index: 1002;
+    pointer-events: none;
+    display: none;
+  }
+  .subtitle-text {
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 6px;
+    font-size: 1.3rem;
+    font-weight: 500;
+    display: inline-block;
+    max-width: 80%;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+
+  /* Subtitle Overlay */
+  .subtitle-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.9);
+    z-index: 1003;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .subtitle-overlay.active {
+    display: flex;
+  }
+  .subtitle-modal {
+    background: #1a1a1a;
+    padding: 2rem;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 400px;
+  }
+  .subtitle-options {
+    margin: 1rem 0;
+  }
+  .subtitle-option {
+    padding: 1rem;
+    background: #333;
+    margin-bottom: 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .subtitle-option:hover {
+    background: #444;
+  }
+  .subtitle-option.active {
+    background: #e50914;
+  }
+
+  /* CSS to HIDE VidSrc subtitles */
+  .vidsrc-subtitle-hider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1001;
+    pointer-events: none;
+  }
+  /* Hide common subtitle elements */
+  .vidsrc-subtitle-hider ~ * [class*="subtitle"],
+  .vidsrc-subtitle-hider ~ * [class*="caption"],
+  .vidsrc-subtitle-hider ~ * [id*="subtitle"],
+  .vidsrc-subtitle-hider ~ * [id*="caption"],
+  .vidsrc-subtitle-hider ~ * [class*="ttml"],
+  .vidsrc-subtitle-hider ~ * [class*="vtt"] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+  }
+
+  /* Rest of your existing styles... */
   #requestSection{display:none;padding:2rem;max-width:1400px;margin:0 auto}
   #requestInput{width:100%;max-width:500px;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem;margin-bottom:1rem}
   #requestInput:focus{outline:none;border-color:#e50914}
@@ -187,7 +284,7 @@
   <div class="subtitle-text" id="subtitleText"></div>
 </div>
 
-<!-- Rest of your existing modals remain the same... -->
+<!-- Rest of your existing modals... -->
 <div id="loginModal" class="modal">
   <div class="modal-content">
     <button class="close-modal" onclick="closeLoginModal()">X</button>
@@ -378,6 +475,8 @@
     <button class="subtitle-btn" onclick="openSubtitleOverlay()">Subtitles</button>
   </div>
   <div class="player-wrapper">
+    <!-- Subtitle Hider Overlay -->
+    <div class="vidsrc-subtitle-hider"></div>
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
     <div class="bottom-left-overlay"></div>
@@ -439,6 +538,7 @@ const FAV_KEY = 'ogmovie_favorites';
 let currentSubtitles = null;
 let currentSubtitleLanguage = 'none';
 let subtitleInterval = null;
+let currentMovieImdbId = null;
 
 // Watch Together variables
 let socket = null;
@@ -679,14 +779,13 @@ function selectSubtitle(language) {
 }
 
 async function loadSubtitles(language) {
-  const movie = currentMovies.find(m => m.id === selectedMovieId);
-  if (!movie || !movie.imdb_id) {
+  if (!currentMovieImdbId) {
     alert('Could not load subtitles - movie data missing');
     return;
   }
 
   try {
-    const response = await fetch(`${API}/subtitles?imdbId=${movie.imdb_id}&language=${language}`);
+    const response = await fetch(`${API}/subtitles?imdbId=${currentMovieImdbId}&language=${language}`);
     const data = await response.json();
     
     if (data.ok) {
@@ -728,30 +827,17 @@ function parseSRT(srtText) {
     }
   });
   
-  return subtitles;
+  return subtitles.sort((a, b) => a.start - b.start);
 }
 
 function enableSubtitles() {
   disableSubtitles(); // Clear any existing interval
   
   subtitleInterval = setInterval(() => {
-    if (!playerIframe.contentWindow) return;
-    
-    try {
-      // Try to get current time from iframe (this might not work due to cross-origin restrictions)
-      // For now, we'll just show a static message that subtitles are enabled
-      displaySubtitleText(`Subtitles enabled (${currentSubtitleLanguage.toUpperCase()})`);
-      
-      // In a real implementation, you'd need to:
-      // 1. Use a video.js player instead of iframe for full control
-      // 2. Or implement a browser extension to intercept video time
-      // 3. Or use a different embedding method
-      
-    } catch (error) {
-      // Cross-origin restriction - can't access iframe content
-      console.log('Cannot access iframe content due to CORS');
-    }
-  }, 100);
+    // For now, we'll just show a static message that subtitles are enabled
+    // In a real implementation, you'd sync with video time
+    displaySubtitleText(`Subtitles enabled (${currentSubtitleLanguage.toUpperCase()})`);
+  }, 3000);
   
   customSubtitleDisplay.style.display = 'block';
   subtitleControls.style.display = 'block';
@@ -1469,6 +1555,10 @@ async function verifyMoviePassword() {
     const data = await res.json();
     if (data.ok) {
       authToken = data.token;
+      // Store the IMDb ID for subtitle loading
+      const movie = currentMovies.find(m => m.id === selectedMovieId);
+      currentMovieImdbId = movie?.imdb_id;
+      
       if (selectedShow.type === 'movie') {
         const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
           headers: { Authorization: `Bearer ${authToken}` }
@@ -1558,6 +1648,9 @@ function showPlayer(url) {
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
+  // Show subtitle controls
+  subtitleControls.style.display = 'block';
+  
   // Reset subtitle state
   disableSubtitles();
   currentSubtitleLanguage = 'none';
@@ -1573,6 +1666,7 @@ function closePlayer() {
   // Clean up subtitles
   disableSubtitles();
   currentSubtitleLanguage = 'none';
+  currentMovieImdbId = null;
 }
 
 async function loadMovies() {
