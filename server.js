@@ -53,6 +53,9 @@ let wishlistChannel = null;
 // Watch Together rooms storage
 const watchTogetherRooms = new Map();
 
+// In-memory storage for Render
+let playerResetVersion = 0;
+
 function generateCode(prefix = 'om-') {
   return prefix + Math.random().toString(36).substr(2, 12).toUpperCase();
 }
@@ -101,24 +104,24 @@ async function ensureTables() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS bot_config (
       key TEXT PRIMARY KEY,
-      value BOOLEAN DEFAULT TRUE
+      value TEXT DEFAULT '0'
     )
   `);
   await pool.query(`
-    INSERT INTO bot_config (key, value) VALUES ('codes_enabled', TRUE)
+    INSERT INTO bot_config (key, value) VALUES ('codes_enabled', 'true')
     ON CONFLICT (key) DO NOTHING
   `);
 }
 
 async function getCodesEnabled() {
   const { rows } = await pool.query('SELECT value FROM bot_config WHERE key = $1', ['codes_enabled']);
-  return rows[0] ? rows[0].value : true;
+  return rows[0] ? rows[0].value === 'true' : true;
 }
 
 async function setCodesEnabled(enabled) {
   await pool.query(
     'INSERT INTO bot_config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2',
-    ['codes_enabled', enabled]
+    ['codes_enabled', enabled.toString()]
   );
 }
 
@@ -151,7 +154,10 @@ client.once('ready', async () => {
       ),
     new SlashCommandBuilder()
       .setName('genadminlogincode')
-      .setDescription('Generate one-time admin login code for adding one content')
+      .setDescription('Generate one-time admin login code for adding one content'),
+    new SlashCommandBuilder()
+      .setName('reset')
+      .setDescription('Reset player preferences for all users')
   ];
 
   try {
@@ -231,6 +237,27 @@ client.on('interactionCreate', async i => {
       .setFooter({ text: 'Allows adding one content item only!' });
 
     await i.reply({ embeds: [embed] });
+  }
+
+  if (i.commandName === 'reset') {
+    if (!i.member.roles.cache.has(DISCORD_CODE_MANAGER_ROLE_ID))
+      return i.reply({ content: 'No permission', ephemeral: true });
+
+    // Increment the in-memory reset version
+    playerResetVersion++;
+    
+    const embed = new EmbedBuilder()
+      .setColor('#e50914')
+      .setTitle('Player Reset Complete!')
+      .setDescription(`**All users' player preferences have been reset!**`)
+      .addFields(
+        { name: 'Reset Version', value: `\`${playerResetVersion}\``, inline: true },
+        { name: 'Affected Users', value: 'Everyone visiting the site', inline: true }
+      )
+      .setFooter({ text: 'Users will automatically have their player data cleared on next page load' });
+
+    await i.reply({ embeds: [embed] });
+    console.log(`Player reset triggered - version ${playerResetVersion}`);
   }
 });
 
@@ -394,6 +421,11 @@ app.post('/api/watch-together/room-exists', (req, res) => {
   const { roomCode } = req.body;
   const room = watchTogetherRooms.get(roomCode);
   res.json({ ok: true, exists: !!room, isFull: room ? room.viewers.size >= room.maxViewers : false });
+});
+
+// NEW: Get player reset version
+app.get('/api/player-reset-version', async (req, res) => {
+  res.json({ ok: true, version: playerResetVersion });
 });
 
 const authMiddleware = (req, res, next) => {
@@ -609,59 +641,10 @@ app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
   const { imdb_id, type } = rows[0];
   const base = type === 'movie' ? 'movie' : 'tv';
   
-  // Use VidSrc but with parameters to disable subtitles
+  // Use player with parameters to disable subtitles
   const url = `https://vidsrc.me/embed/${base}/${imdb_id}?subs=0`;
   
   res.json({ ok: true, url });
-});
-
-// NEW: Subtitle API endpoint
-app.get('/api/subtitles', async (req, res) => {
-  const { imdbId, language = 'en' } = req.query;
-  
-  if (!imdbId) {
-    return res.json({ ok: false, error: 'IMDb ID required' });
-  }
-
-  try {
-    // Try OpenSubtitles API
-    const openSubsRes = await fetch(`https://rest.opensubtitles.com/search/imdbid-${imdbId.replace('tt', '')}/sublanguageid-${language}`, {
-      headers: {
-        'User-Agent': 'ogmovie v1.0'
-      }
-    });
-    
-    if (openSubsRes.ok) {
-      const data = await openSubsRes.json();
-      if (data && data.length > 0) {
-        // Get the best result (highest score)
-        const bestSubtitle = data.reduce((best, current) => {
-          return (!best || current.Score > best.Score) ? current : best;
-        });
-        
-        if (bestSubtitle && bestSubtitle.SubDownloadLink) {
-          // Download the subtitle file
-          const subtitleRes = await fetch(bestSubtitle.SubDownloadLink.replace('.gz', ''));
-          
-          if (subtitleRes.ok) {
-            const subtitleContent = await subtitleRes.text();
-            return res.json({ 
-              ok: true, 
-              subtitles: subtitleContent,
-              source: 'opensubtitles',
-              language,
-              format: 'srt'
-            });
-          }
-        }
-      }
-    }
-
-    res.json({ ok: false, error: 'No subtitles found' });
-  } catch (error) {
-    console.error('Subtitle fetch error:', error);
-    res.json({ ok: false, error: 'Failed to fetch subtitles' });
-  }
 });
 
 app.get('/api/trailer', async (req, res) => {
