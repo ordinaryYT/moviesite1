@@ -608,13 +608,14 @@ app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
 
   const { imdb_id, type } = rows[0];
   const base = type === 'movie' ? 'movie' : 'tv';
-  // Disable subtitles in VidSrc
+  
+  // Use VidSrc but with parameters to disable subtitles
   const url = `https://vidsrc.me/embed/${base}/${imdb_id}?subs=0`;
   
   res.json({ ok: true, url });
 });
 
-// New subtitle API endpoint - fetches from SubDB
+// NEW: Subtitle API endpoint
 app.get('/api/subtitles', async (req, res) => {
   const { imdbId, language = 'en' } = req.query;
   
@@ -623,51 +624,24 @@ app.get('/api/subtitles', async (req, res) => {
   }
 
   try {
-    // Try SubDB first (free, no API key needed)
-    const subdbUrl = `http://api.thesubdb.com/?action=search&hash=${imdbId}`;
-    const subdbRes = await fetch(subdbUrl, {
+    // Try OpenSubtitles API
+    const openSubsRes = await fetch(`https://rest.opensubtitles.com/search/imdbid-${imdbId.replace('tt', '')}/sublanguageid-${language}`, {
       headers: {
-        'User-Agent': 'SubDB/1.0 (ogmovie/1.0; https://github.com/ogmovie)'
+        'User-Agent': 'ogmovie v1.0'
       }
     });
-
-    if (subdbRes.ok) {
-      const availableLangs = await subdbRes.text();
-      if (availableLangs.includes(language)) {
-        // Download subtitle
-        const downloadUrl = `http://api.thesubdb.com/?action=download&hash=${imdbId}&language=${language}`;
-        const subtitleRes = await fetch(downloadUrl, {
-          headers: {
-            'User-Agent': 'SubDB/1.0 (ogmovie/1.0; https://github.com/ogmovie)'
-          }
+    
+    if (openSubsRes.ok) {
+      const data = await openSubsRes.json();
+      if (data && data.length > 0) {
+        // Get the best result (highest score)
+        const bestSubtitle = data.reduce((best, current) => {
+          return (!best || current.Score > best.Score) ? current : best;
         });
         
-        if (subtitleRes.ok) {
-          const subtitleContent = await subtitleRes.text();
-          return res.json({ 
-            ok: true, 
-            subtitles: subtitleContent,
-            source: 'subdb',
-            language 
-          });
-        }
-      }
-    }
-
-    // Fallback to OpenSubtitles.com (public API)
-    try {
-      const openSubsRes = await fetch(`https://rest.opensubtitles.com/search/imdbid-${imdbId.replace('tt', '')}/sublanguageid-${language}`, {
-        headers: {
-          'User-Agent': 'ogmovie v1.0'
-        }
-      });
-      
-      if (openSubsRes.ok) {
-        const data = await openSubsRes.json();
-        if (data && data.length > 0) {
-          // Get the first result (usually best match)
-          const subtitleUrl = data[0].SubDownloadLink;
-          const subtitleRes = await fetch(subtitleUrl.replace('.gz', ''));
+        if (bestSubtitle && bestSubtitle.SubDownloadLink) {
+          // Download the subtitle file
+          const subtitleRes = await fetch(bestSubtitle.SubDownloadLink.replace('.gz', ''));
           
           if (subtitleRes.ok) {
             const subtitleContent = await subtitleRes.text();
@@ -675,13 +649,12 @@ app.get('/api/subtitles', async (req, res) => {
               ok: true, 
               subtitles: subtitleContent,
               source: 'opensubtitles',
-              language 
+              language,
+              format: 'srt'
             });
           }
         }
       }
-    } catch (opensubsError) {
-      console.log('OpenSubtitles fallback failed:', opensubsError.message);
     }
 
     res.json({ ok: false, error: 'No subtitles found' });
