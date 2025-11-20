@@ -25,11 +25,22 @@
   .movie-info h3{font-size:1.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .movie-info p{color:#aaa;font-size:.9rem}
   .movie-info .duration{position:absolute;top:0.5rem;right:0.5rem;background:rgba(0,0,0,0.7);color:#fff;padding:0.25rem 0.5rem;border-radius:4px;font-size:0.8rem}
+  
+  /* Updated card actions with white overlay */
   .card-actions{position:absolute;bottom:8px;right:8px;display:flex;gap:4px;opacity:0;transition:opacity .2s}
   .movie-card:hover .card-actions{opacity:1}
-  .card-actions button{background:rgba(0,0,0,.6);border:none;color:#fff;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:.9rem}
-  .card-actions button:hover{background:#e50914}
+  .card-actions button{background:rgba(255,255,255,.9);border:none;color:#000;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:.9rem;font-weight:bold}
+  .card-actions button:hover{background:#e50914;color:#fff}
   .favorite-btn.filled{color:#e50914}
+  
+  /* Black overlay at bottom */
+  .black-overlay{position:absolute;bottom:0;left:0;right:0;height:60px;background:rgba(0,0,0,0.8);pointer-events:none}
+  
+  /* White overlay above black overlay */
+  .white-overlay{position:absolute;bottom:60px;left:0;right:0;height:40px;background:rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;gap:10px;pointer-events:none}
+  .white-overlay button{background:#e50914;border:none;color:white;padding:6px 12px;border-radius:4px;cursor:pointer;font-weight:bold;pointer-events:auto}
+  .white-overlay button:hover{background:#ff1a1a}
+
   .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center}
   .modal.active{display:flex}
   .modal-content{background:#1a1a1a;padding:2rem;border-radius:12px;width:90%;max-width:400px;position:relative}
@@ -109,6 +120,11 @@
   input:checked + .toggle-slider:before{transform:translateX(26px)}
   .discord-connect{display:flex;align-items:center;gap:1rem}
   .discord-connected{color:#7289da;font-weight:bold}
+
+  /* Discord Join Section */
+  .discord-join-section{background:#1a1a1a;padding:2rem;border-radius:12px;text-align:center;margin-bottom:2rem}
+  .discord-join-btn{background:#7289da;color:white;border:none;padding:1rem 2rem;border-radius:8px;cursor:pointer;font-weight:bold;font-size:1.1rem;text-decoration:none;display:inline-block;margin:1rem 0}
+  .discord-join-btn:hover{background:#677bc4}
 
   /* New Add-Content Search Modal */
   #addContentSearchModal .modal-content{max-width:600px;}
@@ -443,12 +459,16 @@ function createMovieCard(movie) {
       <h3>${movie.title}</h3>
       <p>${year} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p>
     </div>
+    <!-- Black overlay (non-clickable) -->
+    <div class="black-overlay"></div>
+    <!-- White overlay with play button -->
+    <div class="white-overlay">
+      <button onclick="requestMoviePassword(${movie.id}, '${movie.title.replace(/'/g, "\\'")}', '${movie.type}')">▶ Play</button>
+    </div>
     <div class="card-actions">
-      <button class="favorite-btn" data-id="${movie.id}">Heart</button>
+      <button class="favorite-btn" data-id="${movie.id}">❤️</button>
       <button class="trailer-btn" data-id="${movie.id}">Trailer</button>
-      <button class="play-btn" data-id="${movie.id}">Play</button>
     </div>`;
-  card.querySelector('.movie-info').onclick = () => requestMoviePassword(movie.id, movie.title, movie.type);
   return card;
 }
 
@@ -466,7 +486,8 @@ function updateFavoriteButtons() {
   const favs = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
   document.querySelectorAll('.favorite-btn').forEach(btn => {
     const id = parseInt(btn.dataset.id);
-    btn.textContent = favs.includes(id) ? 'Heart' : 'Heart';
+    btn.textContent = favs.includes(id) ? '❤️' : '🤍';
+    btn.style.fontSize = '1.2rem';
   });
 }
 
@@ -525,12 +546,6 @@ document.addEventListener('click', async e => {
     localStorage.setItem(FAV_KEY, JSON.stringify(favs));
     updateFavoriteButtons();
     if (currentFilter === 'favorites') applyFilters(searchInput.value);
-    return;
-  }
-  if (btn.classList.contains('play-btn')) {
-    const id = parseInt(btn.dataset.id);
-    const movie = currentMovies.find(m => m.id === id);
-    requestMoviePassword(id, movie.title, movie.type);
     return;
   }
   if (btn.classList.contains('trailer-btn')) {
@@ -607,9 +622,14 @@ requestInput.addEventListener('input', debounce(async () => {
         <h3>${title}</h3>
         <p>${year} (${type.charAt(0).toUpperCase() + type.slice(1)})</p>
       </div>
+      <!-- Black overlay (non-clickable) -->
+      <div class="black-overlay"></div>
+      <!-- White overlay with play button -->
+      <div class="white-overlay">
+        <button class="wishlist-btn" data-title="${title}" data-type="${type}" data-imdb="${imdb}">Wishlist</button>
+      </div>
       <div class="card-actions">
         <button class="trailer-btn" data-title="${title}">Trailer</button>
-        <button class="wishlist-btn" data-title="${title}" data-type="${type}" data-imdb="${imdb}">Wishlist</button>
       </div>`;
     requestResults.appendChild(card);
   });
@@ -635,36 +655,16 @@ function closeSettingsPanel() {
 }
 
 function loadUserSettings() {
-  if (!userToken) {
-    settingsPanel.innerHTML = `
-      <h2>Settings</h2>
-      <div class="settings-section">
-        <h3>Account</h3>
-        <div class="setting-item">
-          <div class="setting-info">
-            <h4>Connect Discord</h4>
-            <p>Link your Discord account for auto-code features</p>
-          </div>
-          <button class="admin-btn" onclick="connectDiscord()">Connect Discord</button>
-        </div>
-      </div>
-      <p style="color:#aaa; text-align:center;">Please connect your Discord account to access settings</p>
-    `;
-    return;
-  }
-
   settingsPanel.innerHTML = `
     <h2>Settings</h2>
-    <div class="settings-section">
-      <h3>Account</h3>
-      <div class="setting-item">
-        <div class="discord-connect">
-          <div class="setting-info">
-            <h4>Discord Account</h4>
-            <p class="discord-connected">${userSettings.discord_username || 'Not connected'}</p>
-          </div>
-          ${!userSettings.discord_username ? '<button class="admin-btn" onclick="connectDiscord()">Connect Discord</button>' : ''}
-        </div>
+    <div class="discord-join-section">
+      <h3>Join Our Discord</h3>
+      <p>Join our Discord server to get access to auto-code features and community!</p>
+      <a href="https://discord.gg/QcUxHW8Rb7" target="_blank" class="discord-join-btn">Join Discord Server</a>
+      <p>After joining, enter your Discord username below to link your account:</p>
+      <div style="margin-top:1rem;">
+        <input type="text" id="discordUsername" placeholder="Your Discord Username (e.g. username#1234)" style="width:100%;max-width:300px;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff;margin-bottom:1rem;">
+        <button class="admin-btn" onclick="linkDiscordAccount()">Link Discord Account</button>
       </div>
     </div>
     <div class="settings-section">
@@ -675,7 +675,7 @@ function loadUserSettings() {
           <p>Automatically request one-time codes when accessing content</p>
         </div>
         <label class="toggle-switch">
-          <input type="checkbox" id="autoCodeToggle" ${userSettings.auto_code_enabled ? 'checked' : ''} onchange="toggleAutoCode(this.checked)">
+          <input type="checkbox" id="autoCodeToggle" ${userSettings?.auto_code_enabled ? 'checked' : ''} onchange="toggleAutoCode(this.checked)">
           <span class="toggle-slider"></span>
         </label>
       </div>
@@ -686,57 +686,53 @@ function loadUserSettings() {
   `;
 }
 
-async function connectDiscord() {
-  window.location.href = `${API}/auth/discord`;
+async function linkDiscordAccount() {
+  const username = document.getElementById('discordUsername').value.trim();
+  if (!username) {
+    alert('Please enter your Discord username');
+    return;
+  }
+
+  // Store in localStorage for demo purposes
+  // In a real implementation, you'd send this to your server
+  localStorage.setItem('ogmovie_discord_username', username);
+  userSettings = {
+    discord_username: username,
+    auto_code_enabled: userSettings?.auto_code_enabled || false
+  };
+  
+  alert(`Discord account linked: ${username}`);
+  loadUserSettings();
 }
 
 async function toggleAutoCode(enabled) {
-  if (!userToken) return;
-  
-  try {
-    const res = await fetch(`${API}/user/settings/auto-code`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${userToken}`
-      },
-      body: JSON.stringify({ enabled })
-    });
-    
-    const data = await res.json();
-    if (data.ok) {
-      userSettings.auto_code_enabled = enabled;
-    } else {
-      alert('Failed to update setting');
-    }
-  } catch (error) {
-    alert('Failed to update setting');
+  if (!userSettings) {
+    userSettings = { auto_code_enabled: enabled };
+  } else {
+    userSettings.auto_code_enabled = enabled;
   }
+  
+  // Store in localStorage for demo purposes
+  localStorage.setItem('ogmovie_user_settings', JSON.stringify(userSettings));
 }
 
 async function loadUserData() {
-  if (!userToken) return;
+  // Load from localStorage for demo
+  const storedUsername = localStorage.getItem('ogmovie_discord_username');
+  const storedSettings = localStorage.getItem('ogmovie_user_settings');
   
-  try {
-    const res = await fetch(`${API}/user/settings`, {
-      headers: {
-        'Authorization': `Bearer ${userToken}`
-      }
-    });
-    
-    const data = await res.json();
-    if (data.ok) {
-      userSettings = data.settings;
+  if (storedUsername || storedSettings) {
+    userSettings = storedSettings ? JSON.parse(storedSettings) : {};
+    if (storedUsername && !userSettings.discord_username) {
+      userSettings.discord_username = storedUsername;
     }
-  } catch (error) {
-    console.error('Failed to load user settings:', error);
   }
 }
 
 /* ────── AUTO-CODE FEATURE ────── */
 async function requestAutoCode() {
-  if (!userToken) {
-    alert('Please connect your Discord account first in Settings');
+  if (!userSettings?.discord_username) {
+    alert('Please link your Discord account first in Settings');
     return;
   }
 
@@ -746,34 +742,14 @@ async function requestAutoCode() {
   autoCodeStatus.style.display = 'block';
   autoCodeStatus.style.background = '#333';
   autoCodeStatus.style.color = '#fff';
-  autoCodeStatus.textContent = 'Requesting code...';
+  autoCodeStatus.textContent = 'Please request code in Discord server: https://discord.gg/QcUxHW8Rb7';
 
-  try {
-    const res = await fetch(`${API}/auto-code/request`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${userToken}`
-      },
-      body: JSON.stringify({
-        movieTitle: movie.title,
-        movieId: selectedMovieId
-      })
-    });
-
-    const data = await res.json();
-    if (data.ok) {
-      autoCodeStatus.style.background = '#2d5a2d';
-      autoCodeStatus.textContent = data.message;
-      autoCodeBtn.disabled = true;
-    } else {
-      autoCodeStatus.style.background = '#5a2d2d';
-      autoCodeStatus.textContent = data.error;
-    }
-  } catch (error) {
-    autoCodeStatus.style.background = '#5a2d2d';
-    autoCodeStatus.textContent = 'Failed to request code';
-  }
+  // For demo purposes - in real implementation this would call your API
+  setTimeout(() => {
+    autoCodeStatus.style.background = '#2d5a2d';
+    autoCodeStatus.textContent = 'Please check Discord for your code';
+    autoCodeBtn.disabled = true;
+  }, 2000);
 }
 
 /* ────── PLAYER TIMER ────── */
@@ -855,7 +831,7 @@ function requestMoviePassword(movieId, title, type) {
   document.getElementById('passwordMovieTitle').textContent = title;
   
   // Show/hide auto-code button based on user settings
-  if (userToken && userSettings && userSettings.auto_code_enabled) {
+  if (userSettings?.discord_username && userSettings.auto_code_enabled) {
     autoCodeBtn.style.display = 'block';
     autoCodeStatus.style.display = 'none';
   } else {
@@ -1677,28 +1653,9 @@ async function loadMovies() {
   }
 }
 
-// Check for Discord login on page load
+// Load user data on page load
 window.addEventListener('load', () => {
-  const urlParams = new URLSearchParams(window.location.search);
-  const discordLogin = urlParams.get('discord_login');
-  const token = urlParams.get('token');
-  
-  if (discordLogin === 'success' && token) {
-    userToken = token;
-    localStorage.setItem('ogmovie_user_token', token);
-    loadUserData().then(() => {
-      alert('Discord connected successfully!');
-      // Clean URL
-      window.history.replaceState({}, document.title, window.location.pathname);
-    });
-  }
-  
-  // Load stored token
-  const storedToken = localStorage.getItem('ogmovie_user_token');
-  if (storedToken) {
-    userToken = storedToken;
-    loadUserData();
-  }
+  loadUserData();
 });
 
 adminBtn.addEventListener('click', openAdminPanel);
