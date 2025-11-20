@@ -213,42 +213,20 @@ client.on('messageCreate', async (message) => {
   if (message.channel.id !== DISCORD_AUTOCODE_CHANNEL_ID || message.author.bot) return;
 
   // Check if this is an auto-code request
-  if (message.content.includes('requested a one-time code for')) {
+  if (message.content.includes('Auto-Code Generated')) {
     const enabled = await getCodesEnabled();
     if (!enabled) {
       return message.reply('Code generation is currently **DISABLED** by admin.');
     }
 
-    // Extract discord username from message
-    const discordUser = message.content.split(' - ')[0];
-    
-    // Generate code
-    const code = generateCode();
-    const hash = await bcrypt.hash(code, 10);
-
-    const { rows: [gp] } = await pool.query(
-      'INSERT INTO global_passwords (password_hash, is_one_time) VALUES ($1, true) RETURNING id',
-      [hash]
-    );
-
-    await pool.query(
-      'INSERT INTO om_codes (code, global_password_id, used) VALUES ($1, $2, FALSE)',
-      [code, gp.id]
-    );
-
-    // Send code to user via DM
-    try {
-      const user = await client.users.fetch(message.author.id);
-      const embed = new EmbedBuilder()
-        .setColor('#e50914')
-        .setTitle('OM One-Time Code')
-        .setDescription(`\`\`\`${code}\`\`\``)
-        .setFooter({ text: 'This code will auto-fill on the website!' });
+    // Extract code from the message
+    const codeMatch = message.content.match(/\|\|([^|]+)\|\|/);
+    if (codeMatch) {
+      const code = codeMatch[1];
       
-      await user.send({ embeds: [embed] });
-      await message.reply(`✅ Code sent to ${discordUser} via DM!`);
-    } catch (err) {
-      await message.reply('❌ Failed to send DM. Please enable DMs from server members.');
+      // The code is already stored in the database from the API endpoint
+      // We just need to make it available to the frontend
+      console.log(`Auto-code generated: ${code}`);
     }
   }
 });
@@ -494,73 +472,57 @@ const requireFullAdmin = (req, res, next) => {
   next();
 };
 
-// Discord OAuth routes - REMOVED to prevent URL leakage
-// Users will now join Discord server manually and enter username
-
-// User settings endpoints - Simplified for manual Discord linking
-app.get('/api/user/settings', authMiddleware, async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      'SELECT discord_username, auto_code_enabled FROM users WHERE id = $1',
-      [req.user.userId]
-    );
-    if (rows[0]) {
-      res.json({ ok: true, settings: rows[0] });
-    } else {
-      res.json({ ok: false, error: 'User not found' });
-    }
-  } catch (error) {
-    res.status(500).json({ ok: false, error: 'Server error' });
-  }
-});
-
-app.post('/api/user/settings/auto-code', authMiddleware, async (req, res) => {
-  const { enabled } = req.body;
-  try {
-    await pool.query(
-      'UPDATE users SET auto_code_enabled = $1 WHERE id = $2',
-      [enabled, req.user.userId]
-    );
-    res.json({ ok: true });
-  } catch (error) {
-    res.status(500).json({ ok: false, error: 'Server error' });
-  }
-});
-
-// Auto-code request endpoint - Updated for manual Discord linking
-app.post('/api/auto-code/request', authMiddleware, async (req, res) => {
+// Auto-code request endpoint
+app.post('/api/auto-code/request', async (req, res) => {
   const { movieTitle, movieId } = req.body;
   
   try {
-    // Get user info
-    const { rows: userRows } = await pool.query(
-      'SELECT discord_username FROM users WHERE id = $1',
-      [req.user.userId]
-    );
-    
-    if (!userRows[0]) {
-      return res.json({ ok: false, error: 'User not found' });
-    }
-
     // Check if codes are enabled
     const codesEnabled = await getCodesEnabled();
     if (!codesEnabled) {
       return res.json({ ok: false, error: 'Code generation is currently disabled by admin' });
     }
 
-    // Send request to Discord channel
+    // Send request to Discord channel - this simulates the /gencode command
     if (autoCodeChannel) {
-      await autoCodeChannel.send(
-        `${userRows[0].discord_username} - requested a one-time code for: **${movieTitle}** (ID: ${movieId})`
+      // Generate code (same as /gencode command)
+      const code = generateCode();
+      const hash = await bcrypt.hash(code, 10);
+
+      const { rows: [gp] } = await pool.query(
+        'INSERT INTO global_passwords (password_hash, is_one_time) VALUES ($1, true) RETURNING id',
+        [hash]
       );
-      res.json({ ok: true, message: 'Code request sent! Check your DMs for the code.' });
+
+      await pool.query(
+        'INSERT INTO om_codes (code, global_password_id, used) VALUES ($1, $2, FALSE)',
+        [code, gp.id]
+      );
+
+      // Send notification to Discord channel
+      await autoCodeChannel.send(
+        `🔹 **Auto-Code Generated**\n` +
+        `**Movie:** ${movieTitle}\n` +
+        `**Code:** ||${code}||\n` +
+        `*This code was automatically generated for website auto-login*`
+      );
+
+      res.json({ ok: true, message: 'Auto-code generated and sent to Discord' });
     } else {
       res.json({ ok: false, error: 'Auto-code channel not configured' });
     }
   } catch (error) {
     console.error('Auto-code request error:', error);
-    res.json({ ok: false, error: 'Failed to request code' });
+    res.json({ ok: false, error: 'Failed to generate auto-code' });
   }
+});
+
+// Check for auto-code (for frontend polling)
+app.get('/api/auto-code/check', async (req, res) => {
+  // In a real implementation, you'd have a way to track which codes
+  // were generated for which users/sessions
+  // For now, this is a simplified version
+  res.json({ ok: false, code: null });
 });
 
 app.get('/api/movies', async (req, res) => {
