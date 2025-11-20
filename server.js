@@ -494,76 +494,10 @@ const requireFullAdmin = (req, res, next) => {
   next();
 };
 
-// Discord OAuth routes
-app.get('/api/auth/discord', (req, res) => {
-  const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/discord/callback`;
-  const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=identify`;
-  res.redirect(discordAuthUrl);
-});
+// Discord OAuth routes - REMOVED to prevent URL leakage
+// Users will now join Discord server manually and enter username
 
-app.get('/api/auth/discord/callback', async (req, res) => {
-  const { code } = req.query;
-  if (!code) return res.redirect('/?error=no_code');
-
-  try {
-    // Exchange code for access token
-    const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        client_id: DISCORD_CLIENT_ID,
-        client_secret: DISCORD_CLIENT_SECRET,
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: `${req.protocol}://${req.get('host')}/api/auth/discord/callback`,
-      }),
-    });
-
-    const tokenData = await tokenResponse.json();
-    if (!tokenData.access_token) {
-      return res.redirect('/?error=token_failed');
-    }
-
-    // Get user info
-    const userResponse = await fetch('https://discord.com/api/users/@me', {
-      headers: {
-        Authorization: `Bearer ${tokenData.access_token}`,
-      },
-    });
-
-    const userData = await userResponse.json();
-    if (!userData.id) {
-      return res.redirect('/?error=user_failed');
-    }
-
-    // Store or update user in database
-    const { rows } = await pool.query(
-      `INSERT INTO users (discord_id, discord_username) 
-       VALUES ($1, $2) 
-       ON CONFLICT (discord_id) 
-       DO UPDATE SET discord_username = $2 
-       RETURNING id`,
-      [userData.id, `${userData.username}#${userData.discriminator}`]
-    );
-
-    // Create JWT token
-    const token = jwt.sign({ 
-      userId: rows[0].id, 
-      discordId: userData.id,
-      username: userData.username 
-    }, JWT_SECRET, { expiresIn: '30d' });
-
-    // Redirect to settings page with token
-    res.redirect(`/?discord_login=success&token=${token}`);
-  } catch (error) {
-    console.error('Discord OAuth error:', error);
-    res.redirect('/?error=auth_failed');
-  }
-});
-
-// User settings endpoints
+// User settings endpoints - Simplified for manual Discord linking
 app.get('/api/user/settings', authMiddleware, async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -593,7 +527,7 @@ app.post('/api/user/settings/auto-code', authMiddleware, async (req, res) => {
   }
 });
 
-// Auto-code request endpoint
+// Auto-code request endpoint - Updated for manual Discord linking
 app.post('/api/auto-code/request', authMiddleware, async (req, res) => {
   const { movieTitle, movieId } = req.body;
   
