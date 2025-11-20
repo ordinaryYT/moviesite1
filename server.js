@@ -72,6 +72,15 @@ function generateRoomCode() {
 }
 
 async function ensureTables() {
+  console.log('Ensuring database tables exist...');
+  
+  // Add duration column if it doesn't exist
+  await pool.query(`
+    ALTER TABLE movies ADD COLUMN IF NOT EXISTS duration TEXT;
+  `).catch(err => {
+    console.log('Duration column already exists or error:', err.message);
+  });
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS movies (
       id SERIAL PRIMARY KEY,
@@ -128,6 +137,8 @@ async function ensureTables() {
     INSERT INTO bot_config (key, value) VALUES ('codes_enabled', TRUE)
     ON CONFLICT (key) DO NOTHING
   `);
+  
+  console.log('Database tables ensured');
 }
 
 async function getCodesEnabled() {
@@ -619,10 +630,17 @@ app.post('/api/auto-code/request', authMiddleware, async (req, res) => {
 });
 
 app.get('/api/movies', async (req, res) => {
-  const { rows } = await pool.query(
-    'SELECT id, title, type, year, image, imdb_id, duration FROM movies ORDER BY created_at DESC'
-  );
-  res.json({ ok: true, movies: rows });
+  try {
+    console.log('Fetching movies from database...');
+    const { rows } = await pool.query(
+      'SELECT id, title, type, year, image, imdb_id, duration FROM movies ORDER BY created_at DESC'
+    );
+    console.log(`Found ${rows.length} movies`);
+    res.json({ ok: true, movies: rows });
+  } catch (error) {
+    console.error('Error fetching movies:', error);
+    res.status(500).json({ ok: false, error: 'Failed to load movies' });
+  }
 });
 
 app.post('/api/admin/login', (req, res) => {
