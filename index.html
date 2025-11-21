@@ -118,11 +118,11 @@
   .add-search-item:hover{background:#333;}
   .add-search-item img{width:60px;height:90px;object-fit:cover;border-radius:4px;}
 
-  /* Refresh System Styles */
-  .refresh-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:9999;align-items:center;justify-content:center;flex-direction:column;}
-  .refresh-overlay.active{display:flex;}
-  .refresh-message{color:#e50914;font-size:2rem;text-align:center;margin-bottom:2rem;}
-  .refresh-countdown{color:#fff;font-size:1.5rem;}
+  /* Redirect System Styles */
+  .redirect-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:9999;align-items:center;justify-content:center;flex-direction:column;}
+  .redirect-overlay.active{display:flex;}
+  .redirect-message{color:#e50914;font-size:2rem;text-align:center;margin-bottom:2rem;}
+  .redirect-countdown{color:#fff;font-size:1.5rem;}
 </style>
 </head>
 <body>
@@ -166,10 +166,10 @@
   <div id="settingsPanel" class="admin-panel"></div>
 </main>
 
-<!-- Refresh Overlay -->
-<div id="refreshOverlay" class="refresh-overlay">
-  <div class="refresh-message">Website Refreshing...</div>
-  <div class="refresh-countdown" id="refreshCountdown">Refreshing in 5 seconds</div>
+<!-- Redirect Overlay -->
+<div id="redirectOverlay" class="redirect-overlay">
+  <div class="redirect-message">Redirecting to New Website...</div>
+  <div class="redirect-countdown" id="redirectCountdown">Redirecting in 5 seconds</div>
 </div>
 
 <!-- Modals -->
@@ -395,8 +395,8 @@ const searchInput = document.getElementById('searchInput');
 const timeDisplay = document.getElementById('timeDisplay');
 const autoCodeBtn = document.getElementById('autoCodeBtn');
 const autoCodeStatus = document.getElementById('autoCodeStatus');
-const refreshOverlay = document.getElementById('refreshOverlay');
-const refreshCountdown = document.getElementById('refreshCountdown');
+const redirectOverlay = document.getElementById('redirectOverlay');
+const redirectCountdown = document.getElementById('redirectCountdown');
 
 // Watch Together elements
 const watchRoom = document.getElementById('watchRoom');
@@ -436,9 +436,9 @@ let peerConnections = new Map();
 // User settings
 let userSettings = null;
 
-// Refresh system (replaces video lock)
-let refreshEnabled = false;
-let refreshTimer = null;
+// Redirect system
+let redirectEnabled = false;
+let redirectTimer = null;
 
 function debounce(func, delay = 500) {
   let timeout;
@@ -552,7 +552,7 @@ document.addEventListener('click', async e => {
     return;
   }
   if (btn.classList.contains('trailer-btn')) {
-    if (refreshEnabled) {
+    if (redirectEnabled) {
       // Silently fail - do nothing
       return;
     }
@@ -864,7 +864,7 @@ function stopPlayerTimer() {
 
 /* ────── PASSWORD MODAL ────── */
 function requestMoviePassword(movieId, title, type) {
-  if (refreshEnabled) {
+  if (redirectEnabled) {
     // Silently fail - do nothing
     return;
   }
@@ -885,15 +885,15 @@ function requestMoviePassword(movieId, title, type) {
   passwordModal.classList.add('active');
 }
 
-/* ────── REFRESH SYSTEM ────── */
+/* ────── REDIRECT SYSTEM ────── */
 function setupSocketListeners() {
-  socket.on('refresh-website', (data) => {
-    refreshEnabled = data.enabled;
+  socket.on('redirect-website', (data) => {
+    redirectEnabled = data.enabled;
     
-    if (refreshEnabled) {
-      startRefreshCountdown();
+    if (redirectEnabled && data.redirectUrl) {
+      startRedirectCountdown(data.redirectUrl);
     } else {
-      stopRefreshCountdown();
+      stopRedirectCountdown();
     }
   });
 
@@ -1004,34 +1004,28 @@ function setupSocketListeners() {
   });
 }
 
-function startRefreshCountdown() {
+function startRedirectCountdown(redirectUrl) {
   let countdown = 5;
-  refreshOverlay.classList.add('active');
+  redirectOverlay.classList.add('active');
   
-  refreshTimer = setInterval(() => {
-    refreshCountdown.textContent = `Refreshing in ${countdown} seconds`;
+  redirectTimer = setInterval(() => {
+    redirectCountdown.textContent = `Redirecting to new website in ${countdown} seconds`;
     countdown--;
     
-    if (countdown < 0) {
-      clearInterval(refreshTimer);
-      // Check if we're in Electron or browser
-      if (window.electronAPI) {
-        // Electron app - reload the page
-        window.location.reload();
-      } else {
-        // Browser - reload the page
-        location.reload();
-      }
+    if (countdown <= 0) {
+      clearInterval(redirectTimer);
+      // Redirect to the specified URL
+      window.location.href = redirectUrl;
     }
   }, 1000);
 }
 
-function stopRefreshCountdown() {
-  if (refreshTimer) {
-    clearInterval(refreshTimer);
-    refreshTimer = null;
+function stopRedirectCountdown() {
+  if (redirectTimer) {
+    clearInterval(redirectTimer);
+    redirectTimer = null;
   }
-  refreshOverlay.classList.remove('active');
+  redirectOverlay.classList.remove('active');
 }
 
 /* ────── WATCH TOGETHER FUNCTIONALITY ────── */
