@@ -39,6 +39,9 @@ const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 const DISCORD_WISHLIST_CHANNEL_ID = process.env.DISCORD_WISHLIST_CHANNEL_ID;
 const DISCORD_CODE_MANAGER_ROLE_ID = process.env.DISCORD_CODE_MANAGER_ROLE_ID;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+const DISCORD_CLIENT_SECRET = process.env.DISCORD_CLIENT_SECRET;
+const DISCORD_AUTOCODE_CHANNEL_ID = process.env.DISCORD_AUTOCODE_CHANNEL_ID;
 const OMDb_KEY = '7f93c41d';
 
 const pool = new Pool({
@@ -46,9 +49,16 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({ 
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ] 
+});
 
 let wishlistChannel = null;
+let autoCodeChannel = null;
 
 // Watch Together rooms storage
 const watchTogetherRooms = new Map();
@@ -62,6 +72,15 @@ function generateRoomCode() {
 }
 
 async function ensureTables() {
+  console.log('Ensuring database tables exist...');
+  
+  // Add duration column if it doesn't exist
+  await pool.query(`
+    ALTER TABLE movies ADD COLUMN IF NOT EXISTS duration TEXT;
+  `).catch(err => {
+    console.log('Duration column already exists or error:', err.message);
+  });
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS movies (
       id SERIAL PRIMARY KEY,
@@ -72,6 +91,7 @@ async function ensureTables() {
       one_time_password_hashes JSONB DEFAULT '[]',
       year TEXT,
       image TEXT,
+      duration TEXT,
       created_at TIMESTAMP DEFAULT NOW()
     )
   `);
@@ -105,9 +125,20 @@ async function ensureTables() {
     )
   `);
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      discord_id TEXT UNIQUE,
+      discord_username TEXT,
+      auto_code_enabled BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
     INSERT INTO bot_config (key, value) VALUES ('codes_enabled', TRUE)
     ON CONFLICT (key) DO NOTHING
   `);
+  
+  console.log('Database tables ensured');
 }
 
 async function getCodesEnabled() {
@@ -168,6 +199,57 @@ client.once('ready', async () => {
     wishlistChannel = await client.channels.fetch(DISCORD_WISHLIST_CHANNEL_ID).catch(console.error);
     if (wishlistChannel) console.log('Wishlist channel ready');
     else console.error('Wishlist channel not found');
+  }
+
+  if (DISCORD_AUTOCODE_CHANNEL_ID) {
+    autoCodeChannel = await client.channels.fetch(DISCORD_AUTOCODE_CHANNEL_ID).catch(console.error);
+    if (autoCodeChannel) console.log('Auto-code channel ready');
+    else console.error('Auto-code channel not found');
+  }
+});
+
+// Handle auto-code requests from users
+client.on('messageCreate', async (message) => {
+  if (message.channel.id !== DISCORD_AUTOCODE_CHANNEL_ID || message.author.bot) return;
+
+  // Check if this is an auto-code request
+  if (message.content.includes('requested a one-time code for')) {
+    const enabled = await getCodesEnabled();
+    if (!enabled) {
+      return message.reply('Code generation is currently **DISABLED** by admin.');
+    }
+
+    // Extract discord username from message
+    const discordUser = message.content.split(' - ')[0];
+    
+    // Generate code
+    const code = generateCode();
+    const hash = await bcrypt.hash(code, 10);
+
+    const { rows: [gp] } = await pool.query(
+      'INSERT INTO global_passwords (password_hash, is_one_time) VALUES ($1, true) RETURNING id',
+      [hash]
+    );
+
+    await pool.query(
+      'INSERT INTO om_codes (code, global_password_id, used) VALUES ($1, $2, FALSE)',
+      [code, gp.id]
+    );
+
+    // Send code to user via DM
+    try {
+      const user = await client.users.fetch(message.author.id);
+      const embed = new EmbedBuilder()
+        .setColor('#e50914')
+        .setTitle('OM One-Time Code')
+        .setDescription(`\`\`\`${code}\`\`\``)
+        .setFooter({ text: 'This code will auto-fill on the website!' });
+      
+      await user.send({ embeds: [embed] });
+      await message.reply(`✅ Code sent to ${discordUser} via DM!`);
+    } catch (err) {
+      await message.reply('❌ Failed to send DM. Please enable DMs from server members.');
+    }
   }
 });
 
@@ -412,11 +494,153 @@ const requireFullAdmin = (req, res, next) => {
   next();
 };
 
+// Discord OAuth routes
+app.get('/api/auth/discord', (req, res) => {
+  const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/discord/callback`;
+  const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=identify`;
+  res.redirect(discordAuthUrl);
+});
+
+app.get('/api/auth/discord/callback', async (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.redirect('/?error=no_code');
+
+  try {
+    // Exchange code for access token
+    const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        client_id: DISCORD_CLIENT_ID,
+        client_secret: DISCORD_CLIENT_SECRET,
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: `${req.protocol}://${req.get('host')}/api/auth/discord/callback`,
+      }),
+    });
+
+    const tokenData = await tokenResponse.json();
+    if (!tokenData.access_token) {
+      return res.redirect('/?error=token_failed');
+    }
+
+    // Get user info
+    const userResponse = await fetch('https://discord.com/api/users/@me', {
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`,
+      },
+    });
+
+    const userData = await userResponse.json();
+    if (!userData.id) {
+      return res.redirect('/?error=user_failed');
+    }
+
+    // Store or update user in database
+    const { rows } = await pool.query(
+      `INSERT INTO users (discord_id, discord_username) 
+       VALUES ($1, $2) 
+       ON CONFLICT (discord_id) 
+       DO UPDATE SET discord_username = $2 
+       RETURNING id`,
+      [userData.id, `${userData.username}#${userData.discriminator}`]
+    );
+
+    // Create JWT token
+    const token = jwt.sign({ 
+      userId: rows[0].id, 
+      discordId: userData.id,
+      username: userData.username 
+    }, JWT_SECRET, { expiresIn: '30d' });
+
+    // Redirect to settings page with token
+    res.redirect(`/?discord_login=success&token=${token}`);
+  } catch (error) {
+    console.error('Discord OAuth error:', error);
+    res.redirect('/?error=auth_failed');
+  }
+});
+
+// User settings endpoints
+app.get('/api/user/settings', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT discord_username, auto_code_enabled FROM users WHERE id = $1',
+      [req.user.userId]
+    );
+    if (rows[0]) {
+      res.json({ ok: true, settings: rows[0] });
+    } else {
+      res.json({ ok: false, error: 'User not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+app.post('/api/user/settings/auto-code', authMiddleware, async (req, res) => {
+  const { enabled } = req.body;
+  try {
+    await pool.query(
+      'UPDATE users SET auto_code_enabled = $1 WHERE id = $2',
+      [enabled, req.user.userId]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+// Auto-code request endpoint
+app.post('/api/auto-code/request', authMiddleware, async (req, res) => {
+  const { movieTitle, movieId } = req.body;
+  
+  try {
+    // Get user info
+    const { rows: userRows } = await pool.query(
+      'SELECT discord_username FROM users WHERE id = $1',
+      [req.user.userId]
+    );
+    
+    if (!userRows[0]) {
+      return res.json({ ok: false, error: 'User not found' });
+    }
+
+    // Check if codes are enabled
+    const codesEnabled = await getCodesEnabled();
+    if (!codesEnabled) {
+      return res.json({ ok: false, error: 'Code generation is currently disabled by admin' });
+    }
+
+    // Send request to Discord channel
+    if (autoCodeChannel) {
+      await autoCodeChannel.send(
+        `${userRows[0].discord_username} - requested a one-time code for: **${movieTitle}** (ID: ${movieId})`
+      );
+      res.json({ ok: true, message: 'Code request sent! Check your DMs for the code.' });
+    } else {
+      res.json({ ok: false, error: 'Auto-code channel not configured' });
+    }
+  } catch (error) {
+    console.error('Auto-code request error:', error);
+    res.json({ ok: false, error: 'Failed to request code' });
+  }
+});
+
 app.get('/api/movies', async (req, res) => {
-  const { rows } = await pool.query(
-    'SELECT id, title, type, year, image, imdb_id FROM movies ORDER BY created_at DESC'
-  );
-  res.json({ ok: true, movies: rows });
+  try {
+    console.log('Fetching movies from database...');
+    const { rows } = await pool.query(
+      'SELECT id, title, type, year, image, imdb_id, duration FROM movies ORDER BY created_at DESC'
+    );
+    console.log(`Found ${rows.length} movies`);
+    res.json({ ok: true, movies: rows });
+  } catch (error) {
+    console.error('Error fetching movies:', error);
+    res.status(500).json({ ok: false, error: 'Failed to load movies' });
+  }
 });
 
 app.post('/api/admin/login', (req, res) => {
@@ -463,6 +687,7 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
 
   let year = null;
   let finalTitle = imdbId;
+  let duration = null;
 
   const { rows } = await pool.query(
     `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes)
@@ -470,7 +695,7 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
     [finalTitle, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes)]
   );
 
-  // Fetch poster, title, year from OMDb
+  // Fetch poster, title, year, duration from OMDb
   let posterUrl = null;
   try {
     const omdbRes = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${OMDb_KEY}`);
@@ -478,13 +703,14 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
     if (omdbData.Poster && omdbData.Poster !== 'N/A') posterUrl = omdbData.Poster;
     if (omdbData.Title) finalTitle = omdbData.Title;
     if (omdbData.Year) year = omdbData.Year;
+    if (omdbData.Runtime && omdbData.Runtime !== 'N/A') duration = omdbData.Runtime;
   } catch (err) {
     console.error('OMDb fetch failed:', err);
   }
 
   await pool.query(
-    'UPDATE movies SET image = $1, title = $2, year = $3 WHERE id = $4',
-    [posterUrl, finalTitle, year, rows[0].id]
+    'UPDATE movies SET image = $1, title = $2, year = $3, duration = $4 WHERE id = $5',
+    [posterUrl, finalTitle, year, duration, rows[0].id]
   );
 
   if (role === 'limited_admin') {
@@ -601,16 +827,43 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
 app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
   const { movieId } = req.user;
   const { rows } = await pool.query(
-    'SELECT imdb_id, type FROM movies WHERE id = $1',
+    'SELECT imdb_id, type, duration FROM movies WHERE id = $1',
     [movieId]
   );
   if (!rows[0]) return res.json({ ok: false, error: 'Not found' });
 
-  const { imdb_id, type } = rows[0];
-  const base = type === 'movie' ? 'movie' : 'tv';
-  const url = `https://vidsrc.me/embed/${base}/${imdb_id}`;
+  const { imdb_id, type, duration } = rows[0];
+  const { season, episode } = req.query;
+  
+  // Choose your preferred video source
+  let url;
+  
+  // Option 1: VidSrc (original)
+  if (type === 'movie') {
+    url = `https://vidsrc.me/embed/movie/${imdb_id}`;
+  } else {
+    url = `https://vidsrc.me/embed/tv/${imdb_id}/${season || 1}/${episode || 1}`;
+  }
+  
+  // Option 2: 2embed (alternative - uncomment to use)
+  /*
+  if (type === 'movie') {
+    url = `https://www.2embed.cc/embed/${imdb_id}`;
+  } else {
+    url = `https://www.2embed.cc/embedtv/${imdb_id}&s=${season || 1}&e=${episode || 1}`;
+  }
+  */
+  
+  // Option 3: Movie-Web (alternative - uncomment to use)
+  /*
+  if (type === 'movie') {
+    url = `https://movie-web.app/embed/movie/${imdb_id}`;
+  } else {
+    url = `https://movie-web.app/embed/tv/${imdb_id}/${season || 1}/${episode || 1}`;
+  }
+  */
 
-  res.json({ ok: true, url });
+  res.json({ ok: true, url, duration });
 });
 
 app.get('/api/trailer', async (req, res) => {
