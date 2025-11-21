@@ -328,10 +328,12 @@ client.on('interactionCreate', async i => {
 
     videoLockEnabled = !videoLockEnabled;
     
-    // Close all active video players silently
+    // Close all active video players for ALL connected clients
     io.emit('video-lock', { 
       enabled: videoLockEnabled
     });
+
+    console.log(`Video lock ${videoLockEnabled ? 'ENABLED' : 'DISABLED'} by ${i.user.tag}`);
 
     await i.reply(`Video player lock: **${videoLockEnabled ? 'ENABLED' : 'DISABLED'}**`);
   }
@@ -803,6 +805,35 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
   }
 });
 
+// Function to check if a movie has specific passwords
+async function movieHasSpecificPasswords(movieId) {
+  try {
+    const { rows } = await pool.query(
+      'SELECT password_hashes, one_time_password_hashes FROM movies WHERE id = $1',
+      [movieId]
+    );
+    
+    if (rows.length === 0) return false;
+    
+    const movie = rows[0];
+    let regularPasswords = [];
+    let oneTimePasswords = [];
+    
+    try {
+      regularPasswords = JSON.parse(movie.password_hashes || '[]');
+      oneTimePasswords = JSON.parse(movie.one_time_password_hashes || '[]');
+    } catch (e) {
+      console.error('Error parsing passwords for movie:', movieId, e);
+    }
+    
+    // Return true if the movie has any specific passwords set (regular or one-time)
+    return regularPasswords.length > 0 || oneTimePasswords.length > 0;
+  } catch (error) {
+    console.error('Error checking movie passwords:', error);
+    return false;
+  }
+}
+
 app.post('/api/movies/:id/authorize', async (req, res) => {
   // Check if video lock is enabled
   if (videoLockEnabled) {
@@ -822,6 +853,10 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   try { regular = JSON.parse(rows[0].password_hashes || '[]'); } catch (_) { regular = []; }
   try { ot = JSON.parse(rows[0].one_time_password_hashes || '[]'); } catch (_) { ot = []; }
 
+  // Check if movie has specific passwords set
+  const hasSpecificPasswords = regular.length > 0 || ot.length > 0;
+
+  // First check movie-specific one-time passwords
   for (let i = 0; i < ot.length; i++) {
     if (await bcrypt.compare(password, ot[i])) {
       ot.splice(i, 1);
@@ -831,19 +866,31 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
     }
   }
 
+  // Then check movie-specific regular passwords
   for (const h of regular) {
     if (await bcrypt.compare(password, h)) {
       return res.json({ ok: true, token: jwt.sign({ movieId: req.params.id }, JWT_SECRET, { expiresIn: '6h' }) });
     }
   }
 
+  // If movie has specific passwords set (either regular or one-time), 
+  // DO NOT accept global passwords from /gencode
+  if (hasSpecificPasswords) {
+    return res.json({ ok: false, error: 'Wrong password' });
+  }
+
+  // Only check global passwords if movie doesn't have any specific passwords set
   const { rows: globals } = await pool.query('SELECT id, password_hash, is_one_time FROM global_passwords');
+  
+  // Check global one-time passwords first
   for (const g of globals) {
     if (g.is_one_time && await bcrypt.compare(password, g.password_hash)) {
       await pool.query('DELETE FROM global_passwords WHERE id = $1', [g.id]);
       return res.json({ ok: true, token: jwt.sign({ movieId: req.params.id }, JWT_SECRET, { expiresIn: '6h' }) });
     }
   }
+  
+  // Then check global regular passwords
   for (const g of globals) {
     if (!g.is_one_time && await bcrypt.compare(password, g.password_hash)) {
       return res.json({ ok: true, token: jwt.sign({ movieId: req.params.id }, JWT_SECRET, { expiresIn: '6h' }) });
