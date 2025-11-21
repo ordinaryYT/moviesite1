@@ -333,9 +333,11 @@ client.on('interactionCreate', async i => {
       await setCodesEnabled(false);
     }
     
-    // Refresh all connected clients
+    // NEW: Send refresh command to all connected clients
     io.emit('refresh-website', { 
-      enabled: refreshEnabled
+      enabled: refreshEnabled,
+      // Add timestamp to force refresh
+      timestamp: Date.now()
     });
 
     console.log(`Refresh system ${refreshEnabled ? 'ENABLED' : 'DISABLED'} by ${i.user.tag}`);
