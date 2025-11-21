@@ -1014,7 +1014,14 @@ function startRefreshCountdown() {
     
     if (countdown < 0) {
       clearInterval(refreshTimer);
-      location.reload();
+      // Check if we're in Electron or browser
+      if (window.electronAPI) {
+        // Electron app - reload the page
+        window.location.reload();
+      } else {
+        // Browser - reload the page
+        location.reload();
+      }
     }
   }, 1000);
 }
