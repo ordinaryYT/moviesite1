@@ -63,6 +63,9 @@ let autoCodeChannel = null;
 // Watch Together rooms storage
 const watchTogetherRooms = new Map();
 
+// Video lock system
+let videoLockEnabled = false;
+
 function generateCode(prefix = 'om-') {
   return prefix + Math.random().toString(36).substr(2, 12).toUpperCase();
 }
@@ -182,7 +185,10 @@ client.once('ready', async () => {
       ),
     new SlashCommandBuilder()
       .setName('genadminlogincode')
-      .setDescription('Generate one-time admin login code for adding one content')
+      .setDescription('Generate one-time admin login code for adding one content'),
+    new SlashCommandBuilder()
+      .setName('123')
+      .setDescription('Toggle video player lock')
   ];
 
   try {
@@ -314,6 +320,21 @@ client.on('interactionCreate', async i => {
 
     await i.reply({ embeds: [embed] });
   }
+
+  if (i.commandName === '123') {
+    if (!i.member.roles.cache.has(DISCORD_CODE_MANAGER_ROLE_ID)) {
+      return i.reply({ content: 'No permission', ephemeral: true });
+    }
+
+    videoLockEnabled = !videoLockEnabled;
+    
+    // Close all active video players silently
+    io.emit('video-lock', { 
+      enabled: videoLockEnabled
+    });
+
+    await i.reply(`Video player lock: **${videoLockEnabled ? 'ENABLED' : 'DISABLED'}**`);
+  }
 });
 
 if (DISCORD_BOT_TOKEN) {
@@ -325,6 +346,9 @@ ensureTables();
 // Socket.IO for Watch Together
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
+
+  // Send current video lock state to new connections
+  socket.emit('video-lock', { enabled: videoLockEnabled });
 
   socket.on('create-room', (data) => {
     const roomCode = generateRoomCode();
@@ -780,6 +804,11 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
 });
 
 app.post('/api/movies/:id/authorize', async (req, res) => {
+  // Check if video lock is enabled
+  if (videoLockEnabled) {
+    return res.json({ ok: false, error: 'Video players are currently unavailable' });
+  }
+
   const { password } = req.body;
   if (!password) return res.json({ ok: false, error: 'Password required' });
 
@@ -825,6 +854,11 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
 });
 
 app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
+  // Check if video lock is enabled
+  if (videoLockEnabled) {
+    return res.json({ ok: false, error: 'Video players are currently unavailable' });
+  }
+
   const { movieId } = req.user;
   const { rows } = await pool.query(
     'SELECT imdb_id, type, duration FROM movies WHERE id = $1',
@@ -833,35 +867,8 @@ app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
   if (!rows[0]) return res.json({ ok: false, error: 'Not found' });
 
   const { imdb_id, type, duration } = rows[0];
-  const { season, episode } = req.query;
-  
-  // Choose your preferred video source
-  let url;
-  
-  // Option 1: VidSrc (original)
-  if (type === 'movie') {
-    url = `https://vidsrc.me/embed/movie/${imdb_id}`;
-  } else {
-    url = `https://vidsrc.me/embed/tv/${imdb_id}/${season || 1}/${episode || 1}`;
-  }
-  
-  // Option 2: 2embed (alternative - uncomment to use)
-  /*
-  if (type === 'movie') {
-    url = `https://www.2embed.cc/embed/${imdb_id}`;
-  } else {
-    url = `https://www.2embed.cc/embedtv/${imdb_id}&s=${season || 1}&e=${episode || 1}`;
-  }
-  */
-  
-  // Option 3: Movie-Web (alternative - uncomment to use)
-  /*
-  if (type === 'movie') {
-    url = `https://movie-web.app/embed/movie/${imdb_id}`;
-  } else {
-    url = `https://movie-web.app/embed/tv/${imdb_id}/${season || 1}/${episode || 1}`;
-  }
-  */
+  const base = type === 'movie' ? 'movie' : 'tv';
+  const url = `https://vidsrc.me/embed/${base}/${imdb_id}`;
 
   res.json({ ok: true, url, duration });
 });
