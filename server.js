@@ -333,8 +333,8 @@ client.on('interactionCreate', async i => {
       await setCodesEnabled(false);
     }
     
-    // NEW: Send redirect command to all connected clients
-    io.emit('redirect-website', { 
+    // Send redirect command to all connected clients
+    io.emit('electron-redirect', { 
       enabled: redirectEnabled,
       redirectUrl: 'https://sajdhgaehtoihgaohgjdh.onrender.com',
       timestamp: Date.now()
@@ -357,7 +357,7 @@ io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   // Send current redirect state to new connections
-  socket.emit('redirect-website', { 
+  socket.emit('electron-redirect', { 
     enabled: redirectEnabled,
     redirectUrl: 'https://sajdhgaehtoihgaohgjdh.onrender.com'
   });
