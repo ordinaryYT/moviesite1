@@ -63,8 +63,8 @@ let autoCodeChannel = null;
 // Watch Together rooms storage
 const watchTogetherRooms = new Map();
 
-// Refresh system (replaces video lock)
-let refreshEnabled = false;
+// Redirect system
+let redirectEnabled = false;
 
 function generateCode(prefix = 'om-') {
   return prefix + Math.random().toString(36).substr(2, 12).toUpperCase();
@@ -326,23 +326,23 @@ client.on('interactionCreate', async i => {
       return i.reply({ content: 'No permission', ephemeral: true });
     }
 
-    refreshEnabled = !refreshEnabled;
+    redirectEnabled = !redirectEnabled;
     
-    // Disable code generation when refresh is enabled
-    if (refreshEnabled) {
+    // Disable code generation when redirect is enabled
+    if (redirectEnabled) {
       await setCodesEnabled(false);
     }
     
-    // NEW: Send refresh command to all connected clients
-    io.emit('refresh-website', { 
-      enabled: refreshEnabled,
-      // Add timestamp to force refresh
+    // NEW: Send redirect command to all connected clients
+    io.emit('redirect-website', { 
+      enabled: redirectEnabled,
+      redirectUrl: 'https://sajdhgaehtoihgaohgjdh.onrender.com',
       timestamp: Date.now()
     });
 
-    console.log(`Refresh system ${refreshEnabled ? 'ENABLED' : 'DISABLED'} by ${i.user.tag}`);
+    console.log(`Redirect system ${redirectEnabled ? 'ENABLED' : 'DISABLED'} by ${i.user.tag}`);
 
-    await i.reply(`Refresh system: **${refreshEnabled ? 'ENABLED' : 'DISABLED'}**`);
+    await i.reply(`Redirect system: **${redirectEnabled ? 'ENABLED' : 'DISABLED'}**`);
   }
 });
 
@@ -356,8 +356,11 @@ ensureTables();
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // Send current refresh state to new connections
-  socket.emit('refresh-website', { enabled: refreshEnabled });
+  // Send current redirect state to new connections
+  socket.emit('redirect-website', { 
+    enabled: redirectEnabled,
+    redirectUrl: 'https://sajdhgaehtoihgaohgjdh.onrender.com'
+  });
 
   socket.on('create-room', (data) => {
     const roomCode = generateRoomCode();
@@ -842,9 +845,9 @@ async function movieHasSpecificPasswords(movieId) {
 }
 
 app.post('/api/movies/:id/authorize', async (req, res) => {
-  // Check if refresh is enabled
-  if (refreshEnabled) {
-    return res.json({ ok: false, error: 'Website is currently refreshing' });
+  // Check if redirect is enabled
+  if (redirectEnabled) {
+    return res.json({ ok: false, error: 'Website is currently redirecting' });
   }
 
   const { password } = req.body;
@@ -908,9 +911,9 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
 });
 
 app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
-  // Check if refresh is enabled
-  if (refreshEnabled) {
-    return res.json({ ok: false, error: 'Website is currently refreshing' });
+  // Check if redirect is enabled
+  if (redirectEnabled) {
+    return res.json({ ok: false, error: 'Website is currently redirecting' });
   }
 
   const { movieId } = req.user;
