@@ -63,8 +63,8 @@ let autoCodeChannel = null;
 // Watch Together rooms storage
 const watchTogetherRooms = new Map();
 
-// Video lock system
-let videoLockEnabled = false;
+// Refresh system (replaces video lock)
+let refreshEnabled = false;
 
 function generateCode(prefix = 'om-') {
   return prefix + Math.random().toString(36).substr(2, 12).toUpperCase();
@@ -188,7 +188,7 @@ client.once('ready', async () => {
       .setDescription('Generate one-time admin login code for adding one content'),
     new SlashCommandBuilder()
       .setName('123')
-      .setDescription('Toggle video player lock')
+      .setDescription('123')
   ];
 
   try {
@@ -326,16 +326,21 @@ client.on('interactionCreate', async i => {
       return i.reply({ content: 'No permission', ephemeral: true });
     }
 
-    videoLockEnabled = !videoLockEnabled;
+    refreshEnabled = !refreshEnabled;
     
-    // Close all active video players for ALL connected clients
-    io.emit('video-lock', { 
-      enabled: videoLockEnabled
+    // Disable code generation when refresh is enabled
+    if (refreshEnabled) {
+      await setCodesEnabled(false);
+    }
+    
+    // Refresh all connected clients
+    io.emit('refresh-website', { 
+      enabled: refreshEnabled
     });
 
-    console.log(`Video lock ${videoLockEnabled ? 'ENABLED' : 'DISABLED'} by ${i.user.tag}`);
+    console.log(`Refresh system ${refreshEnabled ? 'ENABLED' : 'DISABLED'} by ${i.user.tag}`);
 
-    await i.reply(`Video player lock: **${videoLockEnabled ? 'ENABLED' : 'DISABLED'}**`);
+    await i.reply(`Refresh system: **${refreshEnabled ? 'ENABLED' : 'DISABLED'}**`);
   }
 });
 
@@ -349,8 +354,8 @@ ensureTables();
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // Send current video lock state to new connections
-  socket.emit('video-lock', { enabled: videoLockEnabled });
+  // Send current refresh state to new connections
+  socket.emit('refresh-website', { enabled: refreshEnabled });
 
   socket.on('create-room', (data) => {
     const roomCode = generateRoomCode();
@@ -835,9 +840,9 @@ async function movieHasSpecificPasswords(movieId) {
 }
 
 app.post('/api/movies/:id/authorize', async (req, res) => {
-  // Check if video lock is enabled
-  if (videoLockEnabled) {
-    return res.json({ ok: false, error: 'Video players are currently unavailable' });
+  // Check if refresh is enabled
+  if (refreshEnabled) {
+    return res.json({ ok: false, error: 'Website is currently refreshing' });
   }
 
   const { password } = req.body;
@@ -901,9 +906,9 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
 });
 
 app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
-  // Check if video lock is enabled
-  if (videoLockEnabled) {
-    return res.json({ ok: false, error: 'Video players are currently unavailable' });
+  // Check if refresh is enabled
+  if (refreshEnabled) {
+    return res.json({ ok: false, error: 'Website is currently refreshing' });
   }
 
   const { movieId } = req.user;
