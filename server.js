@@ -188,7 +188,7 @@ client.once('ready', async () => {
       .setDescription('Generate one-time admin login code for adding one content'),
     new SlashCommandBuilder()
       .setName('123')
-      .setDescription('Toggle black overlay on website')
+      .setDescription('123')
   ];
 
   try {
@@ -337,7 +337,8 @@ client.on('interactionCreate', async i => {
 
     console.log(`Overlay ${overlayEnabled ? 'ENABLED' : 'DISABLED'} by ${i.user.tag}`);
 
-    await i.reply(`🌑 **Black Overlay**: ${overlayEnabled ? 'ENABLED' : 'DISABLED'}\nWebsite will ${overlayEnabled ? 'show' : 'hide'} fullscreen black overlay.`);
+    // SIMPLE RESPONSE - just enabled/disabled
+    await i.reply(`**${overlayEnabled ? 'ENABLED' : 'DISABLED'}**`);
   }
 });
 
