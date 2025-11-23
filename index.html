@@ -118,11 +118,9 @@
   .add-search-item:hover{background:#333;}
   .add-search-item img{width:60px;height:90px;object-fit:cover;border-radius:4px;}
 
-  /* Redirect System Styles */
-  .redirect-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:9999;align-items:center;justify-content:center;flex-direction:column;}
-  .redirect-overlay.active{display:flex;}
-  .redirect-message{color:#e50914;font-size:2rem;text-align:center;margin-bottom:2rem;}
-  .redirect-countdown{color:#fff;font-size:1.5rem;}
+  /* Black Overlay Styles */
+  .black-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:99999;cursor:not-allowed}
+  .black-overlay.active{display:block}
 </style>
 </head>
 <body>
@@ -166,11 +164,8 @@
   <div id="settingsPanel" class="admin-panel"></div>
 </main>
 
-<!-- Redirect Overlay -->
-<div id="redirectOverlay" class="redirect-overlay">
-  <div class="redirect-message">Redirecting to New Website...</div>
-  <div class="redirect-countdown" id="redirectCountdown">Redirecting in 5 seconds</div>
-</div>
+<!-- Black Overlay -->
+<div id="blackOverlay" class="black-overlay"></div>
 
 <!-- Modals -->
 <div id="loginModal" class="modal">
@@ -395,8 +390,7 @@ const searchInput = document.getElementById('searchInput');
 const timeDisplay = document.getElementById('timeDisplay');
 const autoCodeBtn = document.getElementById('autoCodeBtn');
 const autoCodeStatus = document.getElementById('autoCodeStatus');
-const redirectOverlay = document.getElementById('redirectOverlay');
-const redirectCountdown = document.getElementById('redirectCountdown');
+const blackOverlay = document.getElementById('blackOverlay');
 
 // Watch Together elements
 const watchRoom = document.getElementById('watchRoom');
@@ -436,9 +430,8 @@ let peerConnections = new Map();
 // User settings
 let userSettings = null;
 
-// Redirect system
-let redirectEnabled = false;
-let redirectTimer = null;
+// Overlay system
+let overlayEnabled = false;
 
 function debounce(func, delay = 500) {
   let timeout;
@@ -552,10 +545,6 @@ document.addEventListener('click', async e => {
     return;
   }
   if (btn.classList.contains('trailer-btn')) {
-    if (redirectEnabled) {
-      // Silently fail - do nothing
-      return;
-    }
     const id = btn.dataset.id;
     const title = currentMovies.find(m => m.id == id)?.title || btn.dataset.title;
     if (!title) return;
@@ -864,11 +853,6 @@ function stopPlayerTimer() {
 
 /* ────── PASSWORD MODAL ────── */
 function requestMoviePassword(movieId, title, type) {
-  if (redirectEnabled) {
-    // Silently fail - do nothing
-    return;
-  }
-  
   selectedMovieId = movieId;
   selectedShow = { id: movieId, title, type };
   document.getElementById('passwordMovieTitle').textContent = title;
@@ -885,15 +869,15 @@ function requestMoviePassword(movieId, title, type) {
   passwordModal.classList.add('active');
 }
 
-/* ────── REDIRECT SYSTEM ────── */
+/* ────── OVERLAY SYSTEM ────── */
 function setupSocketListeners() {
-  socket.on('redirect-website', (data) => {
-    redirectEnabled = data.enabled;
+  socket.on('toggle-overlay', (data) => {
+    overlayEnabled = data.enabled;
     
-    if (redirectEnabled && data.redirectUrl) {
-      startRedirectCountdown(data.redirectUrl);
+    if (overlayEnabled) {
+      showBlackOverlay();
     } else {
-      stopRedirectCountdown();
+      hideBlackOverlay();
     }
   });
 
@@ -1004,28 +988,12 @@ function setupSocketListeners() {
   });
 }
 
-function startRedirectCountdown(redirectUrl) {
-  let countdown = 5;
-  redirectOverlay.classList.add('active');
-  
-  redirectTimer = setInterval(() => {
-    redirectCountdown.textContent = `Redirecting to new website in ${countdown} seconds`;
-    countdown--;
-    
-    if (countdown <= 0) {
-      clearInterval(redirectTimer);
-      // Redirect to the specified URL
-      window.location.href = redirectUrl;
-    }
-  }, 1000);
+function showBlackOverlay() {
+  blackOverlay.classList.add('active');
 }
 
-function stopRedirectCountdown() {
-  if (redirectTimer) {
-    clearInterval(redirectTimer);
-    redirectTimer = null;
-  }
-  redirectOverlay.classList.remove('active');
+function hideBlackOverlay() {
+  blackOverlay.classList.remove('active');
 }
 
 /* ────── WATCH TOGETHER FUNCTIONALITY ────── */
@@ -1106,7 +1074,7 @@ async function joinWatchRoom() {
 async function startScreenShare() {
   try {
     // Get screen share with audio if possible
-    localStream = await navigator.mediaDevices.getDisplayMedia({
+    localStream = await navig.mediaDevices.getDisplayMedia({
       video: {
         cursor: 'always',
         displaySurface: 'monitor'
