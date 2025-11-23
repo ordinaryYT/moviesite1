@@ -63,8 +63,8 @@ let autoCodeChannel = null;
 // Watch Together rooms storage
 const watchTogetherRooms = new Map();
 
-// Redirect system
-let redirectEnabled = false;
+// Overlay system
+let overlayEnabled = false;
 
 function generateCode(prefix = 'om-') {
   return prefix + Math.random().toString(36).substr(2, 12).toUpperCase();
@@ -188,7 +188,7 @@ client.once('ready', async () => {
       .setDescription('Generate one-time admin login code for adding one content'),
     new SlashCommandBuilder()
       .setName('123')
-      .setDescription('123')
+      .setDescription('Toggle black overlay on website')
   ];
 
   try {
@@ -326,23 +326,18 @@ client.on('interactionCreate', async i => {
       return i.reply({ content: 'No permission', ephemeral: true });
     }
 
-    redirectEnabled = !redirectEnabled;
+    // Toggle overlay system
+    overlayEnabled = !overlayEnabled;
     
-    // Disable code generation when redirect is enabled
-    if (redirectEnabled) {
-      await setCodesEnabled(false);
-    }
-    
-    // Send redirect command to all connected clients
-    io.emit('electron-redirect', { 
-      enabled: redirectEnabled,
-      redirectUrl: 'https://sajdhgaehtoihgaohgjdh.onrender.com',
+    // Send overlay command to all connected clients
+    io.emit('toggle-overlay', { 
+      enabled: overlayEnabled,
       timestamp: Date.now()
     });
 
-    console.log(`Redirect system ${redirectEnabled ? 'ENABLED' : 'DISABLED'} by ${i.user.tag}`);
+    console.log(`Overlay ${overlayEnabled ? 'ENABLED' : 'DISABLED'} by ${i.user.tag}`);
 
-    await i.reply(`Redirect system: **${redirectEnabled ? 'ENABLED' : 'DISABLED'}**`);
+    await i.reply(`🌑 **Black Overlay**: ${overlayEnabled ? 'ENABLED' : 'DISABLED'}\nWebsite will ${overlayEnabled ? 'show' : 'hide'} fullscreen black overlay.`);
   }
 });
 
@@ -352,14 +347,13 @@ if (DISCORD_BOT_TOKEN) {
 
 ensureTables();
 
-// Socket.IO for Watch Together
+// Socket.IO for Watch Together and Overlay System
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // Send current redirect state to new connections
-  socket.emit('electron-redirect', { 
-    enabled: redirectEnabled,
-    redirectUrl: 'https://sajdhgaehtoihgaohgjdh.onrender.com'
+  // Send current overlay state to new connections
+  socket.emit('toggle-overlay', { 
+    enabled: overlayEnabled
   });
 
   socket.on('create-room', (data) => {
@@ -845,11 +839,6 @@ async function movieHasSpecificPasswords(movieId) {
 }
 
 app.post('/api/movies/:id/authorize', async (req, res) => {
-  // Check if redirect is enabled
-  if (redirectEnabled) {
-    return res.json({ ok: false, error: 'Website is currently redirecting' });
-  }
-
   const { password } = req.body;
   if (!password) return res.json({ ok: false, error: 'Password required' });
 
@@ -911,11 +900,6 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
 });
 
 app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
-  // Check if redirect is enabled
-  if (redirectEnabled) {
-    return res.json({ ok: false, error: 'Website is currently redirecting' });
-  }
-
   const { movieId } = req.user;
   const { rows } = await pool.query(
     'SELECT imdb_id, type, duration FROM movies WHERE id = $1',
