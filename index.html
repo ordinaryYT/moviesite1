@@ -58,8 +58,8 @@
   
   /* Updated overlay styles */
   .iframe-overlay{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0);z-index:3;pointer-events:none;}
-  .center-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:200px;height:60px;background:#000;z-index:4;display:none;pointer-events:none;}
-  .bottom-left-overlay{position:absolute;bottom:20px;left:30px;width:100px;height:40px;background:#000;z-index:4;display:none;pointer-events:none;}
+  .center-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:50%;height:50%;background:#000;z-index:4;display:none;pointer-events:none;}
+  .bottom-left-overlay{position:absolute;bottom:20px;left:30px;width:160px;height:55px;background:#000;z-index:4;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;pointer-events:none;}
   
   .bottom-overlay{display:none;}
 
@@ -373,7 +373,7 @@
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay"></div>
     <div class="center-overlay"></div>
-    <div class="bottom-left-overlay"></div>
+    <div class="bottom-left-overlay">ogmovie</div>
   </div>
 </div>
 
@@ -1488,7 +1488,7 @@ async function addGlobalPassword() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminToken}`
+        'Authorization': `Bearer ${adminToken}`
       },
       body: JSON.stringify({ password, isOneTime })
     });
@@ -1683,16 +1683,13 @@ function showPlayer(url, duration, overlayEnabled) {
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
-  // Show or hide overlays based on the movie setting
+  // Show or hide center overlay based on the movie setting
   const centerOverlay = document.querySelector('.center-overlay');
-  const bottomLeftOverlay = document.querySelector('.bottom-left-overlay');
   
   if (overlayEnabled) {
     centerOverlay.style.display = 'block';
-    bottomLeftOverlay.style.display = 'block';
   } else {
     centerOverlay.style.display = 'none';
-    bottomLeftOverlay.style.display = 'none';
   }
   
   // Start the timer when player is shown
