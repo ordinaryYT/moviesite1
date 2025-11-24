@@ -17,7 +17,7 @@
   #filterTabs{text-align:center;margin:1rem 0;}
   #filterTabs button{margin:0 .25rem;padding:.5rem 1rem;background:#1a1a1a;border:none;color:#fff;border-radius:4px;cursor:pointer}
   #filterTabs button.active{background:#e50914}
-  #movieGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem;padding:2rem;max-width:1400px;margin:0 auto}
+  #movieGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem;padding:2rem;max-width:1400px;margin=0 auto}
   .movie-card{cursor:pointer;border-radius:12px;overflow:hidden;background:#1a1a1a;transition:.3s;position:relative}
   .movie-card:hover{transform:scale(1.05);box-shadow:0 0 20px rgba(229,9,20,.5)}
   .movie-card img{width:100%;height:300px;object-fit:cover}
@@ -40,7 +40,7 @@
   .form-group input{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
   .form-group select{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
   .modal-btn{width:100%;padding:0.75rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-top:1rem}
-  #adminPanel{display:none;padding:2rem;max-width:1400px;margin:0 auto}
+  #adminPanel{display:none;padding:2rem;max-width:1400px;margin=0 auto}
   #adminPanel.active{display:block}
   #settingsPanel{display:none;padding:2rem;max-width:1400px;margin=0 auto}
   #settingsPanel.active{display:block}
@@ -76,11 +76,11 @@
   .right-cover-overlay{position:absolute;bottom:5px;right:0;width:25%;height:40px;background:#000;z-index:11;display:none}
   .right-cover-overlay.active{display:block}
   
-  /* UPDATED: vidsrc block overlay to hide watermark - positioned shifted right by its own width (90px) */
+  /* UPDATED: vidsrc block overlay to hide watermark - positioned shifted left by its own width (90px) */
   .vidsrc-block-overlay {
     position: absolute;
     bottom: 5px;
-    left: 270px;
+    left: 90px;
     width: 90px;
     height: 45px;
     background: #000;
