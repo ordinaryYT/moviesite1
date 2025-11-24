@@ -60,7 +60,7 @@
   /* Updated bottom overlay - removed time display */
   .bottom-overlay{position:absolute;bottom:5px;left:0;right:0;height:40px;background:rgba(0,0,0,0.3);z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
   
-  /* Bottom left overlay - moved further right to cover VIDSRC */
+  /* Bottom left overlay - now covers VIDSRC perfectly */
   .bottom-left-overlay {
     position: absolute;
     bottom: 5px;
@@ -88,11 +88,11 @@
   .right-cover-overlay{position:absolute;bottom:5px;right:0;width:25%;height:40px;background:#000;z-index:11;display:none}
   .right-cover-overlay.active{display:block}
   
-  /* UPDATED: vidsrc block overlay to hide watermark - positioned shifted left by its own width (90px) */
+  /* UPDATED: vidsrc block overlay to hide watermark - moved further right */
   .vidsrc-block-overlay {
     position: absolute;
     bottom: 5px;
-    left: 90px;
+    left: 200px;
     width: 90px;
     height: 45px;
     background: #000;
@@ -536,9 +536,9 @@ function displayMovies(movies) {
   movieGrid.innerHTML = '';
   if (movies.length === 0) {
     movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
-  } else {
-    movies.forEach(movie => movieGrid.appendChild(createMovieCard(movie)));
+    return;
   }
+  movies.forEach(movie => movieGrid.appendChild(createMovieCard(movie)));
   updateFavoriteButtons();
 }
 
