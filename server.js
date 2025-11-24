@@ -16,8 +16,7 @@ const {
 } = require('discord.js');
 const { Server } = require('socket.io');
 const { createServer } = require('http');
-
-const fetch = (...args) import('node-fetch').then(({default: fetch}) => fetch(...args));
+const fetch = require('node-fetch');
 
 const app = express();
 const server = createServer(app);
