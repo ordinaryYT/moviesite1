@@ -77,18 +77,18 @@ function generateRoomCode() {
 async function ensureTables() {
   console.log('Ensuring database tables exist...');
   
+  // Add overlay_enabled column if it doesn't exist
+  await pool.query(`
+    ALTER TABLE movies ADD COLUMN IF NOT EXISTS overlay_enabled BOOLEAN DEFAULT FALSE;
+  `).catch(err => {
+    console.log('Overlay column already exists or error:', err.message);
+  });
+
   // Add duration column if it doesn't exist
   await pool.query(`
     ALTER TABLE movies ADD COLUMN IF NOT EXISTS duration TEXT;
   `).catch(err => {
     console.log('Duration column already exists or error:', err.message);
-  });
-
-  // Add overlay_enabled column if it doesn't exist
-  await pool.query(`
-    ALTER TABLE movies ADD COLUMN IF NOT EXISTS overlay_enabled BOOLEAN DEFAULT FALSE;
-  `).catch(err => {
-    console.log('Overlay enabled column already exists or error:', err.message);
   });
 
   await pool.query(`
@@ -935,7 +935,7 @@ app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
   const base = type === 'movie' ? 'movie' : 'tv';
   const url = `https://vidsrc.me/embed/${base}/${imdb_id}`;
 
-  res.json({ ok: true, url, duration, overlayEnabled: overlay_enabled });
+  res.json({ ok: true, url, duration, overlay_enabled });
 });
 
 app.get('/api/trailer', async (req, res) => {
