@@ -42,7 +42,7 @@
   .modal-btn{width:100%;padding:0.75rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-top:1rem}
   #adminPanel{display:none;padding:2rem;max-width:1400px;margin:0 auto}
   #adminPanel.active{display:block}
-  #settingsPanel{display:none;padding:2rem;max-width:1400px;margin:0 auto}
+  #settingsPanel{display:none;padding:2rem;max-width:1400px;margin=0 auto}
   #settingsPanel.active{display:block}
   .admin-actions{margin-bottom:2rem;display:flex;gap:1rem;flex-wrap:wrap}
   .admin-btn{padding:0.75rem 1.5rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold}
@@ -76,11 +76,11 @@
   .right-cover-overlay{position:absolute;bottom:5px;right:0;width:25%;height:40px;background:#000;z-index:11;display:none}
   .right-cover-overlay.active{display:block}
   
-  /* UPDATED: vidsrc block overlay to hide watermark - moved to right and half width */
+  /* UPDATED: vidsrc block overlay to hide watermark - positioned shifted right from bottom left */
   .vidsrc-block-overlay {
     position: absolute;
     bottom: 5px;
-    right: 0;
+    left: 100px;
     width: 90px;
     height: 45px;
     background: #000;
@@ -88,7 +88,7 @@
     pointer-events: none;
   }
   
-  #requestSection{display:none;padding:2rem;max-width:1400px;margin:0 auto}
+  #requestSection{display:none;padding:2rem;max-width:1400px;margin=0 auto}
   #requestInput{width:100%;max-width:500px;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem;margin-bottom:1rem}
   #requestInput:focus{outline:none;border-color:#e50914}
   #requestResults{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem}
