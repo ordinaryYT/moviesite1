@@ -681,7 +681,7 @@ app.post('/api/auto-code/request', authMiddleware, async (req, res) => {
   }
 });
 
-app.get('/api/movies', async (req, res) => {
+app.get('/api/movies', async (req, res) {
   try {
     console.log('Fetching movies from database...');
     const { rows } = await pool.query(
