@@ -113,6 +113,13 @@ async function ensureTables() {
     console.log('Duration column already exists or error:', err.message);
   });
 
+  // Add overlay_enabled column
+  await pool.query(`
+    ALTER TABLE movies ADD COLUMN IF NOT EXISTS overlay_enabled BOOLEAN DEFAULT FALSE;
+  `).catch(err => {
+    console.log('Overlay column already exists or error:', err.message);
+  });
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS movies (
       id SERIAL PRIMARY KEY,
@@ -124,6 +131,7 @@ async function ensureTables() {
       year TEXT,
       image TEXT,
       duration TEXT,
+      overlay_enabled BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT NOW()
     )
   `);
@@ -214,10 +222,7 @@ client.once('ready', async () => {
       ),
     new SlashCommandBuilder()
       .setName('genadminlogincode')
-      .setDescription('Generate one-time admin login code for adding one content'),
-    new SlashCommandBuilder()
-      .setName('123')
-      .setDescription('123')
+      .setDescription('Generate one-time admin login code for adding one content')
   ];
 
   try {
@@ -348,20 +353,6 @@ client.on('interactionCreate', async i => {
       .setFooter({ text: 'Allows adding one content item only!' });
 
     await i.reply({ embeds: [embed] });
-  }
-
-  if (i.commandName === '123') {
-    if (!i.member.roles.cache.has(DISCORD_CODE_MANAGER_ROLE_ID)) {
-      return i.reply({ content: 'No permission', ephemeral: true });
-    }
-
-    // Toggle overlay system
-    overlayEnabled = !overlayEnabled;
-    
-    console.log(`Overlay ${overlayEnabled ? 'ENABLED' : 'DISABLED'} by ${i.user.tag}`);
-
-    // SIMPLE RESPONSE
-    await i.reply(`**${overlayEnabled ? 'ENABLED' : 'DISABLED'}**`);
   }
 });
 
@@ -682,7 +673,7 @@ app.get('/api/movies', async (req, res) => {
   try {
     console.log('Fetching movies from database...');
     const { rows } = await pool.query(
-      'SELECT id, title, type, year, image, imdb_id, duration FROM movies ORDER BY created_at DESC'
+      'SELECT id, title, type, year, image, imdb_id, duration, overlay_enabled FROM movies ORDER BY created_at DESC'
     );
     console.log(`Found ${rows.length} movies`);
     res.json({ ok: true, movies: rows });
@@ -726,7 +717,7 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
     if (!rows[0] || rows[0].used) return res.status(403).json({ ok: false, error: 'Code already used' });
   }
 
-  let { imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie' } = req.body;
+  let { imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie', overlayEnabled = false } = req.body;
   if (!imdbId) return res.status(400).json({ ok: false, error: 'IMDb ID required' });
 
   if (!imdbId.startsWith('tt')) imdbId = 'tt' + imdbId;
@@ -739,9 +730,9 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
   let duration = null;
 
   const { rows } = await pool.query(
-    `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes)
-     VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-    [finalTitle, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes)]
+    `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes, overlay_enabled)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [finalTitle, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes), overlayEnabled]
   );
 
   // Fetch poster, title, year, duration from OMDb
@@ -921,16 +912,16 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
 app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
   const { movieId } = req.user;
   const { rows } = await pool.query(
-    'SELECT imdb_id, type, duration FROM movies WHERE id = $1',
+    'SELECT imdb_id, type, duration, overlay_enabled FROM movies WHERE id = $1',
     [movieId]
   );
   if (!rows[0]) return res.json({ ok: false, error: 'Not found' });
 
-  const { imdb_id, type, duration } = rows[0];
+  const { imdb_id, type, duration, overlay_enabled } = rows[0];
   const base = type === 'movie' ? 'movie' : 'tv';
   const url = `https://vidsrc.me/embed/${base}/${imdb_id}`;
 
-  res.json({ ok: true, url, duration });
+  res.json({ ok: true, url, duration, overlay_enabled });
 });
 
 app.get('/api/trailer', async (req, res) => {
