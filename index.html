@@ -57,19 +57,19 @@
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
   
-  /* Updated bottom overlay - transparent and moved down more */
-  .bottom-overlay{position:absolute;bottom:40px;left:0;right:0;height:40px;background:rgba(0,0,0,0.3);z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
+  /* Updated bottom overlay - moved UP more (closer to bottom) */
+  .bottom-overlay{position:absolute;bottom:10px;left:0;right:0;height:40px;background:rgba(0,0,0,0.3);z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
   
-  /* Updated left overlay - same size as top ogmovie overlay */
-  .left-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:9;display:none;border-radius:8px}
-  .left-overlay.active{display:block}
+  /* Bottom left overlay - positioned next to time display, about one ":00" away */
+  .bottom-left-overlay{position:absolute;bottom:10px;left:200px;width:160px;height:40px;background:#000;z-index:9;display:none;border-radius:8px}
+  .bottom-left-overlay.active{display:block}
   
-  /* Updated middle overlay - half as wide, no text, positioned lower */
-  .middle-overlay{position:absolute;bottom:90px;left:50%;transform:translateX(-50%);width:80px;height:40px;background:#000;z-index:8;display:none;border-radius:4px}
+  /* Middle overlay - moved UP more and wider on sides */
+  .middle-overlay{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);width:200px;height:40px;background:#000;z-index:8;display:none;border-radius:4px}
   .middle-overlay.active{display:block}
   
-  /* Updated right cover overlay - moved down more */
-  .right-cover-overlay{position:absolute;bottom:40px;right:0;width:25%;height:40px;background:rgba(255,0,0,0.3);z-index:11;display:none}
+  /* Right cover overlay - moved UP more */
+  .right-cover-overlay{position:absolute;bottom:10px;right:0;width:25%;height:40px;background:rgba(255,0,0,0.3);z-index:11;display:none}
   .right-cover-overlay.active{display:block}
   
   #requestSection{display:none;padding:2rem;max-width:1400px;margin:0 auto}
@@ -317,6 +317,9 @@
     <div class="form-group">
       <label><input type="checkbox" id="finalRightCover"> Enable Right Quarter Cover for this content</label>
     </div>
+    <div class="form-group">
+      <label><input type="checkbox" id="finalBottomLeft"> Enable Bottom Left Overlay for this content</label>
+    </div>
     <button class="modal-btn" onclick="submitFinalAdd()">Add to Library</button>
   </div>
 </div>
@@ -384,7 +387,7 @@
   <div class="player-wrapper">
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
-    <div class="left-overlay" id="leftOverlay"></div>
+    <div class="bottom-left-overlay" id="bottomLeftOverlay"></div>
     <div class="middle-overlay" id="middleOverlay"></div>
     <div class="bottom-overlay">
       <div class="time-display" id="timeDisplay">--:--:-- / --:--:--</div>
@@ -422,7 +425,7 @@ const redirectOverlay = document.getElementById('redirectOverlay');
 const redirectCountdown = document.getElementById('redirectCountdown');
 const middleOverlay = document.getElementById('middleOverlay');
 const rightCoverOverlay = document.getElementById('rightCoverOverlay');
-const leftOverlay = document.getElementById('leftOverlay');
+const bottomLeftOverlay = document.getElementById('bottomLeftOverlay');
 
 // Watch Together elements
 const watchRoom = document.getElementById('watchRoom');
@@ -1415,6 +1418,7 @@ function closeFinalAddModal() {
   document.getElementById('finalOneTime').value = '';
   document.getElementById('finalOverlay').checked = false;
   document.getElementById('finalRightCover').checked = false;
+  document.getElementById('finalBottomLeft').checked = false;
 }
 async function submitFinalAdd() {
   const imdbId = document.getElementById('finalImdb').value;
@@ -1423,6 +1427,7 @@ async function submitFinalAdd() {
   const oneTime = document.getElementById('finalOneTime').value.split(',').map(p=>p.trim()).filter(p=>p);
   const overlayEnabled = document.getElementById('finalOverlay').checked;
   const rightCoverEnabled = document.getElementById('finalRightCover').checked;
+  const bottomLeftEnabled = document.getElementById('finalBottomLeft').checked;
   
   if (!imdbId) return;
   try {
@@ -1435,7 +1440,8 @@ async function submitFinalAdd() {
         oneTimePasswords: oneTime, 
         type,
         overlayEnabled,
-        rightCoverEnabled
+        rightCoverEnabled,
+        bottomLeftEnabled
       })
     });
     const data = await res.json();
@@ -1555,7 +1561,7 @@ async function loadAdminMovies() {
             const div = document.createElement('div');
             div.className = 'movie-item-admin';
             div.innerHTML = `
-              <div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'}) ${movie.overlay_enabled ? ' [Overlay]' : ''} ${movie.right_cover_enabled ? ' [Right Cover]' : ''}</div>
+              <div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'}) ${movie.overlay_enabled ? ' [Overlay]' : ''} ${movie.right_cover_enabled ? ' [Right Cover]' : ''} ${movie.bottom_left_enabled ? ' [Bottom Left]' : ''}</div>
               <div>
                 <button onclick="deleteMovie(${movie.id})">Delete</button>
               </div>`;
@@ -1647,7 +1653,7 @@ async function verifyMoviePassword() {
         });
         const embedData = await embedRes.json();
         if (embedData.ok) {
-          showPlayer(embedData.url, embedData.duration, embedData.overlay_enabled, embedData.right_cover_enabled);
+          showPlayer(embedData.url, embedData.duration, embedData.overlay_enabled, embedData.right_cover_enabled, embedData.bottom_left_enabled);
         }
       } else {
         await requestEpisodeSelection();
@@ -1705,7 +1711,7 @@ async function playSelectedEpisode() {
       const embedData = await embedRes.json();
       if (embedData.ok) {
         const url = `${embedData.url}/${season}/${episode}`;
-        showPlayer(url, embedData.duration, embedData.overlay_enabled, embedData.right_cover_enabled);
+        showPlayer(url, embedData.duration, embedData.overlay_enabled, embedData.right_cover_enabled, embedData.bottom_left_enabled);
         episodeModal.classList.remove('active');
       }
     }
@@ -1714,23 +1720,27 @@ async function playSelectedEpisode() {
   }
 }
 
-function showPlayer(url, duration, overlayEnabled, rightCoverEnabled) {
+function showPlayer(url, duration, overlayEnabled, rightCoverEnabled, bottomLeftEnabled) {
   playerIframe.src = url;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
-  // Set left overlay (same size as top ogmovie overlay)
-  leftOverlay.classList.add('active');
+  // Set bottom left overlay if enabled for this content
+  if (bottomLeftEnabled) {
+    bottomLeftOverlay.classList.add('active');
+  } else {
+    bottomLeftOverlay.classList.remove('active');
+  }
   
-  // Set middle overlay if enabled for this content (half as wide, no text)
+  // Set middle overlay if enabled for this content
   if (overlayEnabled) {
     middleOverlay.classList.add('active');
   } else {
     middleOverlay.classList.remove('active');
   }
   
-  // Set right cover overlay if enabled for this content (moved down more)
+  // Set right cover overlay if enabled for this content
   if (rightCoverEnabled) {
     rightCoverOverlay.classList.add('active');
   } else {
@@ -1747,7 +1757,7 @@ function closePlayer() {
   episodeData = null;
   selectedShow = null;
   authToken = null;
-  leftOverlay.classList.remove('active');
+  bottomLeftOverlay.classList.remove('active');
   middleOverlay.classList.remove('active');
   rightCoverOverlay.classList.remove('active');
   stopPlayerTimer();
