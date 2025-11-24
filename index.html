@@ -60,9 +60,21 @@
   /* Updated bottom overlay - removed time display */
   .bottom-overlay{position:absolute;bottom:5px;left:0;right:0;height:40px;background:rgba(0,0,0,0.3);z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
   
-  /* Bottom left overlay - positioned to the LEFT */
-  .bottom-left-overlay{position:absolute;bottom:5px;left:20px;width:200px;height:40px;background:#000;z-index:9;display:none;border-radius:8px}
-  .bottom-left-overlay.active{display:block}
+  /* Bottom left overlay - now covers VIDSRC perfectly */
+  .bottom-left-overlay {
+    position: absolute;
+    bottom: 5px;
+    left: 90px;
+    width: 90px;
+    height: 45px;
+    background: #000;
+    z-index: 9999;
+    pointer-events: none;
+    display: none;
+  }
+  .bottom-left-overlay.active {
+    display: block;
+  }
   
   /* Middle overlay - moved DOWN more and wider on sides */
   .middle-overlay{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);width:200px;height:40px;background:#000;z-index:8;display:none;border-radius:4px}
