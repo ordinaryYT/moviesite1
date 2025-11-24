@@ -76,6 +76,18 @@
   .right-cover-overlay{position:absolute;bottom:5px;right:0;width:25%;height:40px;background:#000;z-index:11;display:none}
   .right-cover-overlay.active{display:block}
   
+  /* NEW: vidsrc block overlay to hide watermark */
+  .vidsrc-block-overlay {
+    position: absolute;
+    bottom: 5px;
+    left: 0;
+    width: 180px;
+    height: 45px;
+    background: #000;
+    z-index: 9999;
+    pointer-events: none;
+  }
+  
   #requestSection{display:none;padding:2rem;max-width:1400px;margin:0 auto}
   #requestInput{width:100%;max-width:500px;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem;margin-bottom:1rem}
   #requestInput:focus{outline:none;border-color:#e50914}
@@ -394,6 +406,7 @@
   <div class="player-wrapper">
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
+    <div class="vidsrc-block-overlay"></div>
     <div class="bottom-left-overlay" id="bottomLeftOverlay"></div>
     <div class="middle-overlay" id="middleOverlay"></div>
     <div class="duration-replacement-overlay" id="durationReplacementOverlay"></div>
