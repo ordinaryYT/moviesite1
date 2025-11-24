@@ -1,0 +1,1754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ogmovie</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#000;color:#fff;font-family:Arial,sans-serif}
+  header{text-align:center;padding:2rem;position:relative}
+  h1{color:#e50914;font-size:2.5rem}
+  #adminBtn{position:absolute;top:2rem;right:2rem;background:#e50914;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;font-weight:bold}
+  #settingsBtn{position:absolute;top:2rem;right:7rem;background:#333;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer;font-weight:bold;display:flex;align-items:center;gap:0.5rem}
+  #searchContainer{max-width:500px;margin:0 auto 1rem auto;padding:0 2rem}
+  #searchInput{width:100%;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem}
+  #searchInput:focus{outline:none;border-color:#e50914}
+  #filterTabs{text-align:center;margin:1rem 0;}
+  #filterTabs button{margin:0 .25rem;padding:.5rem 1rem;background:#1a1a1a;border:none;color:#fff;border-radius:4px;cursor:pointer}
+  #filterTabs button.active{background:#e50914}
+  #movieGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem;padding:2rem;max-width:1400px;margin:0 auto}
+  .movie-card{cursor:pointer;border-radius:12px;overflow:hidden;background:#1a1a1a;transition:.3s;position:relative}
+  .movie-card:hover{transform:scale(1.05);box-shadow:0 0 20px rgba(229,9,20,.5)}
+  .movie-card img{width:100%;height:300px;object-fit:cover}
+  .movie-info{padding:1rem;text-align:center;position:relative}
+  .movie-info h3{font-size:1.1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .movie-info p{color:#aaa;font-size:.9rem}
+  .movie-info .duration{position:absolute;top:0.5rem;right:0.5rem;background:rgba(0,0,0,0.7);color:#fff;padding:0.25rem 0.5rem;border-radius:4px;font-size:0.8rem}
+  .card-actions{position:absolute;bottom:8px;right:8px;display:flex;gap:4px;opacity:0;transition:opacity .2s}
+  .movie-card:hover .card-actions{opacity:1}
+  .card-actions button{background:rgba(0,0,0,.6);border:none;color:#fff;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:.9rem}
+  .card-actions button:hover{background:#e50914}
+  .favorite-btn.filled{color:#e50914}
+  .modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center}
+  .modal.active{display:flex}
+  .modal-content{background:#1a1a1a;padding:2rem;border-radius:12px;width:90%;max-width:400px;position:relative}
+  .close-modal{position:absolute;top:10px;right:15px;background:none;border:none;color:#fff;font-size:1.5rem;cursor:pointer}
+  .modal h2{margin-bottom:1.5rem;color:#e50914}
+  .form-group{margin-bottom:1rem}
+  .form-group label{display:block;margin-bottom:0.5rem;color:#ccc}
+  .form-group input{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
+  .form-group select{width:100%;padding:0.75rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
+  .modal-btn{width:100%;padding:0.75rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold;margin-top:1rem}
+  #adminPanel{display:none;padding:2rem;max-width:1400px;margin:0 auto}
+  #adminPanel.active{display:block}
+  #settingsPanel{display:none;padding:2rem;max-width:1400px;margin:0 auto}
+  #settingsPanel.active{display:block}
+  .admin-actions{margin-bottom:2rem;display:flex;gap:1rem;flex-wrap:wrap}
+  .admin-btn{padding:0.75rem 1.5rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:bold}
+  .movie-list-admin{margin-top:2rem}
+  .movie-item-admin{display:flex;justify-content:space-between;align-items:center;padding:1rem;background:#1a1a1a;margin-bottom:1rem;border-radius:8px}
+  .movie-item-admin button{background:#ff4444;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer}
+  .movie-item-admin button + button{margin-left:0.5rem}
+  .player-container{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:999}
+  .player-container.active{display:block}
+  .close-btn{position:absolute;top:10px;right:10px;background:none;border:none;color:#fff;font-size:1.5rem;cursor:pointer;z-index:1001}
+  .player-wrapper{position:relative;width:100%;height:100%}
+  #playerIframe{width:100%;height:100%;border:none}
+  .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
+  .bottom-overlay{position:absolute;bottom:0;left:0;right:0;height:60px;background:#000;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
+  .time-display{color:#fff;font-family:monospace;font-size:1.1rem;font-weight:bold}
+  #requestSection{display:none;padding:2rem;max-width:1400px;margin:0 auto}
+  #requestInput{width:100%;max-width:500px;padding:1rem;border-radius:8px;border:2px solid #333;background:#1a1a1a;color:#fff;font-size:1.1rem;margin-bottom:1rem}
+  #requestInput:focus{outline:none;border-color:#e50914}
+  #requestResults{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1.5rem}
+  .request-note{color:#aaa;font-size:.9rem;margin-top:.5rem;}
+
+  /* Watch Together Styles */
+  #watchTogetherSection{display:none;padding:2rem;max-width:1400px;margin:0 auto}
+  .watch-together-actions{display:flex;gap:1rem;margin-bottom:2rem;flex-wrap:wrap}
+  .watch-btn{padding:1rem 2rem;background:#e50914;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-size:1.1rem}
+  .watch-btn:hover{background:#ff1a1a}
+  .rooms-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.5rem;margin-top:2rem}
+  .room-card{background:#1a1a1a;border-radius:12px;padding:1.5rem;border:2px solid #333;transition:.3s}
+  .room-card:hover{border-color:#e50914}
+  .room-card h3{color:#fff;margin-bottom:0.5rem}
+  .room-card p{color:#aaa;margin-bottom:0.5rem}
+  .room-card .viewers{color:#e50914;font-weight:bold}
+  .room-card button{width:100%;margin-top:1rem}
+  #watchRoom{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:1002}
+  .watch-room-header{position:absolute;top:0;left:0;right:0;background:rgba(0,0,0,.8);padding:1rem;display:flex;justify-content:space-between;align-items:center;z-index:1003}
+  .watch-room-content{display:flex;height:100vh;padding-top:60px}
+  .video-container{flex:1;position:relative;background:#000}
+  #hostVideo{width:100%;height:100%;object-fit:contain}
+  .screen-share-controls{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);padding:1rem;border-radius:8px;display:flex;gap:1rem;align-items:center}
+  .screen-share-controls button{background:#e50914;color:white;border:none;padding:0.5rem 1rem;border-radius:4px;cursor:pointer}
+  .screen-share-controls button:disabled{background:#666;cursor:not-allowed}
+  .no-stream-message{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:#aaa}
+  .viewers-panel{width:300px;background:#1a1a1a;padding:1rem;overflow-y:auto}
+  .viewers-list{margin-bottom:2rem}
+  .viewer-item{padding:0.5rem;background:#333;margin-bottom:0.5rem;border-radius:4px}
+  .viewer-item.host{color:#e50914;font-weight:bold}
+  .chat-messages{height:300px;overflow-y:auto;background:#000;padding:1rem;border-radius:8px;margin-bottom:1rem}
+  .chat-message{margin-bottom:0.5rem;padding:0.5rem;background:#333;border-radius:4px}
+  .chat-input{display:flex;gap:0.5rem}
+  .chat-input input{flex:1;padding:0.5rem;border-radius:4px;border:1px solid #333;background:#333;color:#fff}
+  .chat-input button{padding:0.5rem 1rem;background:#e50914;color:white;border:none;border-radius:4px;cursor:pointer}
+
+  /* Settings Styles */
+  .settings-section{background:#1a1a1a;padding:1.5rem;border-radius:12px;margin-bottom:2rem}
+  .settings-section h3{color:#e50914;margin-bottom:1rem}
+  .setting-item{display:flex;justify-content:space-between;align-items:center;padding:1rem;background:#333;border-radius:8px;margin-bottom:1rem}
+  .setting-info h4{margin-bottom:0.25rem}
+  .setting-info p{color:#aaa;font-size:0.9rem}
+  .toggle-switch{position:relative;display:inline-block;width:50px;height:24px}
+  .toggle-switch input{opacity:0;width:0;height:0}
+  .toggle-slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background-color:#666;transition:.4s;border-radius:24px}
+  .toggle-slider:before{position:absolute;content:"";height:16px;width:16px;left:4px;bottom:4px;background-color:white;transition:.4s;border-radius:50%}
+  input:checked + .toggle-slider{background-color:#e50914}
+  input:checked + .toggle-slider:before{transform:translateX(26px)}
+  .discord-connect{display:flex;align-items:center;gap:1rem}
+  .discord-connected{color:#7289da;font-weight:bold}
+
+  /* New Add-Content Search Modal */
+  #addContentSearchModal .modal-content{max-width:600px;}
+  #addSearchInput{width:100%;padding:0.75rem;margin-bottom:1rem;}
+  #addSearchResults{max-height:400px;overflow-y:auto;}
+  .add-search-item{display:flex;align-items:center;gap:1rem;padding:0.75rem;background:#1a1a1a;border-radius:8px;margin-bottom:0.5rem;cursor:pointer;transition:.2s;}
+  .add-search-item:hover{background:#333;}
+  .add-search-item img{width:60px;height:90px;object-fit:cover;border-radius:4px;}
+
+  /* Redirect System Styles */
+  .redirect-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:9999;align-items:center;justify-content:center;flex-direction:column;}
+  .redirect-overlay.active{display:flex;}
+  .redirect-message{color:#e50914;font-size:2rem;text-align:center;margin-bottom:2rem;}
+  .redirect-countdown{color:#fff;font-size:1.5rem;}
+</style>
+</head>
+<body>
+<header>
+  <h1>ogmovie</h1>
+  <button id="settingsBtn">⚙️ Settings</button>
+  <button id="adminBtn">Admin</button>
+</header>
+<main>
+  <div id="searchContainer">
+    <input type="text" id="searchInput" placeholder="Search for movies or TV shows..." />
+  </div>
+  <div id="filterTabs">
+    <button class="filter-btn active" data-type="all">All</button>
+    <button class="filter-btn" data-type="movie">Movies</button>
+    <button class="filter-btn" data-type="tv_show">TV Shows</button>
+    <button class="filter-btn" data-type="favorites">Favorites</button>
+    <button class="filter-btn" data-type="request">Request</button>
+    <button class="filter-btn" data-type="watch_together">Watch Together</button>
+  </div>
+  <div id="movieGrid"></div>
+  <div id="requestSection">
+    <h2>Request New Content</h2>
+    <input type="text" id="requestInput" placeholder="Search for movie or TV show to request...">
+    <p class="request-note">
+      <strong>Note:</strong> Some images may be broken or show the wrong thing. 
+      If this happens please watch the trailer to make sure it's the correct film/TV show.
+    </p>
+    <div id="requestResults"></div>
+  </div>
+  <div id="watchTogetherSection">
+    <h2>Watch Together</h2>
+    <div class="watch-together-actions">
+      <button class="watch-btn" onclick="openCreateRoomModal()">Create Room</button>
+      <button class="watch-btn" onclick="openJoinRoomModal()">Join Room</button>
+    </div>
+    <h3>Public Rooms</h3>
+    <div id="publicRooms" class="rooms-grid"></div>
+  </div>
+  <div id="adminPanel" class="admin-panel"></div>
+  <div id="settingsPanel" class="admin-panel"></div>
+</main>
+
+<!-- Redirect Overlay -->
+<div id="redirectOverlay" class="redirect-overlay">
+  <div class="redirect-message">Redirecting to New Website...</div>
+  <div class="redirect-countdown" id="redirectCountdown">Redirecting in 5 seconds</div>
+</div>
+
+<!-- Modals -->
+<div id="loginModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeLoginModal()">X</button>
+    <h2>Admin Login</h2>
+    <div class="form-group">
+      <label for="loginType">Login Type:</label>
+      <select id="loginType">
+        <option value="password">Password</option>
+        <option value="code">One-time Code</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="adminPassword">Password/Code:</label>
+      <input type="password" id="adminPassword" placeholder="Enter admin password or code">
+    </div>
+    <button class="modal-btn" onclick="adminLogin()">Login</button>
+  </div>
+</div>
+
+<!-- Create Room Modal -->
+<div id="createRoomModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeCreateRoomModal()">X</button>
+    <h2>Create Watch Room</h2>
+    <div class="form-group">
+      <label for="hostName">Your Name:</label>
+      <input type="text" id="hostName" placeholder="Enter your name" value="Host">
+    </div>
+    <div class="form-group">
+      <label for="roomMovie">What are you watching?</label>
+      <input type="text" id="roomMovie" placeholder="Movie or TV show title">
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" id="isPublicRoom"> Make room public (visible to everyone)</label>
+    </div>
+    <button class="modal-btn" onclick="createWatchRoom()">Create Room</button>
+  </div>
+</div>
+
+<!-- Join Room Modal -->
+<div id="joinRoomModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeJoinRoomModal()">X</button>
+    <h2>Join Watch Room</h2>
+    <div class="form-group">
+      <label for="viewerName">Your Name:</label>
+      <input type="text" id="viewerName" placeholder="Enter your name" value="Viewer">
+    </div>
+    <div class="form-group">
+      <label for="roomCode">Room Code:</label>
+      <input type="text" id="roomCode" placeholder="Enter room code" style="text-transform:uppercase">
+    </div>
+    <button class="modal-btn" onclick="joinWatchRoom()">Join Room</button>
+  </div>
+</div>
+
+<!-- Watch Room Interface -->
+<div id="watchRoom">
+  <div class="watch-room-header">
+    <h3 id="roomTitle">Watch Room</h3>
+    <div>
+      <span id="roomCodeDisplay"></span>
+      <button class="watch-btn" onclick="leaveWatchRoom()" style="margin-left:1rem">Leave Room</button>
+    </div>
+  </div>
+  <div class="watch-room-content">
+    <div class="video-container">
+      <video id="hostVideo" autoplay muted></video>
+      <div id="noStream" class="no-stream-message">
+        <h3>Waiting for host to start screen sharing...</h3>
+        <p>Host: Click "Start Screen Share" below</p>
+      </div>
+      <div class="screen-share-controls" id="screenShareControls" style="display:none">
+        <button id="startScreenShare" onclick="startScreenShare()">Start Screen Share</button>
+        <button id="stopScreenShare" onclick="stopScreenShare()" style="display:none">Stop Screen Share</button>
+        <span>Host Controls</span>
+      </div>
+    </div>
+    <div class="viewers-panel">
+      <div class="viewers-list">
+        <h4>Viewers (<span id="viewerCount">0</span>/9)</h4>
+        <div id="viewersList"></div>
+      </div>
+      <div class="chat-container">
+        <h4>Chat</h4>
+        <div id="chatMessages" class="chat-messages"></div>
+        <div class="chat-input">
+          <input type="text" id="chatInput" placeholder="Type a message..." onkeypress="if(event.key=='Enter') sendChatMessage()">
+          <button onclick="sendChatMessage()">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- NEW: Add-Content Search Modal -->
+<div id="addContentSearchModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeAddContentSearchModal()">X</button>
+    <h2>Search for Movie / TV Show</h2>
+    <input type="text" id="addSearchInput" placeholder="Enter title…" />
+    <div id="addSearchResults"></div>
+  </div>
+</div>
+
+<!-- NEW: Final Add Modal -->
+<div id="finalAddModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeFinalAddModal()">X</button>
+    <h2>Add Content</h2>
+    <div style="text-align:center;margin-bottom:1rem;">
+      <img id="finalPoster" src="" style="max-height:300px;border-radius:8px;" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+    </div>
+    <p><strong id="finalTitle"></strong> (<span id="finalYear"></span>)</p>
+    <input type="hidden" id="finalImdb">
+    <input type="hidden" id="finalType">
+    <div class="form-group">
+      <label>Passwords (comma-separated):</label>
+      <input type="text" id="finalPasswords" placeholder="pass1,pass2">
+    </div>
+    <div class="form-group">
+      <label>One-Time Passwords (optional):</label>
+      <input type="text" id="finalOneTime" placeholder="otp1,otp2">
+    </div>
+    <button class="modal-btn" onclick="submitFinalAdd()">Add to Library</button>
+  </div>
+</div>
+
+<div id="passwordModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closePasswordModal()">X</button>
+    <h2>Enter Password</h2>
+    <p id="passwordMovieTitle" style="margin-bottom:1rem;color:#ccc"></p>
+    <div id="autoCodeStatus" style="margin-bottom:1rem;padding:0.5rem;border-radius:4px;display:none"></div>
+    <div class="form-group">
+      <label for="moviePasswordInput">Password:</label>
+      <input type="password" id="moviePasswordInput" placeholder="Enter password">
+    </div>
+    <button class="modal-btn" onclick="verifyMoviePassword()">Watch</button>
+    <button id="autoCodeBtn" class="modal-btn" style="background:#7289da;display:none;margin-top:0.5rem" onclick="requestAutoCode()">Request Auto-Code</button>
+  </div>
+</div>
+
+<div id="globalPasswordModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeGlobalPasswordModal()">X</button>
+    <h2>Add Global Password</h2>
+    <div class="form-group">
+      <label for="globalPassword">Password:</label>
+      <input type="password" id="globalPassword" placeholder="Enter global password">
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" id="isOneTime"> One-Time Password</label>
+    </div>
+    <button class="modal-btn" onclick="addGlobalPassword()">Add Global Password</button>
+  </div>
+</div>
+
+<div id="episodeModal" class="modal">
+  <div class="modal-content">
+    <button class="close-modal" onclick="closeEpisodeModal()">X</button>
+    <h2>Select Episode</h2>
+    <p id="episodeShowTitle" style="margin-bottom:1rem;color:#ccc"></p>
+    <div class="form-group">
+      <label for="seasonSelect">Season:</label>
+      <select id="seasonSelect" onchange="updateEpisodeSelect()"></select>
+    </div>
+    <div class="form-group">
+      <label for="episodeSelect">Episode:</label>
+      <select id="episodeSelect"></select>
+    </div>
+    <button class="modal-btn" onclick="playSelectedEpisode()">Watch Episode</button>
+  </div>
+</div>
+
+<div id="trailerModal" class="modal">
+  <div class="modal-content" style="max-width:800px;">
+    <button class="close-modal" onclick="closeTrailerModal()">X</button>
+    <h2>Trailer</h2>
+    <div style="position:relative;padding-bottom:56.25%;height:0;">
+      <iframe id="trailerIframe" style="position:absolute;top:0;left:0;width:100%;height:100%;" 
+              src="" frameborder="0" allowfullscreen></iframe>
+    </div>
+  </div>
+</div>
+
+<div id="playerContainer" class="player-container">
+  <button class="close-btn" onclick="closePlayer()">X</button>
+  <div class="player-wrapper">
+    <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
+    <div class="iframe-overlay">ogmovie</div>
+    <div class="bottom-overlay">
+      <div class="time-display" id="timeDisplay">--:--:-- / --:--:--</div>
+    </div>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const API = window.location.origin + '/api';
+const OMDb_KEY = '7f93c41d';
+const movieGrid = document.getElementById('movieGrid');
+const requestSection = document.getElementById('requestSection');
+const requestInput = document.getElementById('requestInput');
+const requestResults = document.getElementById('requestResults');
+const watchTogetherSection = document.getElementById('watchTogetherSection');
+const publicRooms = document.getElementById('publicRooms');
+const playerIframe = document.getElementById('playerIframe');
+const playerContainer = document.getElementById('playerContainer');
+const adminBtn = document.getElementById('adminBtn');
+const settingsBtn = document.getElementById('settingsBtn');
+const adminPanel = document.getElementById('adminPanel');
+const settingsPanel = document.getElementById('settingsPanel');
+const loginModal = document.getElementById('loginModal');
+const passwordModal = document.getElementById('passwordModal');
+const globalPasswordModal = document.getElementById('globalPasswordModal');
+const episodeModal = document.getElementById('episodeModal');
+const trailerModal = document.getElementById('trailerModal');
+const searchInput = document.getElementById('searchInput');
+const timeDisplay = document.getElementById('timeDisplay');
+const autoCodeBtn = document.getElementById('autoCodeBtn');
+const autoCodeStatus = document.getElementById('autoCodeStatus');
+const redirectOverlay = document.getElementById('redirectOverlay');
+const redirectCountdown = document.getElementById('redirectCountdown');
+
+// Watch Together elements
+const watchRoom = document.getElementById('watchRoom');
+const hostVideo = document.getElementById('hostVideo');
+const noStream = document.getElementById('noStream');
+const screenShareControls = document.getElementById('screenShareControls');
+const startScreenShareBtn = document.getElementById('startScreenShare');
+const stopScreenShareBtn = document.getElementById('stopScreenShare');
+const viewersList = document.getElementById('viewersList');
+const viewerCount = document.getElementById('viewerCount');
+const chatMessages = document.getElementById('chatMessages');
+const chatInput = document.getElementById('chatInput');
+const roomTitle = document.getElementById('roomTitle');
+const roomCodeDisplay = document.getElementById('roomCodeDisplay');
+
+let adminToken = null;
+let adminRole = null;
+let userToken = null;
+let currentMovies = [];
+let selectedMovieId = null;
+let selectedShow = null;
+let episodeData = null;
+let authToken = null;
+let currentFilter = 'all';
+let playerTimer = null;
+let playerStartTime = null;
+let playerDuration = null;
+const FAV_KEY = 'ogmovie_favorites';
+
+// Watch Together variables
+let socket = null;
+let currentRoom = null;
+let isHost = false;
+let localStream = null;
+let peerConnections = new Map();
+
+// User settings
+let userSettings = null;
+
+// Redirect system
+let redirectEnabled = false;
+let redirectTimer = null;
+
+function debounce(func, delay = 500) {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), delay);
+  };
+}
+
+function createMovieCard(movie) {
+  const year = movie.year || 'N/A';
+  const duration = movie.duration ? `<div class="duration">${movie.duration}</div>` : '';
+  const card = document.createElement('div');
+  card.className = 'movie-card';
+  card.innerHTML = `
+    <img src="${movie.image || 'https://via.placeholder.com/300x450/333/fff?text=No+Poster'}" 
+         onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+    <div class="movie-info">
+      ${duration}
+      <h3>${movie.title}</h3>
+      <p>${year} (${movie.type === 'movie' ? 'Movie' : 'TV Show'})</p>
+    </div>
+    <div class="card-actions">
+      <button class="favorite-btn" data-id="${movie.id}">Heart</button>
+      <button class="trailer-btn" data-id="${movie.id}">Trailer</button>
+      <button class="play-btn" data-id="${movie.id}">Play</button>
+    </div>`;
+  card.querySelector('.movie-info').onclick = () => requestMoviePassword(movie.id, movie.title, movie.type);
+  return card;
+}
+
+function displayMovies(movies) {
+  movieGrid.innerHTML = '';
+  if (movies.length === 0) {
+    movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
+    return;
+  }
+  movies.forEach(movie => movieGrid.appendChild(createMovieCard(movie)));
+  updateFavoriteButtons();
+}
+
+function updateFavoriteButtons() {
+  const favs = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
+  document.querySelectorAll('.favorite-btn').forEach(btn => {
+    const id = parseInt(btn.dataset.id);
+    btn.textContent = favs.includes(id) ? 'Heart' : 'Heart';
+  });
+}
+
+function applyFilters(search = '') {
+  if (currentFilter === 'request') {
+    movieGrid.style.display = 'none';
+    document.getElementById('searchContainer').style.display = 'none';
+    requestSection.style.display = 'block';
+    watchTogetherSection.style.display = 'none';
+    return;
+  }
+  
+  if (currentFilter === 'watch_together') {
+    movieGrid.style.display = 'none';
+    document.getElementById('searchContainer').style.display = 'none';
+    requestSection.style.display = 'none';
+    watchTogetherSection.style.display = 'block';
+    loadPublicRooms();
+    return;
+  }
+  
+  movieGrid.style.display = 'grid';
+  document.getElementById('searchContainer').style.display = 'block';
+  requestSection.style.display = 'none';
+  watchTogetherSection.style.display = 'none';
+  
+  let list = currentMovies;
+  const lower = search.toLowerCase();
+  if (search) list = list.filter(m => m.title.toLowerCase().includes(lower));
+  if (currentFilter === 'movie') list = list.filter(m => m.type === 'movie');
+  if (currentFilter === 'tv_show') list = list.filter(m => m.type === 'tv_show');
+  if (currentFilter === 'favorites') {
+    const favIds = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || '[]'));
+    list = list.filter(m => favIds.has(m.id));
+  }
+  displayMovies(list);
+}
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentFilter = btn.dataset.type;
+    applyFilters(searchInput.value);
+  });
+});
+
+document.addEventListener('click', async e => {
+  const btn = e.target;
+  if (btn.classList.contains('favorite-btn')) {
+    const id = parseInt(btn.dataset.id);
+    let favs = JSON.parse(localStorage.getItem(FAV_KEY) || '[]');
+    const idx = favs.indexOf(id);
+    if (idx > -1) favs.splice(idx, 1);
+    else favs.push(id);
+    localStorage.setItem(FAV_KEY, JSON.stringify(favs));
+    updateFavoriteButtons();
+    if (currentFilter === 'favorites') applyFilters(searchInput.value);
+    return;
+  }
+  if (btn.classList.contains('play-btn')) {
+    const id = parseInt(btn.dataset.id);
+    const movie = currentMovies.find(m => m.id === id);
+    requestMoviePassword(id, movie.title, movie.type);
+    return;
+  }
+  if (btn.classList.contains('trailer-btn')) {
+    if (redirectEnabled) {
+      // Silently fail - do nothing
+      return;
+    }
+    const id = btn.dataset.id;
+    const title = currentMovies.find(m => m.id == id)?.title || btn.dataset.title;
+    if (!title) return;
+    try {
+      const res = await fetch(`${API}/trailer?title=${encodeURIComponent(title + ' official trailer')}`);
+      const data = await res.json();
+      if (data.ok) {
+        document.getElementById('trailerIframe').src = data.url;
+        trailerModal.classList.add('active');
+      }
+    } catch {
+      // Silently fail
+    }
+    return;
+  }
+  if (btn.classList.contains('wishlist-btn')) {
+    const {title, type, imdb} = btn.dataset;
+    try {
+      const res = await fetch(`${API}/wishlist`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({title, type, imdb_id: imdb})
+      });
+      const data = await res.json();
+      if (data.ok) {
+        btn.disabled = true;
+        btn.textContent = 'Requested';
+      }
+    } catch {
+      // Silently fail
+    }
+  }
+});
+
+function closeTrailerModal() {
+  trailerModal.classList.remove('active');
+  document.getElementById('trailerIframe').src = '';
+}
+
+searchInput.addEventListener('input', e => applyFilters(e.target.value));
+
+requestInput.addEventListener('input', debounce(async () => {
+  const q = requestInput.value.trim();
+  if (q.length < 3) { requestResults.innerHTML = ''; return; }
+
+  try {
+    const res = await fetch(`https://www.omdbapi.com/?s=${encodeURIComponent(q)}&apikey=${OMDb_KEY}`);
+    const data = await res.json();
+    if (!data.Search) { requestResults.innerHTML = '<p style="color:#aaa;">No results</p>'; return; }
+
+  requestResults.innerHTML = '';
+  data.Search.forEach(item => {
+    const title = item.Title;
+    const year  = item.Year || 'N/A';
+    const img   = item.Poster && item.Poster !== 'N/A' ? item.Poster : 'https://via.placeholder.com/300x450/333/fff?text=No+Poster';
+    const type  = item.Type === 'movie' ? 'movie' : 'tv_show';
+    const imdb  = item.imdbID;
+
+    if (currentMovies.some(m => m.imdb_id === imdb)) return;
+
+    const card = document.createElement('div');
+    card.className = 'movie-card';
+    card.innerHTML = `
+      <img src="${img}" onerror="this.src='https://via.placeholder.com/300x450/333/fff?text=No+Poster'">
+      <div class="movie-info">
+        <h3>${title}</h3>
+        <p>${year} (${type.charAt(0).toUpperCase() + type.slice(1)})</p>
+      </div>
+      <div class="card-actions">
+        <button class="trailer-btn" data-title="${title}">Trailer</button>
+        <button class="wishlist-btn" data-title="${title}" data-type="${type}" data-imdb="${imdb}">Wishlist</button>
+      </div>`;
+    requestResults.appendChild(card);
+  });
+  } catch {
+    requestResults.innerHTML = '<p style="color:#aaa;">Search failed</p>';
+  }
+}, 600));
+
+/* ────── SETTINGS PANEL ────── */
+function openSettingsPanel() {
+  movieGrid.style.display = 'none';
+  requestSection.style.display = 'none';
+  watchTogetherSection.style.display = 'none';
+  adminPanel.style.display = 'none';
+  settingsPanel.classList.add('active');
+  loadUserSettings();
+}
+
+function closeSettingsPanel() {
+  settingsPanel.classList.remove('active');
+  movieGrid.style.display = 'grid';
+  applyFilters();
+}
+
+function loadUserSettings() {
+  if (!userToken) {
+    settingsPanel.innerHTML = `
+      <h2>Settings</h2>
+      <div class="settings-section">
+        <h3>Account</h3>
+        <div class="setting-item">
+          <div class="setting-info">
+            <h4>Connect Discord</h4>
+            <p>Link your Discord account for auto-code features</p>
+          </div>
+          <button class="admin-btn" onclick="connectDiscord()">Connect Discord</button>
+        </div>
+      </div>
+      <p style="color:#aaa; text-align:center;">Please connect your Discord account to access settings</p>
+    `;
+    return;
+  }
+
+  settingsPanel.innerHTML = `
+    <h2>Settings</h2>
+    <div class="settings-section">
+      <h3>Account</h3>
+      <div class="setting-item">
+        <div class="discord-connect">
+          <div class="setting-info">
+            <h4>Discord Account</h4>
+            <p class="discord-connected">${userSettings.discord_username || 'Not connected'}</p>
+          </div>
+          ${!userSettings.discord_username ? '<button class="admin-btn" onclick="connectDiscord()">Connect Discord</button>' : ''}
+        </div>
+      </div>
+    </div>
+    <div class="settings-section">
+      <h3>Playback Features</h3>
+      <div class="setting-item">
+        <div class="setting-info">
+          <h4>Auto-Code Request</h4>
+          <p>Automatically request one-time codes when accessing content</p>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="autoCodeToggle" ${userSettings.auto_code_enabled ? 'checked' : ''} onchange="toggleAutoCode(this.checked)">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+    <div style="text-align:center; margin-top:2rem;">
+      <button class="admin-btn" onclick="closeSettingsPanel()">Close Settings</button>
+    </div>
+  `;
+}
+
+async function connectDiscord() {
+  window.location.href = `${API}/auth/discord`;
+}
+
+async function toggleAutoCode(enabled) {
+  if (!userToken) return;
+  
+  try {
+    const res = await fetch(`${API}/user/settings/auto-code`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${userToken}`
+      },
+      body: JSON.stringify({ enabled })
+    });
+    
+    const data = await res.json();
+    if (data.ok) {
+      userSettings.auto_code_enabled = enabled;
+    }
+  } catch (error) {
+    // Silently fail
+  }
+}
+
+async function loadUserData() {
+  if (!userToken) return;
+  
+  try {
+    const res = await fetch(`${API}/user/settings`, {
+      headers: {
+        'Authorization': `Bearer ${userToken}`
+      }
+    });
+    
+    const data = await res.json();
+    if (data.ok) {
+      userSettings = data.settings;
+    }
+  } catch (error) {
+    console.error('Failed to load user settings:', error);
+  }
+}
+
+/* ────── AUTO-CODE FEATURE ────── */
+async function requestAutoCode() {
+  if (!userToken) {
+    return;
+  }
+
+  const movie = currentMovies.find(m => m.id === selectedMovieId);
+  if (!movie) return;
+
+  autoCodeStatus.style.display = 'block';
+  autoCodeStatus.style.background = '#333';
+  autoCodeStatus.style.color = '#fff';
+  autoCodeStatus.textContent = 'Requesting code...';
+
+  try {
+    const res = await fetch(`${API}/auto-code/request`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${userToken}`
+      },
+      body: JSON.stringify({
+        movieTitle: movie.title,
+        movieId: selectedMovieId
+      })
+    });
+
+    const data = await res.json();
+    if (data.ok) {
+      autoCodeStatus.style.background = '#2d5a2d';
+      autoCodeStatus.textContent = data.message;
+      autoCodeBtn.disabled = true;
+    } else {
+      autoCodeStatus.style.background = '#5a2d2d';
+      autoCodeStatus.textContent = data.error;
+    }
+  } catch (error) {
+    autoCodeStatus.style.background = '#5a2d2d';
+    autoCodeStatus.textContent = 'Failed to request code';
+  }
+}
+
+/* ────── PLAYER TIMER ────── */
+function startPlayerTimer(duration) {
+  if (playerTimer) {
+    clearInterval(playerTimer);
+  }
+
+  playerStartTime = Date.now();
+  playerDuration = parseDuration(duration);
+  
+  if (!playerDuration) {
+    timeDisplay.textContent = '--:--:-- / --:--:--';
+    return;
+  }
+
+  playerTimer = setInterval(updatePlayerTimer, 1000);
+  updatePlayerTimer();
+}
+
+function parseDuration(duration) {
+  if (!duration) return null;
+  
+  // Handle "X min" format
+  if (duration.includes('min')) {
+    const minutes = parseInt(duration);
+    return minutes * 60;
+  }
+  
+  // Handle "X h Y min" format
+  if (duration.includes('h')) {
+    const parts = duration.split(' ');
+    let totalSeconds = 0;
+    for (const part of parts) {
+      if (part.includes('h')) {
+        totalSeconds += parseInt(part) * 3600;
+      } else if (part.includes('min')) {
+        totalSeconds += parseInt(part) * 60;
+      }
+    }
+    return totalSeconds;
+  }
+  
+  return null;
+}
+
+function updatePlayerTimer() {
+  if (!playerStartTime || !playerDuration) return;
+  
+  const elapsed = Math.floor((Date.now() - playerStartTime) / 1000);
+  const remaining = Math.max(0, playerDuration - elapsed);
+  
+  const elapsedStr = formatTime(elapsed);
+  const totalStr = formatTime(playerDuration);
+  
+  timeDisplay.textContent = `${elapsedStr} / ${totalStr}`;
+}
+
+function formatTime(seconds) {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  
+  return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+function stopPlayerTimer() {
+  if (playerTimer) {
+    clearInterval(playerTimer);
+    playerTimer = null;
+  }
+  timeDisplay.textContent = '--:--:-- / --:--:--';
+}
+
+/* ────── PASSWORD MODAL ────── */
+function requestMoviePassword(movieId, title, type) {
+  if (redirectEnabled) {
+    // Silently fail - do nothing
+    return;
+  }
+  
+  selectedMovieId = movieId;
+  selectedShow = { id: movieId, title, type };
+  document.getElementById('passwordMovieTitle').textContent = title;
+  
+  // Show/hide auto-code button based on user settings
+  if (userToken && userSettings && userSettings.auto_code_enabled) {
+    autoCodeBtn.style.display = 'block';
+    autoCodeStatus.style.display = 'none';
+  } else {
+    autoCodeBtn.style.display = 'none';
+    autoCodeStatus.style.display = 'none';
+  }
+  
+  passwordModal.classList.add('active');
+}
+
+/* ────── REDIRECT SYSTEM ────── */
+function setupSocketListeners() {
+  socket.on('redirect-website', (data) => {
+    redirectEnabled = data.enabled;
+    
+    if (redirectEnabled && data.redirectUrl) {
+      startRedirectCountdown(data.redirectUrl);
+    } else {
+      stopRedirectCountdown();
+    }
+  });
+
+  socket.on('room-created', (data) => {
+    currentRoom = data.room;
+    isHost = true;
+    showWatchRoom();
+  });
+
+  socket.on('room-joined', (data) => {
+    currentRoom = data.room;
+    isHost = false;
+    showWatchRoom();
+  });
+
+  socket.on('room-error', (data) => {
+    // Silently handle room errors
+  });
+
+  socket.on('room-closed', (data) => {
+    leaveWatchRoom();
+  });
+
+  socket.on('viewer-joined', (data) => {
+    updateViewersList();
+  });
+
+  socket.on('viewer-left', (data) => {
+    updateViewersList();
+  });
+
+  socket.on('viewers-updated', (data) => {
+    updateViewersList(data.viewers);
+  });
+
+  // WebRTC signaling
+  socket.on('webrtc-offer', async (data) => {
+    if (!isHost) {
+      try {
+        const peerConnection = new RTCPeerConnection({
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        });
+
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate) {
+            socket.emit('webrtc-ice-candidate', {
+              target: data.sender,
+              candidate: event.candidate
+            });
+          }
+        };
+
+        peerConnection.ontrack = (event) => {
+          hostVideo.srcObject = event.streams[0];
+          noStream.style.display = 'none';
+          hostVideo.style.display = 'block';
+        };
+
+        await peerConnection.setRemoteDescription(data.offer);
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+
+        socket.emit('webrtc-answer', {
+          target: data.sender,
+          answer: answer
+        });
+
+        peerConnections.set(data.sender, peerConnection);
+      } catch (err) {
+        console.error('Error handling offer:', err);
+      }
+    }
+  });
+
+  socket.on('webrtc-answer', async (data) => {
+    if (isHost) {
+      const peerConnection = peerConnections.get(data.sender);
+      if (peerConnection) {
+        await peerConnection.setRemoteDescription(data.answer);
+      }
+    }
+  });
+
+  socket.on('webrtc-ice-candidate', async (data) => {
+    const peerConnection = peerConnections.get(data.sender);
+    if (peerConnection) {
+      await peerConnection.addIceCandidate(data.candidate);
+    }
+  });
+
+  socket.on('host-screen-started', (data) => {
+    if (!isHost) {
+      noStream.style.display = 'none';
+      hostVideo.style.display = 'block';
+    }
+  });
+
+  socket.on('host-screen-stopped', (data) => {
+    if (!isHost) {
+      noStream.style.display = 'block';
+      hostVideo.style.display = 'none';
+      hostVideo.srcObject = null;
+    }
+  });
+
+  socket.on('chat-message', (data) => {
+    addChatMessage(data.sender, data.message, data.timestamp);
+  });
+}
+
+function startRedirectCountdown(redirectUrl) {
+  let countdown = 5;
+  redirectOverlay.classList.add('active');
+  
+  redirectTimer = setInterval(() => {
+    redirectCountdown.textContent = `Redirecting to new website in ${countdown} seconds`;
+    countdown--;
+    
+    if (countdown <= 0) {
+      clearInterval(redirectTimer);
+      // Redirect to the specified URL
+      window.location.href = redirectUrl;
+    }
+  }, 1000);
+}
+
+function stopRedirectCountdown() {
+  if (redirectTimer) {
+    clearInterval(redirectTimer);
+    redirectTimer = null;
+  }
+  redirectOverlay.classList.remove('active');
+}
+
+/* ────── WATCH TOGETHER FUNCTIONALITY ────── */
+function openCreateRoomModal() {
+  document.getElementById('createRoomModal').classList.add('active');
+}
+
+function closeCreateRoomModal() {
+  document.getElementById('createRoomModal').classList.remove('active');
+}
+
+function openJoinRoomModal() {
+  document.getElementById('joinRoomModal').classList.add('active');
+}
+
+function closeJoinRoomModal() {
+  document.getElementById('joinRoomModal').classList.remove('active');
+}
+
+async function createWatchRoom() {
+  const hostName = document.getElementById('hostName').value.trim() || 'Host';
+  const movieTitle = document.getElementById('roomMovie').value.trim() || 'Unknown Movie';
+  const isPublic = document.getElementById('isPublicRoom').checked;
+
+  if (!socket) {
+    socket = io();
+    setupSocketListeners();
+  }
+
+  socket.emit('create-room', {
+    hostName,
+    movieTitle,
+    isPublic
+  });
+
+  closeCreateRoomModal();
+}
+
+async function joinWatchRoom() {
+  const viewerName = document.getElementById('viewerName').value.trim() || 'Viewer';
+  const roomCode = document.getElementById('roomCode').value.trim().toUpperCase();
+
+  if (!roomCode) {
+    return;
+  }
+
+  // Check if room exists
+  try {
+    const res = await fetch(`${API}/watch-together/room-exists`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomCode })
+    });
+    const data = await res.json();
+    if (!data.exists) {
+      return;
+    }
+    if (data.isFull) {
+      return;
+    }
+  } catch (err) {
+    return;
+  }
+
+  if (!socket) {
+    socket = io();
+    setupSocketListeners();
+  }
+
+  socket.emit('join-room', {
+    roomCode,
+    viewerName
+  });
+
+  closeJoinRoomModal();
+}
+
+async function startScreenShare() {
+  try {
+    // Get screen share with audio if possible
+    localStream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        cursor: 'always',
+        displaySurface: 'monitor'
+      },
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        sampleRate: 44100
+      }
+    });
+
+    // Show preview to host
+    hostVideo.srcObject = localStream;
+    noStream.style.display = 'none';
+    hostVideo.style.display = 'block';
+    startScreenShareBtn.style.display = 'none';
+    stopScreenShareBtn.style.display = 'block';
+
+    // Notify viewers
+    socket.emit('host-screen-started', {
+      roomCode: currentRoom.id
+    });
+
+    // Handle track ended
+    localStream.getTracks().forEach(track => {
+      track.onended = () => {
+        stopScreenShare();
+      };
+    });
+
+    // Create peer connections for existing viewers
+    currentRoom.viewers.forEach((viewer, viewerId) => {
+      if (viewerId !== socket.id) {
+        createPeerConnection(viewerId);
+      }
+    });
+
+  } catch (err) {
+    console.error('Screen share failed:', err);
+  }
+}
+
+async function createPeerConnection(viewerId) {
+  try {
+    const peerConnection = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('webrtc-ice-candidate', {
+          target: viewerId,
+          candidate: event.candidate
+        });
+      }
+    };
+
+    // Add all tracks from local stream
+    if (localStream) {
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+      });
+    }
+
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+
+    socket.emit('webrtc-offer', {
+      target: viewerId,
+      offer: offer
+    });
+
+    peerConnections.set(viewerId, peerConnection);
+
+  } catch (err) {
+    console.error('Error creating peer connection:', err);
+  }
+}
+
+function stopScreenShare() {
+  if (localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+    localStream = null;
+  }
+
+  // Close all peer connections
+  peerConnections.forEach(pc => pc.close());
+  peerConnections.clear();
+
+  // Reset UI
+  hostVideo.srcObject = null;
+  noStream.style.display = 'block';
+  hostVideo.style.display = 'none';
+  startScreenShareBtn.style.display = 'block';
+  stopScreenShareBtn.style.display = 'none';
+
+  // Notify viewers
+  if (socket && currentRoom) {
+    socket.emit('host-screen-stopped', {
+      roomCode: currentRoom.id
+    });
+  }
+}
+
+function showWatchRoom() {
+  watchRoom.style.display = 'block';
+  movieGrid.style.display = 'none';
+  requestSection.style.display = 'none';
+  watchTogetherSection.style.display = 'none';
+  adminPanel.style.display = 'none';
+  settingsPanel.style.display = 'none';
+
+  roomTitle.textContent = currentRoom.movieTitle;
+  roomCodeDisplay.textContent = `Room: ${currentRoom.id}`;
+  
+  if (isHost) {
+    screenShareControls.style.display = 'flex';
+  } else {
+    screenShareControls.style.display = 'none';
+  }
+  
+  updateViewersList();
+}
+
+function leaveWatchRoom() {
+  stopScreenShare();
+  
+  if (socket) {
+    socket.disconnect();
+    socket = null;
+  }
+
+  watchRoom.style.display = 'none';
+  currentRoom = null;
+  isHost = false;
+  localStream = null;
+  peerConnections.clear();
+  
+  // Return to watch together section
+  applyFilters();
+}
+
+function updateViewersList(viewers = null) {
+  if (!currentRoom) return;
+  
+  const viewersArray = viewers || Array.from(currentRoom.viewers.values());
+  viewersList.innerHTML = '';
+  viewerCount.textContent = viewersArray.length;
+
+  viewersArray.forEach(viewer => {
+    const viewerItem = document.createElement('div');
+    viewerItem.className = `viewer-item ${viewer.isHost ? 'host' : ''}`;
+    viewerItem.textContent = `${viewer.name} ${viewer.isHost ? '(Host)' : ''}`;
+    viewersList.appendChild(viewerItem);
+  });
+
+  // If host, create peer connections for new viewers
+  if (isHost && localStream) {
+    viewersArray.forEach(viewer => {
+      if (!viewer.isHost && !peerConnections.has(viewer.id)) {
+        createPeerConnection(viewer.id);
+      }
+    });
+  }
+}
+
+function sendChatMessage() {
+  const message = chatInput.value.trim();
+  if (!message || !currentRoom) return;
+
+  socket.emit('chat-message', {
+    roomCode: currentRoom.id,
+    message: message
+  });
+
+  chatInput.value = '';
+}
+
+function addChatMessage(sender, message, timestamp) {
+  const messageElement = document.createElement('div');
+  messageElement.className = 'chat-message';
+  messageElement.innerHTML = `
+    <strong>${sender}:</strong> ${message}
+    <small style="color:#aaa; display:block;">${timestamp}</small>
+  `;
+  chatMessages.appendChild(messageElement);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+async function loadPublicRooms() {
+  try {
+    const res = await fetch(`${API}/watch-together/rooms`);
+    const data = await res.json();
+    if (data.ok) {
+      publicRooms.innerHTML = '';
+      if (data.rooms.length === 0) {
+        publicRooms.innerHTML = '<p style="color:#aaa;text-align:center;grid-column:1/-1;">No public rooms available</p>';
+      } else {
+        data.rooms.forEach(room => {
+          const roomCard = document.createElement('div');
+          roomCard.className = 'room-card';
+          roomCard.innerHTML = `
+            <h3>${room.movieTitle}</h3>
+            <p>Host: ${room.hostName}</p>
+            <p class="viewers">${room.viewerCount}/${room.maxViewers} viewers</p>
+            <p>Room: ${room.id}</p>
+            <button class="modal-btn" onclick="joinPublicRoom('${room.id}')">Join Room</button>
+          `;
+          publicRooms.appendChild(roomCard);
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load public rooms:', err);
+    publicRooms.innerHTML = '<p style="color:red;">Failed to load rooms</p>';
+  }
+}
+
+function joinPublicRoom(roomCode) {
+  document.getElementById('roomCode').value = roomCode;
+  openJoinRoomModal();
+}
+
+/* ────── ADD CONTENT SEARCH ────── */
+function openAddContentModal() {
+  document.getElementById('addContentSearchModal').classList.add('active');
+  document.getElementById('addSearchInput').focus();
+}
+function closeAddContentSearchModal() {
+  document.getElementById('addContentSearchModal').classList.remove('active');
+  document.getElementById('addSearchInput').value = '';
+  document.getElementById('addSearchResults').innerHTML = '';
+}
+document.getElementById('addSearchInput').addEventListener('input', debounce(async () => {
+  const q = document.getElementById('addSearchInput').value.trim();
+  if (q.length < 2) {
+    document.getElementById('addSearchResults').innerHTML = '';
+    return;
+  }
+  try {
+    const res = await fetch(`https://www.omdbapi.com/?s=${encodeURIComponent(q)}&apikey=${OMDb_KEY}`);
+    const data = await res.json();
+    if (!data.Search) {
+      document.getElementById('addSearchResults').innerHTML = '<p style="color:#aaa">No results</p>';
+      return;
+    }
+    const html = data.Search.map(item => {
+      const img = item.Poster && item.Poster !== 'N/A' ? item.Poster : 'https://via.placeholder.com/100x150/333/fff?text=No+Poster';
+      return `
+        <div class="add-search-item" data-imdb="${item.imdbID}" data-title="${item.Title}" data-year="${item.Year||''}" data-poster="${item.Poster||''}" data-type="${item.Type==='series'?'tv_show':'movie'}">
+          <img src="${img}" onerror="this.src='https://via.placeholder.com/100x150/333/fff?text=No+Poster'">
+          <div>
+            <strong>${item.Title}</strong><br>
+            <small>${item.Year||'?'} • ${item.Type==='series'?'TV Show':'Movie'}</small>
+          </div>
+        </div>`;
+    }).join('');
+    document.getElementById('addSearchResults').innerHTML = html;
+  } catch {
+    document.getElementById('addSearchResults').innerHTML = '<p style="color:#aaa">Search failed</p>';
+  }
+}, 500));
+
+document.getElementById('addSearchResults').addEventListener('click', e => {
+  const item = e.target.closest('.add-search-item');
+  if (!item) return;
+  const { imdb, title, year, poster, type } = item.dataset;
+  document.getElementById('finalTitle').textContent = title;
+  document.getElementById('finalYear').textContent = year || '—';
+  document.getElementById('finalPoster').src = poster && poster !== 'N/A' ? poster : 'https://via.placeholder.com/300x450/333/fff?text=No+Poster';
+  document.getElementById('finalImdb').value = imdb;
+  document.getElementById('finalType').value = type;
+  closeAddContentSearchModal();
+  document.getElementById('finalAddModal').classList.add('active');
+});
+
+function closeFinalAddModal() {
+  document.getElementById('finalAddModal').classList.remove('active');
+  document.getElementById('finalPasswords').value = '';
+  document.getElementById('finalOneTime').value = '';
+}
+async function submitFinalAdd() {
+  const imdbId = document.getElementById('finalImdb').value;
+  const type = document.getElementById('finalType').value;
+  const passwords = document.getElementById('finalPasswords').value.split(',').map(p=>p.trim()).filter(p=>p);
+  const oneTime = document.getElementById('finalOneTime').value.split(',').map(p=>p.trim()).filter(p=>p);
+  if (!imdbId) return;
+  try {
+    const res = await fetch(API + '/movies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify({ imdbId, contentPasswords: passwords, oneTimePasswords: oneTime, type })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      closeFinalAddModal();
+      loadMovies();
+    }
+  } catch { }
+}
+
+/* ────── ADMIN ────── */
+function openAdminPanel() { loginModal.classList.add('active'); }
+function closeLoginModal() { loginModal.classList.remove('active'); }
+function closePasswordModal() { passwordModal.classList.remove('active'); }
+function closeGlobalPasswordModal() { globalPasswordModal.classList.remove('active'); }
+function closeEpisodeModal() { episodeModal.classList.remove('active'); }
+
+async function adminLogin() {
+  const loginType = document.getElementById('loginType').value;
+  const pass = document.getElementById('adminPassword').value;
+  if (!pass) return;
+  try {
+    const endpoint = loginType === 'password' ? '/admin/login' : '/admin/onetime-login';
+    const body = loginType === 'password' ? {password: pass} : {code: pass};
+    const res = await fetch(API + endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (data.ok) {
+      adminToken = data.token;
+      adminRole = data.role || 'admin';
+      loginModal.classList.remove('active');
+      showAdminPanel();
+      loadAdminMovies();
+      if (adminRole === 'admin') loadGlobalPasswords();
+    }
+  } catch (err) {
+    // Silently fail
+  }
+}
+
+function showAdminPanel() {
+  movieGrid.style.display = 'none';
+  requestSection.style.display = 'none';
+  watchTogetherSection.style.display = 'none';
+  settingsPanel.style.display = 'none';
+  adminPanel.classList.add('active');
+  let html = `
+    <h2>Admin Panel</h2>
+    <div class="admin-actions">
+      <button class="admin-btn" onclick="openAddContentModal()">Add Content</button>`;
+  if (adminRole === 'admin') {
+    html += `
+      <button class="admin-btn" onclick="openGlobalPasswordModal()">Add Global Password</button>
+      <button class="admin-btn" onclick="exitAdmin()">Exit Admin</button>
+    </div>
+    <h3>Content</h3>
+    <div id="movieListAdmin" class="movie-list-admin"></div>
+    <h3>Global Passwords</h3>
+    <div id="globalPasswordList" class="movie-list-admin"></div>`;
+  } else {
+    html += `
+      <button class="admin-btn" onclick="exitAdmin()">Exit Admin</button>
+    </div>`;
+  }
+  adminPanel.innerHTML = html;
+}
+
+function exitAdmin() {
+  adminToken = null;
+  adminRole = null;
+  adminPanel.classList.remove('active');
+  movieGrid.style.display = 'grid';
+  applyFilters();
+}
+
+function openGlobalPasswordModal() { globalPasswordModal.classList.add('active'); }
+
+async function addGlobalPassword() {
+  const password = document.getElementById('globalPassword').value;
+  const isOneTime = document.getElementById('isOneTime').checked;
+  if (!password) return;
+  try {
+    const res = await fetch(API + '/admin/global-passwords', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ password, isOneTime })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      closeGlobalPasswordModal();
+      loadGlobalPasswords();
+    }
+  } catch (err) {
+    // Silently fail
+  }
+}
+
+async function loadAdminMovies() {
+  if (adminRole !== 'admin') return;
+  try {
+    const res = await fetch(API + '/movies');
+    const data = await res.json();
+    if (data.ok) {
+      const movieListAdmin = document.getElementById('movieListAdmin');
+      if (movieListAdmin) {
+        movieListAdmin.innerHTML = '';
+        if (data.movies.length === 0) {
+          movieListAdmin.innerHTML = '<p>No content available</p>';
+        } else {
+          data.movies.forEach(movie => {
+            const div = document.createElement('div');
+            div.className = 'movie-item-admin';
+            div.innerHTML = `
+              <div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'})</div>
+              <div>
+                <button onclick="deleteMovie(${movie.id})">Delete</button>
+              </div>`;
+            movieListAdmin.appendChild(div);
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load admin content:', err);
+  }
+}
+
+async function deleteMovie(id) {
+  if (!confirm('Are you sure?')) return;
+  try {
+    const res = await fetch(API + '/movies/' + id, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (data.ok) {
+      loadAdminMovies();
+      loadMovies();
+    }
+  } catch (err) {
+    // Silently fail
+  }
+}
+
+async function loadGlobalPasswords() {
+  try {
+    const res = await fetch(API + '/admin/global-passwords', {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const globalPasswordList = document.getElementById('globalPasswordList');
+      if (globalPasswordList) {
+        globalPasswordList.innerHTML = '';
+        if (data.passwords.length === 0) {
+          globalPasswordList.innerHTML = '<p>No global passwords</p>';
+        } else {
+          data.passwords.forEach(pwd => {
+            const item = document.createElement('div');
+            item.className = 'movie-item-admin';
+            item.innerHTML = `
+              <div>${pwd.is_one_time ? 'One-Time' : 'Regular'} Password (Created: ${new Date(pwd.created_at).toLocaleString()})</div>
+              <button onclick="deleteGlobalPassword(${pwd.id})">Delete</button>`;
+            globalPasswordList.appendChild(item);
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load global passwords:', err);
+  }
+}
+
+async function deleteGlobalPassword(id) {
+  if (!confirm('Delete this global password?')) return;
+  try {
+    const res = await fetch(API + '/admin/global-passwords/' + id, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const data = await res.json();
+    if (data.ok) loadGlobalPasswords();
+  } catch (err) {
+    // Silently fail
+  }
+}
+
+async function verifyMoviePassword() {
+  const password = document.getElementById('moviePasswordInput').value;
+  if (!password) return;
+  try {
+    const res = await fetch(API + '/movies/' + selectedMovieId + '/authorize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      authToken = data.token;
+      if (selectedShow.type === 'movie') {
+        const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
+          headers: { Authorization: `Bearer ${authToken}` }
+        });
+        const embedData = await embedRes.json();
+        if (embedData.ok) {
+          showPlayer(embedData.url, embedData.duration);
+        }
+      } else {
+        await requestEpisodeSelection();
+      }
+    }
+  } catch (err) {
+    // Silently fail
+  }
+}
+
+async function requestEpisodeSelection() {
+  try {
+    const res = await fetch(API + '/movies/' + selectedMovieId + '/episodes');
+    const data = await res.json();
+    if (data.ok) {
+      episodeData = data.seasons;
+      const seasonSelect = document.getElementById('seasonSelect');
+      seasonSelect.innerHTML = '';
+      Object.keys(episodeData).sort((a,b)=>a-b).forEach(season => {
+        const option = document.createElement('option');
+        option.value = season;
+        option.textContent = `Season ${season}`;
+        seasonSelect.appendChild(option);
+      });
+      updateEpisodeSelect();
+      episodeModal.classList.add('active');
+    }
+  } catch (err) {
+    // Silently fail
+  }
+}
+
+function updateEpisodeSelect() {
+  const season = document.getElementById('seasonSelect').value;
+  const episodeSelect = document.getElementById('episodeSelect');
+  episodeSelect.innerHTML = '';
+  if (episodeData && episodeData[season]) {
+    episodeData[season].forEach(ep => {
+      const option = document.createElement('option');
+        option.value = ep.episode;
+        option.textContent = `${ep.name} (E${ep.episode})`;
+        episodeSelect.appendChild(option);
+    });
+  }
+}
+
+async function playSelectedEpisode() {
+  const season = document.getElementById('seasonSelect').value;
+  const episode = document.getElementById('episodeSelect').value;
+  try {
+    if (authToken) {
+      const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
+        headers: { Authorization: `Bearer ${authToken}` }
+      });
+      const embedData = await embedRes.json();
+      if (embedData.ok) {
+        const url = `${embedData.url}/${season}/${episode}`;
+        showPlayer(url, embedData.duration);
+        episodeModal.classList.remove('active');
+      }
+    }
+  } catch (err) {
+    // Silently fail
+  }
+}
+
+function showPlayer(url, duration) {
+  playerIframe.src = url;
+  playerContainer.classList.add('active');
+  passwordModal.classList.remove('active');
+  document.getElementById('moviePasswordInput').value = '';
+  
+  // Start the timer when player is shown
+  startPlayerTimer(duration);
+}
+
+function closePlayer() {
+  playerContainer.classList.remove('active');
+  playerIframe.src = '';
+  episodeData = null;
+  selectedShow = null;
+  authToken = null;
+  stopPlayerTimer();
+}
+
+async function loadMovies() {
+  movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">Loading...</p>';
+  try {
+    const res = await fetch(API + '/movies');
+    const data = await res.json();
+    if (!data.ok || !data.movies.length) {
+      movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">No movies found.</p>';
+      return;
+    }
+    currentMovies = data.movies;
+    applyFilters();
+  } catch (err) {
+    movieGrid.innerHTML = '<p style="color:red;">Failed to load</p>';
+  }
+}
+
+// Check for Discord login on page load
+window.addEventListener('load', () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const discordLogin = urlParams.get('discord_login');
+  const token = urlParams.get('token');
+  
+  if (discordLogin === 'success' && token) {
+    userToken = token;
+    localStorage.setItem('ogmovie_user_token', token);
+    loadUserData().then(() => {
+      // Clean URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    });
+  }
+  
+  // Load stored token
+  const storedToken = localStorage.getItem('ogmovie_user_token');
+  if (storedToken) {
+    userToken = storedToken;
+    loadUserData();
+  }
+});
+
+adminBtn.addEventListener('click', openAdminPanel);
+settingsBtn.addEventListener('click', openSettingsPanel);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    [loginModal, addContentSearchModal, finalAddModal, passwordModal, globalPasswordModal, episodeModal, trailerModal, playerContainer, createRoomModal, joinRoomModal].forEach(m => m.classList.remove('active'));
+    if (watchRoom.style.display === 'block') {
+      leaveWatchRoom();
+    }
+    if (settingsPanel.classList.contains('active')) {
+      closeSettingsPanel();
+    }
+  }
+});
+
+loadMovies();
+</script>
+</body>
+</html>
