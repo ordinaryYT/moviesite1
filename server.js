@@ -17,7 +17,7 @@ const {
 const { Server } = require('socket.io');
 const { createServer } = require('http');
 
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const fetch = (...args) import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const app = express();
 const server = createServer(app);
@@ -31,6 +31,40 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname));
+
+// Overlay system - SIMPLE SOLUTION
+let overlayEnabled = false;
+
+// Middleware to check overlay status
+app.use((req, res, next) => {
+  // Don't block static files, API calls, or socket.io
+  if (req.path.startsWith('/api/') || 
+      req.path.includes('.') || 
+      req.path === '/socket.io/' ||
+      req.path === '/favicon.ico') {
+    return next();
+  }
+  
+  // If overlay is enabled, serve blank black page
+  if (overlayEnabled && req.method === 'GET') {
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>ogmovie</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { background: #000; width: 100vw; height: 100vh; }
+        </style>
+      </head>
+      <body></body>
+      </html>
+    `);
+  }
+  
+  next();
+});
 
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret';
@@ -62,40 +96,6 @@ let autoCodeChannel = null;
 
 // Watch Together rooms storage
 const watchTogetherRooms = new Map();
-
-// Overlay system - SIMPLE SOLUTION
-let overlayEnabled = false;
-
-// Middleware to check overlay status - ADD THIS AT THE TOP
-app.use((req, res, next) => {
-  // Don't block static files, API calls, or socket.io
-  if (req.path.startsWith('/api/') || 
-      req.path.includes('.') || 
-      req.path === '/socket.io/' ||
-      req.path === '/favicon.ico') {
-    return next();
-  }
-  
-  // If overlay is enabled, serve blank black page
-  if (overlayEnabled && req.method === 'GET') {
-    return res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>ogmovie</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { background: #000; width: 100vw; height: 100vh; }
-        </style>
-      </head>
-      <body></body>
-      </html>
-    `);
-  }
-  
-  next();
-});
 
 function generateCode(prefix = 'om-') {
   return prefix + Math.random().toString(36).substr(2, 12).toUpperCase();
@@ -864,7 +864,7 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   if (!password) return res.json({ ok: false, error: 'Password required' });
 
   const { rows } = await pool.query(
-  'SELECT password_hashes, one_time_password_hashes FROM movies WHERE id = $1',
+    'SELECT password_hashes, one_time_password_hashes FROM movies WHERE id = $1',
     [req.params.id]
   );
   if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
