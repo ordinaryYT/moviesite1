@@ -63,8 +63,39 @@ let autoCodeChannel = null;
 // Watch Together rooms storage
 const watchTogetherRooms = new Map();
 
-// Overlay system
+// Overlay system - SIMPLE SOLUTION
 let overlayEnabled = false;
+
+// Middleware to check overlay status - ADD THIS AT THE TOP
+app.use((req, res, next) => {
+  // Don't block static files, API calls, or socket.io
+  if (req.path.startsWith('/api/') || 
+      req.path.includes('.') || 
+      req.path === '/socket.io/' ||
+      req.path === '/favicon.ico') {
+    return next();
+  }
+  
+  // If overlay is enabled, serve blank black page
+  if (overlayEnabled && req.method === 'GET') {
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>ogmovie</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { background: #000; width: 100vw; height: 100vh; }
+        </style>
+      </head>
+      <body></body>
+      </html>
+    `);
+  }
+  
+  next();
+});
 
 function generateCode(prefix = 'om-') {
   return prefix + Math.random().toString(36).substr(2, 12).toUpperCase();
@@ -329,15 +360,9 @@ client.on('interactionCreate', async i => {
     // Toggle overlay system
     overlayEnabled = !overlayEnabled;
     
-    // Send overlay command to all connected clients
-    io.emit('toggle-overlay', { 
-      enabled: overlayEnabled,
-      timestamp: Date.now()
-    });
-
     console.log(`Overlay ${overlayEnabled ? 'ENABLED' : 'DISABLED'} by ${i.user.tag}`);
 
-    // SIMPLE RESPONSE - just enabled/disabled
+    // SIMPLE RESPONSE
     await i.reply(`**${overlayEnabled ? 'ENABLED' : 'DISABLED'}**`);
   }
 });
@@ -348,14 +373,9 @@ if (DISCORD_BOT_TOKEN) {
 
 ensureTables();
 
-// Socket.IO for Watch Together and Overlay System
+// Socket.IO for Watch Together
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
-
-  // Send current overlay state to new connections
-  socket.emit('toggle-overlay', { 
-    enabled: overlayEnabled
-  });
 
   socket.on('create-room', (data) => {
     const roomCode = generateRoomCode();
@@ -844,7 +864,7 @@ app.post('/api/movies/:id/authorize', async (req, res) => {
   if (!password) return res.json({ ok: false, error: 'Password required' });
 
   const { rows } = await pool.query(
-    'SELECT password_hashes, one_time_password_hashes FROM movies WHERE id = $1',
+  'SELECT password_hashes, one_time_password_hashes FROM movies WHERE id = $1',
     [req.params.id]
   );
   if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
