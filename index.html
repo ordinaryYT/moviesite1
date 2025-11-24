@@ -60,11 +60,11 @@
   /* Updated bottom overlay - removed time display */
   .bottom-overlay{position:absolute;bottom:5px;left:0;right:0;height:40px;background:rgba(0,0,0,0.3);z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
   
-  /* Bottom left overlay - now covers VIDSRC perfectly */
+  /* Bottom left overlay - moved further right to cover VIDSRC */
   .bottom-left-overlay {
     position: absolute;
     bottom: 5px;
-    left: 90px;
+    left: 180px;
     width: 90px;
     height: 45px;
     background: #000;
@@ -536,9 +536,9 @@ function displayMovies(movies) {
   movieGrid.innerHTML = '';
   if (movies.length === 0) {
     movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;grid-column:1/-1;">No movies found</p>';
-    return;
+  } else {
+    movies.forEach(movie => movieGrid.appendChild(createMovieCard(movie)));
   }
-  movies.forEach(movie => movieGrid.appendChild(createMovieCard(movie)));
   updateFavoriteButtons();
 }
 
