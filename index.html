@@ -68,9 +68,9 @@
   .middle-overlay{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);width:200px;height:40px;background:#000;z-index:8;display:none;border-radius:4px}
   .middle-overlay.active{display:block}
   
-  /* NEW: Small black overlay positioned to the right of where duration was */
-  .duration-overlay{position:absolute;bottom:5px;left:220px;width:200px;height:40px;background:#000;z-index:9;display:none;border-radius:8px}
-  .duration-overlay.active{display:block}
+  /* NEW: Duration replacement overlay - same size as middle overlay but positioned where duration was */
+  .duration-replacement-overlay{position:absolute;bottom:5px;left:250px;width:200px;height:40px;background:#000;z-index:9;display:none;border-radius:4px}
+  .duration-replacement-overlay.active{display:block}
   
   /* Right cover overlay - moved DOWN more */
   .right-cover-overlay{position:absolute;bottom:5px;right:0;width:25%;height:40px;background:#000;z-index:11;display:none}
@@ -83,7 +83,7 @@
   .request-note{color:#aaa;font-size:.9rem;margin-top:.5rem;}
 
   /* Watch Together Styles */
-  #watchTogetherSection{display:none;padding:2rem;max-width:1400px;margin:0 auto}
+  #watchTogetherSection{display:none;padding:2rem;max-width:1400px;margin=0 auto}
   .watch-together-actions{display:flex;gap:1rem;margin-bottom:2rem;flex-wrap:wrap}
   .watch-btn{padding:1rem 2rem;background:#e50914;color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold;font-size:1.1rem}
   .watch-btn:hover{background:#ff1a1a}
@@ -134,7 +134,7 @@
   #addSearchResults{max-height:400px;overflow-y:auto;}
   .add-search-item{display:flex;align-items:center;gap:1rem;padding:0.75rem;background:#1a1a1a;border-radius:8px;margin-bottom:0.5rem;cursor:pointer;transition:.2s;}
   .add-search-item:hover{background:#333;}
-  .add-search-item img{width:60px;height:90px;object-fit:cover;border-radius:4px;}
+  .add-search-item img{width:60px;height=90px;object-fit:cover;border-radius:4px;}
 
   /* Redirect System Styles */
   .redirect-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);z-index:9999;align-items:center;justify-content:center;flex-direction:column;}
@@ -325,7 +325,7 @@
       <label><input type="checkbox" id="finalBottomLeft"> Enable Bottom Left Overlay for this content</label>
     </div>
     <div class="form-group">
-      <label><input type="checkbox" id="finalDurationOverlay"> Enable Duration Overlay for this content</label>
+      <label><input type="checkbox" id="finalDurationReplacement"> Enable Duration Replacement Overlay for this content</label>
     </div>
     <button class="modal-btn" onclick="submitFinalAdd()">Add to Library</button>
   </div>
@@ -396,7 +396,7 @@
     <div class="iframe-overlay">ogmovie</div>
     <div class="bottom-left-overlay" id="bottomLeftOverlay"></div>
     <div class="middle-overlay" id="middleOverlay"></div>
-    <div class="duration-overlay" id="durationOverlay"></div>
+    <div class="duration-replacement-overlay" id="durationReplacementOverlay"></div>
     <div class="bottom-overlay">
       <!-- Time display removed -->
     </div>
@@ -433,7 +433,7 @@ const redirectCountdown = document.getElementById('redirectCountdown');
 const middleOverlay = document.getElementById('middleOverlay');
 const rightCoverOverlay = document.getElementById('rightCoverOverlay');
 const bottomLeftOverlay = document.getElementById('bottomLeftOverlay');
-const durationOverlay = document.getElementById('durationOverlay');
+const durationReplacementOverlay = document.getElementById('durationReplacementOverlay');
 
 // Watch Together elements
 const watchRoom = document.getElementById('watchRoom');
@@ -1414,7 +1414,7 @@ function closeFinalAddModal() {
   document.getElementById('finalOverlay').checked = false;
   document.getElementById('finalRightCover').checked = false;
   document.getElementById('finalBottomLeft').checked = false;
-  document.getElementById('finalDurationOverlay').checked = false;
+  document.getElementById('finalDurationReplacement').checked = false;
 }
 async function submitFinalAdd() {
   const imdbId = document.getElementById('finalImdb').value;
@@ -1424,7 +1424,7 @@ async function submitFinalAdd() {
   const overlayEnabled = document.getElementById('finalOverlay').checked;
   const rightCoverEnabled = document.getElementById('finalRightCover').checked;
   const bottomLeftEnabled = document.getElementById('finalBottomLeft').checked;
-  const durationOverlayEnabled = document.getElementById('finalDurationOverlay').checked;
+  const durationReplacementEnabled = document.getElementById('finalDurationReplacement').checked;
   
   if (!imdbId) return;
   try {
@@ -1439,7 +1439,7 @@ async function submitFinalAdd() {
         overlayEnabled,
         rightCoverEnabled,
         bottomLeftEnabled,
-        durationOverlayEnabled
+        durationReplacementEnabled
       })
     });
     const data = await res.json();
@@ -1559,7 +1559,7 @@ async function loadAdminMovies() {
             const div = document.createElement('div');
             div.className = 'movie-item-admin';
             div.innerHTML = `
-              <div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'}) ${movie.overlay_enabled ? ' [Overlay]' : ''} ${movie.right_cover_enabled ? ' [Right Cover]' : ''} ${movie.bottom_left_enabled ? ' [Bottom Left]' : ''} ${movie.duration_overlay_enabled ? ' [Duration Overlay]' : ''}</div>
+              <div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'}) ${movie.overlay_enabled ? ' [Overlay]' : ''} ${movie.right_cover_enabled ? ' [Right Cover]' : ''} ${movie.bottom_left_enabled ? ' [Bottom Left]' : ''} ${movie.duration_replacement_enabled ? ' [Duration Replacement]' : ''}</div>
               <div>
                 <button onclick="deleteMovie(${movie.id})">Delete</button>
               </div>`;
@@ -1651,7 +1651,7 @@ async function verifyMoviePassword() {
         });
         const embedData = await embedRes.json();
         if (embedData.ok) {
-          showPlayer(embedData.url, embedData.duration, embedData.overlay_enabled, embedData.right_cover_enabled, embedData.bottom_left_enabled, embedData.duration_overlay_enabled);
+          showPlayer(embedData.url, embedData.duration, embedData.overlay_enabled, embedData.right_cover_enabled, embedData.bottom_left_enabled, embedData.duration_replacement_enabled);
         }
       } else {
         await requestEpisodeSelection();
@@ -1709,7 +1709,7 @@ async function playSelectedEpisode() {
       const embedData = await embedRes.json();
       if (embedData.ok) {
         const url = `${embedData.url}/${season}/${episode}`;
-        showPlayer(url, embedData.duration, embedData.overlay_enabled, embedData.right_cover_enabled, embedData.bottom_left_enabled, embedData.duration_overlay_enabled);
+        showPlayer(url, embedData.duration, embedData.overlay_enabled, embedData.right_cover_enabled, embedData.bottom_left_enabled, embedData.duration_replacement_enabled);
         episodeModal.classList.remove('active');
       }
     }
@@ -1718,7 +1718,7 @@ async function playSelectedEpisode() {
   }
 }
 
-function showPlayer(url, duration, overlayEnabled, rightCoverEnabled, bottomLeftEnabled, durationOverlayEnabled) {
+function showPlayer(url, duration, overlayEnabled, rightCoverEnabled, bottomLeftEnabled, durationReplacementEnabled) {
   playerIframe.src = url;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
@@ -1738,11 +1738,11 @@ function showPlayer(url, duration, overlayEnabled, rightCoverEnabled, bottomLeft
     middleOverlay.classList.remove('active');
   }
   
-  // Set duration overlay if enabled for this content
-  if (durationOverlayEnabled) {
-    durationOverlay.classList.add('active');
+  // Set duration replacement overlay if enabled for this content
+  if (durationReplacementEnabled) {
+    durationReplacementOverlay.classList.add('active');
   } else {
-    durationOverlay.classList.remove('active');
+    durationReplacementOverlay.classList.remove('active');
   }
   
   // Set right cover overlay if enabled for this content
@@ -1764,7 +1764,7 @@ function closePlayer() {
   authToken = null;
   bottomLeftOverlay.classList.remove('active');
   middleOverlay.classList.remove('active');
-  durationOverlay.classList.remove('active');
+  durationReplacementOverlay.classList.remove('active');
   rightCoverOverlay.classList.remove('active');
   stopPlayerTimer();
 }
@@ -1779,6 +1779,7 @@ async function loadMovies() {
       return;
     }
     currentMovies = data.movies;
+    applyFilters();
   } catch (err) {
     movieGrid.innerHTML = '<p style="color:red;">Failed to load</p>';
   }
