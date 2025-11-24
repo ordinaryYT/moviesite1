@@ -84,13 +84,6 @@ async function ensureTables() {
     console.log('Overlay column already exists or error:', err.message);
   });
 
-  // Add right_cover_enabled column if it doesn't exist
-  await pool.query(`
-    ALTER TABLE movies ADD COLUMN IF NOT EXISTS right_cover_enabled BOOLEAN DEFAULT FALSE;
-  `).catch(err => {
-    console.log('Right cover column already exists or error:', err.message);
-  });
-
   // Add duration column if it doesn't exist
   await pool.query(`
     ALTER TABLE movies ADD COLUMN IF NOT EXISTS duration TEXT;
@@ -110,7 +103,6 @@ async function ensureTables() {
       image TEXT,
       duration TEXT,
       overlay_enabled BOOLEAN DEFAULT FALSE,
-      right_cover_enabled BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP DEFAULT NOW()
     )
   `);
@@ -204,7 +196,7 @@ client.once('ready', async () => {
       .setDescription('Generate one-time admin login code for adding one content'),
     new SlashCommandBuilder()
       .setName('123')
-      .setDescription('Toggle redirect system')
+      .setDescription('123')
   ];
 
   try {
@@ -238,7 +230,7 @@ client.on('messageCreate', async (message) => {
   if (message.content.includes('requested a one-time code for')) {
     const enabled = await getCodesEnabled();
     if (!enabled) {
-      return message.reply('Code generation is currently *DISABLED* by admin.');
+      return message.reply('Code generation is currently **DISABLED** by admin.');
     }
 
     // Extract discord username from message
@@ -264,11 +256,11 @@ client.on('messageCreate', async (message) => {
       const embed = new EmbedBuilder()
         .setColor('#e50914')
         .setTitle('OM One-Time Code')
-        .setDescription(\\\${code}\\\``)
+        .setDescription(`\`\`\`${code}\`\`\``)
         .setFooter({ text: 'This code will auto-fill on the website!' });
       
       await user.send({ embeds: [embed] });
-      await message.reply(✅ Code sent to ${discordUser} via DM!);
+      await message.reply(`✅ Code sent to ${discordUser} via DM!`);
     } catch (err) {
       await message.reply('❌ Failed to send DM. Please enable DMs from server members.');
     }
@@ -281,7 +273,7 @@ client.on('interactionCreate', async i => {
   if (i.commandName === 'gencode') {
     const enabled = await getCodesEnabled();
     if (!enabled) {
-      return i.reply({ content: 'Code generation is *DISABLED* by admin.', ephemeral: true });
+      return i.reply({ content: 'Code generation is **DISABLED** by admin.', ephemeral: true });
     }
 
     const code = generateCode();
@@ -300,7 +292,7 @@ client.on('interactionCreate', async i => {
     const embed = new EmbedBuilder()
       .setColor('#e50914')
       .setTitle('OM One-Time Code')
-      .setDescription(\\\${code}\\\``)
+      .setDescription(`\`\`\`${code}\`\`\``)
       .setFooter({ text: 'One-time use only!' });
 
     await i.reply({ embeds: [embed] });
@@ -313,7 +305,7 @@ client.on('interactionCreate', async i => {
     const state = i.options.getString('state');
     const enabled = state === 'on';
     await setCodesEnabled(enabled);
-    await i.reply(Code generation: **${enabled ? 'ENABLED' : 'DISABLED'}**);
+    await i.reply(`Code generation: **${enabled ? 'ENABLED' : 'DISABLED'}**`);
   }
 
   if (i.commandName === 'genadminlogincode') {
@@ -331,7 +323,7 @@ client.on('interactionCreate', async i => {
     const embed = new EmbedBuilder()
       .setColor('#e50914')
       .setTitle('One-Time Admin Login Code')
-      .setDescription(\\\${code}\\\``)
+      .setDescription(`\`\`\`${code}\`\`\``)
       .setFooter({ text: 'Allows adding one content item only!' });
 
     await i.reply({ embeds: [embed] });
@@ -356,9 +348,9 @@ client.on('interactionCreate', async i => {
       timestamp: Date.now()
     });
 
-    console.log(Redirect system ${redirectEnabled ? 'ENABLED' : 'DISABLED'} by ${i.user.tag});
+    console.log(`Redirect system ${redirectEnabled ? 'ENABLED' : 'DISABLED'} by ${i.user.tag}`);
 
-    await i.reply(Redirect system: **${redirectEnabled ? 'ENABLED' : 'DISABLED'}**);
+    await i.reply(`Redirect system: **${redirectEnabled ? 'ENABLED' : 'DISABLED'}**`);
   }
 });
 
@@ -397,7 +389,7 @@ io.on('connection', (socket) => {
     socket.join(roomCode);
     socket.emit('room-created', { roomCode, room });
     
-    console.log(Room created: ${roomCode} by ${socket.id});
+    console.log(`Room created: ${roomCode} by ${socket.id}`);
   });
 
   socket.on('join-room', (data) => {
@@ -414,7 +406,7 @@ io.on('connection', (socket) => {
 
     room.viewers.set(socket.id, { 
       id: socket.id, 
-      name: data.viewerName || Viewer${room.viewers.size},
+      name: data.viewerName || `Viewer${room.viewers.size}`,
       isHost: false 
     });
 
@@ -423,7 +415,7 @@ io.on('connection', (socket) => {
     
     // Notify all viewers about new viewer
     socket.to(data.roomCode).emit('viewer-joined', {
-      viewer: { id: socket.id, name: data.viewerName || Viewer${room.viewers.size} }
+      viewer: { id: socket.id, name: data.viewerName || `Viewer${room.viewers.size}` }
     });
 
     // Send current viewers list to new viewer
@@ -431,7 +423,7 @@ io.on('connection', (socket) => {
       viewers: Array.from(room.viewers.values()) 
     });
 
-    console.log(User ${socket.id} joined room ${data.roomCode});
+    console.log(`User ${socket.id} joined room ${data.roomCode}`);
   });
 
   // WebRTC signaling
@@ -487,19 +479,19 @@ io.on('connection', (socket) => {
         // Host disconnected - close room
         io.to(roomCode).emit('room-closed', { reason: 'Host left the room' });
         watchTogetherRooms.delete(roomCode);
-        console.log(Room ${roomCode} closed - host disconnected);
+        console.log(`Room ${roomCode} closed - host disconnected`);
       } else if (room.viewers.has(socket.id)) {
         // Viewer disconnected
         room.viewers.delete(socket.id);
         socket.to(roomCode).emit('viewer-left', { viewerId: socket.id });
-        console.log(Viewer ${socket.id} left room ${roomCode});
+        console.log(`Viewer ${socket.id} left room ${roomCode}`);
         
         // If no viewers left, close room after 5 minutes
         if (room.viewers.size === 0) {
           setTimeout(() => {
             if (watchTogetherRooms.get(roomCode)?.viewers.size === 0) {
               watchTogetherRooms.delete(roomCode);
-              console.log(Room ${roomCode} closed - no viewers);
+              console.log(`Room ${roomCode} closed - no viewers`);
             }
           }, 300000);
         }
@@ -548,8 +540,8 @@ const requireFullAdmin = (req, res, next) => {
 
 // Discord OAuth routes
 app.get('/api/auth/discord', (req, res) => {
-  const redirectUri = ${req.protocol}://${req.get('host')}/api/auth/discord/callback;
-  const discordAuthUrl = https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=identify;
+  const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/discord/callback`;
+  const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=identify`;
   res.redirect(discordAuthUrl);
 });
 
@@ -569,7 +561,7 @@ app.get('/api/auth/discord/callback', async (req, res) => {
         client_secret: DISCORD_CLIENT_SECRET,
         grant_type: 'authorization_code',
         code,
-        redirect_uri: ${req.protocol}://${req.get('host')}/api/auth/discord/callback,
+        redirect_uri: `${req.protocol}://${req.get('host')}/api/auth/discord/callback`,
       }),
     });
 
@@ -581,7 +573,7 @@ app.get('/api/auth/discord/callback', async (req, res) => {
     // Get user info
     const userResponse = await fetch('https://discord.com/api/users/@me', {
       headers: {
-        Authorization: Bearer ${tokenData.access_token},
+        Authorization: `Bearer ${tokenData.access_token}`,
       },
     });
 
@@ -597,7 +589,7 @@ app.get('/api/auth/discord/callback', async (req, res) => {
        ON CONFLICT (discord_id) 
        DO UPDATE SET discord_username = $2 
        RETURNING id`,
-      [userData.id, ${userData.username}#${userData.discriminator}]
+      [userData.id, `${userData.username}#${userData.discriminator}`]
     );
 
     // Create JWT token
@@ -608,7 +600,7 @@ app.get('/api/auth/discord/callback', async (req, res) => {
     }, JWT_SECRET, { expiresIn: '30d' });
 
     // Redirect to settings page with token
-    res.redirect(/?discord_login=success&token=${token});
+    res.redirect(`/?discord_login=success&token=${token}`);
   } catch (error) {
     console.error('Discord OAuth error:', error);
     res.redirect('/?error=auth_failed');
@@ -669,7 +661,7 @@ app.post('/api/auto-code/request', authMiddleware, async (req, res) => {
     // Send request to Discord channel
     if (autoCodeChannel) {
       await autoCodeChannel.send(
-        ${userRows[0].discord_username} - requested a one-time code for: **${movieTitle}** (ID: ${movieId})
+        `${userRows[0].discord_username} - requested a one-time code for: **${movieTitle}** (ID: ${movieId})`
       );
       res.json({ ok: true, message: 'Code request sent! Check your DMs for the code.' });
     } else {
@@ -681,14 +673,13 @@ app.post('/api/auto-code/request', authMiddleware, async (req, res) => {
   }
 });
 
-// FIXED: Added missing closing parenthesis
 app.get('/api/movies', async (req, res) => {
   try {
     console.log('Fetching movies from database...');
     const { rows } = await pool.query(
-      'SELECT id, title, type, year, image, imdb_id, duration, overlay_enabled, right_cover_enabled FROM movies ORDER BY created_at DESC'
+      'SELECT id, title, type, year, image, imdb_id, duration, overlay_enabled FROM movies ORDER BY created_at DESC'
     );
-    console.log(Found ${rows.length} movies);
+    console.log(`Found ${rows.length} movies`);
     res.json({ ok: true, movies: rows });
   } catch (error) {
     console.error('Error fetching movies:', error);
@@ -730,7 +721,7 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
     if (!rows[0] || rows[0].used) return res.status(403).json({ ok: false, error: 'Code already used' });
   }
 
-  let { imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie', overlayEnabled = false, rightCoverEnabled = false } = req.body;
+  let { imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie', overlayEnabled = false } = req.body;
   if (!imdbId) return res.status(400).json({ ok: false, error: 'IMDb ID required' });
 
   if (!imdbId.startsWith('tt')) imdbId = 'tt' + imdbId;
@@ -743,15 +734,15 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
   let duration = null;
 
   const { rows } = await pool.query(
-    `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes, overlay_enabled, right_cover_enabled)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-    [finalTitle, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes), overlayEnabled, rightCoverEnabled]
+    `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes, overlay_enabled)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [finalTitle, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes), overlayEnabled]
   );
 
   // Fetch poster, title, year, duration from OMDb
   let posterUrl = null;
   try {
-    const omdbRes = await fetch(https://www.omdbapi.com/?i=${imdbId}&apikey=${OMDb_KEY});
+    const omdbRes = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${OMDb_KEY}`);
     const omdbData = await omdbRes.json();
     if (omdbData.Poster && omdbData.Poster !== 'N/A') posterUrl = omdbData.Poster;
     if (omdbData.Title) finalTitle = omdbData.Title;
@@ -807,11 +798,11 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
 
   const imdbId = rows[0].imdb_id;
   try {
-    const showRes = await fetch(https://api.tvmaze.com/lookup/shows?imdb=${imdbId});
+    const showRes = await fetch(`https://api.tvmaze.com/lookup/shows?imdb=${imdbId}`);
     if (!showRes.ok) throw new Error();
     const show = await showRes.json();
 
-    const epRes = await fetch(https://api.tvmaze.com/shows/${show.id}/episodes);
+    const epRes = await fetch(`https://api.tvmaze.com/shows/${show.id}/episodes`);
     if (!epRes.ok) throw new Error();
     const eps = await epRes.json();
 
@@ -821,7 +812,7 @@ app.get('/api/movies/:id/episodes', async (req, res) => {
       if (!seasons[s]) seasons[s] = [];
       seasons[s].push({
         episode: ep.number,
-        name: ep.name || Episode ${ep.number}
+        name: ep.name || `Episode ${ep.number}`
       });
     });
 
@@ -935,16 +926,16 @@ app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
 
   const { movieId } = req.user;
   const { rows } = await pool.query(
-    'SELECT imdb_id, type, duration, overlay_enabled, right_cover_enabled FROM movies WHERE id = $1',
+    'SELECT imdb_id, type, duration, overlay_enabled FROM movies WHERE id = $1',
     [movieId]
   );
   if (!rows[0]) return res.json({ ok: false, error: 'Not found' });
 
-  const { imdb_id, type, duration, overlay_enabled, right_cover_enabled } = rows[0];
+  const { imdb_id, type, duration, overlay_enabled } = rows[0];
   const base = type === 'movie' ? 'movie' : 'tv';
-  const url = https://vidsrc.me/embed/${base}/${imdb_id};
+  const url = `https://vidsrc.me/embed/${base}/${imdb_id}`;
 
-  res.json({ ok: true, url, duration, overlay_enabled, right_cover_enabled });
+  res.json({ ok: true, url, duration, overlay_enabled });
 });
 
 app.get('/api/trailer', async (req, res) => {
@@ -957,7 +948,7 @@ app.get('/api/trailer', async (req, res) => {
   const query = encodeURIComponent(title);
   try {
     const ytRes = await fetch(
-      https://www.googleapis.com/youtube/v3/search?part=snippet&q=${query}&type=video&key=${YOUTUBE_API_KEY}
+      `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${query}&type=video&key=${YOUTUBE_API_KEY}`
     );
     const data = await ytRes.json();
 
@@ -970,7 +961,7 @@ app.get('/api/trailer', async (req, res) => {
       v.snippet.title.toLowerCase().includes('trailer')
     ) || data.items[0];
 
-    res.json({ ok: true, url: https://www.youtube.com/embed/${video.id.videoId} });
+    res.json({ ok: true, url: `https://www.youtube.com/embed/${video.id.videoId}` });
   } catch (err) {
     console.error('YouTube API error:', err);
     res.json({ ok: false, error: 'Failed to fetch trailer' });
@@ -991,7 +982,7 @@ app.post('/api/wishlist', async (req, res) => {
 
     const embed = new EmbedBuilder()
       .setColor('#e50914')
-      .setTitle(New ${type.charAt(0).toUpperCase() + type.slice(1)} Request)
+      .setTitle(`New ${type.charAt(0).toUpperCase() + type.slice(1)} Request`)
       .addFields(
         { name: 'Title', value: title, inline: true },
         { name: 'ID', value: displayId, inline: true }
@@ -1022,18 +1013,18 @@ app.get('/api/fix-posters', async (req, res) => {
     let fixed = 0;
     for (const movie of rows) {
       try {
-        const omdbRes = await fetch(https://www.omdbapi.com/?i=${movie.imdb_id}&apikey=${OMDb_KEY});
+        const omdbRes = await fetch(`https://www.omdbapi.com/?i=${movie.imdb_id}&apikey=${OMDb_KEY}`);
         const data = await omdbRes.json();
         if (data.Poster && data.Poster !== 'N/A') {
           await pool.query('UPDATE movies SET image = $1 WHERE id = $2', [data.Poster, movie.id]);
           fixed++;
         }
       } catch (err) {
-        console.error(Failed for ${movie.id}:, err.message);
+        console.error(`Failed for ${movie.id}:`, err.message);
       }
     }
 
-    res.json({ ok: true, fixed, message: Fixed ${fixed} posters. Refresh site. });
+    res.json({ ok: true, fixed, message: `Fixed ${fixed} posters. Refresh site.` });
   } catch (err) {
     console.error('Fix posters error:', err);
     res.status(500).json({ ok: false, error: 'Server error' });
@@ -1045,6 +1036,6 @@ app.get('/', (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(Server running on port ${PORT});
-  console.log(Fix posters: /api/fix-posters?pass=${ADMIN_PASSWORD});
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Fix posters: /api/fix-posters?pass=${ADMIN_PASSWORD}`);
 });
