@@ -141,7 +141,7 @@
 <body>
 <header>
   <h1>ogmovie</h1>
-  <button id="settingsBtn">⚙ Settings</button>
+  <button id="settingsBtn">⚙️ Settings</button>
   <button id="adminBtn">Admin</button>
 </header>
 <main>
@@ -385,7 +385,9 @@
     <div class="iframe-overlay">ogmovie</div>
     <div class="left-overlay"></div>
     <div class="middle-overlay" id="middleOverlay"></div>
-    <div class="bottom-overlay"></div>
+    <div class="bottom-overlay">
+      <div class="time-display" id="timeDisplay">--:--:-- / --:--:--</div>
+    </div>
     <div class="right-cover-overlay" id="rightCoverOverlay"></div>
   </div>
 </div>
@@ -412,6 +414,7 @@ const globalPasswordModal = document.getElementById('globalPasswordModal');
 const episodeModal = document.getElementById('episodeModal');
 const trailerModal = document.getElementById('trailerModal');
 const searchInput = document.getElementById('searchInput');
+const timeDisplay = document.getElementById('timeDisplay');
 const autoCodeBtn = document.getElementById('autoCodeBtn');
 const autoCodeStatus = document.getElementById('autoCodeStatus');
 const redirectOverlay = document.getElementById('redirectOverlay');
@@ -442,6 +445,9 @@ let selectedShow = null;
 let episodeData = null;
 let authToken = null;
 let currentFilter = 'all';
+let playerTimer = null;
+let playerStartTime = null;
+let playerDuration = null;
 const FAV_KEY = 'ogmovie_favorites';
 
 // Watch Together variables
@@ -468,7 +474,7 @@ function debounce(func, delay = 500) {
 
 function createMovieCard(movie) {
   const year = movie.year || 'N/A';
-  const duration = movie.duration ? <div class="duration">${movie.duration}</div> : '';
+  const duration = movie.duration ? `<div class="duration">${movie.duration}</div>` : '';
   const card = document.createElement('div');
   card.className = 'movie-card';
   card.innerHTML = `
@@ -578,7 +584,7 @@ document.addEventListener('click', async e => {
     const title = currentMovies.find(m => m.id == id)?.title || btn.dataset.title;
     if (!title) return;
     try {
-      const res = await fetch(${API}/trailer?title=${encodeURIComponent(title + ' official trailer')});
+      const res = await fetch(`${API}/trailer?title=${encodeURIComponent(title + ' official trailer')}`);
       const data = await res.json();
       if (data.ok) {
         document.getElementById('trailerIframe').src = data.url;
@@ -592,7 +598,7 @@ document.addEventListener('click', async e => {
   if (btn.classList.contains('wishlist-btn')) {
     const {title, type, imdb} = btn.dataset;
     try {
-      const res = await fetch(${API}/wishlist, {
+      const res = await fetch(`${API}/wishlist`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({title, type, imdb_id: imdb})
@@ -620,7 +626,7 @@ requestInput.addEventListener('input', debounce(async () => {
   if (q.length < 3) { requestResults.innerHTML = ''; return; }
 
   try {
-    const res = await fetch(https://www.omdbapi.com/?s=${encodeURIComponent(q)}&apikey=${OMDb_KEY});
+    const res = await fetch(`https://www.omdbapi.com/?s=${encodeURIComponent(q)}&apikey=${OMDb_KEY}`);
     const data = await res.json();
     if (!data.Search) { requestResults.innerHTML = '<p style="color:#aaa;">No results</p>'; return; }
 
@@ -722,18 +728,18 @@ function loadUserSettings() {
 }
 
 async function connectDiscord() {
-  window.location.href = ${API}/auth/discord;
+  window.location.href = `${API}/auth/discord`;
 }
 
 async function toggleAutoCode(enabled) {
   if (!userToken) return;
   
   try {
-    const res = await fetch(${API}/user/settings/auto-code, {
+    const res = await fetch(`${API}/user/settings/auto-code`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': Bearer ${userToken}
+        'Authorization': `Bearer ${userToken}`
       },
       body: JSON.stringify({ enabled })
     });
@@ -751,9 +757,9 @@ async function loadUserData() {
   if (!userToken) return;
   
   try {
-    const res = await fetch(${API}/user/settings, {
+    const res = await fetch(`${API}/user/settings`, {
       headers: {
-        'Authorization': Bearer ${userToken}
+        'Authorization': `Bearer ${userToken}`
       }
     });
     
@@ -781,11 +787,11 @@ async function requestAutoCode() {
   autoCodeStatus.textContent = 'Requesting code...';
 
   try {
-    const res = await fetch(${API}/auto-code/request, {
+    const res = await fetch(`${API}/auto-code/request`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': Bearer ${userToken}
+        'Authorization': `Bearer ${userToken}`
       },
       body: JSON.stringify({
         movieTitle: movie.title,
@@ -806,6 +812,78 @@ async function requestAutoCode() {
     autoCodeStatus.style.background = '#5a2d2d';
     autoCodeStatus.textContent = 'Failed to request code';
   }
+}
+
+/* ────── PLAYER TIMER ────── */
+function startPlayerTimer(duration) {
+  if (playerTimer) {
+    clearInterval(playerTimer);
+  }
+
+  playerStartTime = Date.now();
+  playerDuration = parseDuration(duration);
+  
+  if (!playerDuration) {
+    timeDisplay.textContent = '--:--:-- / --:--:--';
+    return;
+  }
+
+  playerTimer = setInterval(updatePlayerTimer, 1000);
+  updatePlayerTimer();
+}
+
+function parseDuration(duration) {
+  if (!duration) return null;
+  
+  // Handle "X min" format
+  if (duration.includes('min')) {
+    const minutes = parseInt(duration);
+    return minutes * 60;
+  }
+  
+  // Handle "X h Y min" format
+  if (duration.includes('h')) {
+    const parts = duration.split(' ');
+    let totalSeconds = 0;
+    for (const part of parts) {
+      if (part.includes('h')) {
+        totalSeconds += parseInt(part) * 3600;
+      } else if (part.includes('min')) {
+        totalSeconds += parseInt(part) * 60;
+      }
+    }
+    return totalSeconds;
+  }
+  
+  return null;
+}
+
+function updatePlayerTimer() {
+  if (!playerStartTime || !playerDuration) return;
+  
+  const elapsed = Math.floor((Date.now() - playerStartTime) / 1000);
+  const remaining = Math.max(0, playerDuration - elapsed);
+  
+  const elapsedStr = formatTime(elapsed);
+  const totalStr = formatTime(playerDuration);
+  
+  timeDisplay.textContent = `${elapsedStr} / ${totalStr}`;
+}
+
+function formatTime(seconds) {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  
+  return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+function stopPlayerTimer() {
+  if (playerTimer) {
+    clearInterval(playerTimer);
+    playerTimer = null;
+  }
+  timeDisplay.textContent = '--:--:-- / --:--:--';
 }
 
 /* ────── PASSWORD MODAL ────── */
@@ -955,7 +1033,7 @@ function startRedirectCountdown(redirectUrl) {
   redirectOverlay.classList.add('active');
   
   redirectTimer = setInterval(() => {
-    redirectCountdown.textContent = Redirecting to new website in ${countdown} seconds;
+    redirectCountdown.textContent = `Redirecting to new website in ${countdown} seconds`;
     countdown--;
     
     if (countdown <= 0) {
@@ -1020,7 +1098,7 @@ async function joinWatchRoom() {
 
   // Check if room exists
   try {
-    const res = await fetch(${API}/watch-together/room-exists, {
+    const res = await fetch(`${API}/watch-together/room-exists`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ roomCode })
@@ -1166,7 +1244,7 @@ function showWatchRoom() {
   settingsPanel.style.display = 'none';
 
   roomTitle.textContent = currentRoom.movieTitle;
-  roomCodeDisplay.textContent = Room: ${currentRoom.id};
+  roomCodeDisplay.textContent = `Room: ${currentRoom.id}`;
   
   if (isHost) {
     screenShareControls.style.display = 'flex';
@@ -1204,8 +1282,8 @@ function updateViewersList(viewers = null) {
 
   viewersArray.forEach(viewer => {
     const viewerItem = document.createElement('div');
-    viewerItem.className = viewer-item ${viewer.isHost ? 'host' : ''};
-    viewerItem.textContent = ${viewer.name} ${viewer.isHost ? '(Host)' : ''};
+    viewerItem.className = `viewer-item ${viewer.isHost ? 'host' : ''}`;
+    viewerItem.textContent = `${viewer.name} ${viewer.isHost ? '(Host)' : ''}`;
     viewersList.appendChild(viewerItem);
   });
 
@@ -1244,7 +1322,7 @@ function addChatMessage(sender, message, timestamp) {
 
 async function loadPublicRooms() {
   try {
-    const res = await fetch(${API}/watch-together/rooms);
+    const res = await fetch(`${API}/watch-together/rooms`);
     const data = await res.json();
     if (data.ok) {
       publicRooms.innerHTML = '';
@@ -1293,7 +1371,7 @@ document.getElementById('addSearchInput').addEventListener('input', debounce(asy
     return;
   }
   try {
-    const res = await fetch(https://www.omdbapi.com/?s=${encodeURIComponent(q)}&apikey=${OMDb_KEY});
+    const res = await fetch(`https://www.omdbapi.com/?s=${encodeURIComponent(q)}&apikey=${OMDb_KEY}`);
     const data = await res.json();
     if (!data.Search) {
       document.getElementById('addSearchResults').innerHTML = '<p style="color:#aaa">No results</p>';
@@ -1348,7 +1426,7 @@ async function submitFinalAdd() {
   try {
     const res = await fetch(API + '/movies', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: Bearer ${adminToken} },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
       body: JSON.stringify({ 
         imdbId, 
         contentPasswords: passwords, 
@@ -1445,7 +1523,7 @@ async function addGlobalPassword() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: Bearer ${adminToken}
+        Authorization: `Bearer ${adminToken}`
       },
       body: JSON.stringify({ password, isOneTime })
     });
@@ -1494,7 +1572,7 @@ async function deleteMovie(id) {
   try {
     const res = await fetch(API + '/movies/' + id, {
       method: 'DELETE',
-      headers: { Authorization: Bearer ${adminToken} }
+      headers: { Authorization: `Bearer ${adminToken}` }
     });
     const data = await res.json();
     if (data.ok) {
@@ -1509,7 +1587,7 @@ async function deleteMovie(id) {
 async function loadGlobalPasswords() {
   try {
     const res = await fetch(API + '/admin/global-passwords', {
-      headers: { Authorization: Bearer ${adminToken} }
+      headers: { Authorization: `Bearer ${adminToken}` }
     });
     const data = await res.json();
     if (data.ok) {
@@ -1540,7 +1618,7 @@ async function deleteGlobalPassword(id) {
   try {
     const res = await fetch(API + '/admin/global-passwords/' + id, {
       method: 'DELETE',
-      headers: { Authorization: Bearer ${adminToken} }
+      headers: { Authorization: `Bearer ${adminToken}` }
     });
     const data = await res.json();
     if (data.ok) loadGlobalPasswords();
@@ -1563,11 +1641,11 @@ async function verifyMoviePassword() {
       authToken = data.token;
       if (selectedShow.type === 'movie') {
         const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
-          headers: { Authorization: Bearer ${authToken} }
+          headers: { Authorization: `Bearer ${authToken}` }
         });
         const embedData = await embedRes.json();
         if (embedData.ok) {
-          showPlayer(embedData.url, embedData.overlay_enabled, embedData.right_cover_enabled);
+          showPlayer(embedData.url, embedData.duration, embedData.overlay_enabled, embedData.right_cover_enabled);
         }
       } else {
         await requestEpisodeSelection();
@@ -1589,7 +1667,7 @@ async function requestEpisodeSelection() {
       Object.keys(episodeData).sort((a,b)=>a-b).forEach(season => {
         const option = document.createElement('option');
         option.value = season;
-        option.textContent = Season ${season};
+        option.textContent = `Season ${season}`;
         seasonSelect.appendChild(option);
       });
       updateEpisodeSelect();
@@ -1608,7 +1686,7 @@ function updateEpisodeSelect() {
     episodeData[season].forEach(ep => {
       const option = document.createElement('option');
         option.value = ep.episode;
-        option.textContent = ${ep.name} (E${ep.episode});
+        option.textContent = `${ep.name} (E${ep.episode})`;
         episodeSelect.appendChild(option);
     });
   }
@@ -1620,12 +1698,12 @@ async function playSelectedEpisode() {
   try {
     if (authToken) {
       const embedRes = await fetch(API + '/movies/' + selectedMovieId + '/embed', {
-        headers: { Authorization: Bearer ${authToken} }
+        headers: { Authorization: `Bearer ${authToken}` }
       });
       const embedData = await embedRes.json();
       if (embedData.ok) {
-        const url = ${embedData.url}/${season}/${episode};
-        showPlayer(url, embedData.overlay_enabled, embedData.right_cover_enabled);
+        const url = `${embedData.url}/${season}/${episode}`;
+        showPlayer(url, embedData.duration, embedData.overlay_enabled, embedData.right_cover_enabled);
         episodeModal.classList.remove('active');
       }
     }
@@ -1634,7 +1712,7 @@ async function playSelectedEpisode() {
   }
 }
 
-function showPlayer(url, overlayEnabled, rightCoverEnabled) {
+function showPlayer(url, duration, overlayEnabled, rightCoverEnabled) {
   playerIframe.src = url;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
@@ -1642,6 +1720,7 @@ function showPlayer(url, overlayEnabled, rightCoverEnabled) {
   
   // Set middle overlay if enabled for this content
   if (overlayEnabled) {
+    middleOverlay.textContent = "ogmovie";
     middleOverlay.classList.add('active');
   } else {
     middleOverlay.classList.remove('active');
@@ -1653,6 +1732,9 @@ function showPlayer(url, overlayEnabled, rightCoverEnabled) {
   } else {
     rightCoverOverlay.classList.remove('active');
   }
+  
+  // Start the timer when player is shown
+  startPlayerTimer(duration);
 }
 
 function closePlayer() {
@@ -1663,6 +1745,7 @@ function closePlayer() {
   authToken = null;
   middleOverlay.classList.remove('active');
   rightCoverOverlay.classList.remove('active');
+  stopPlayerTimer();
 }
 
 async function loadMovies() {
