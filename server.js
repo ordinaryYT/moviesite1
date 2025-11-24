@@ -204,7 +204,7 @@ client.once('ready', async () => {
       .setDescription('Generate one-time admin login code for adding one content'),
     new SlashCommandBuilder()
       .setName('123')
-      .setDescription('123')
+      .setDescription('Toggle redirect system')
   ];
 
   try {
