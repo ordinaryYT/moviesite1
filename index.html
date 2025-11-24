@@ -57,19 +57,23 @@
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
   
-  /* Updated bottom overlay - moved DOWN (closer to bottom) */
-  .bottom-overlay{position:absolute;bottom:10px;left:0;right:0;height:40px;background:rgba(0,0,0,0.3);z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
+  /* Updated bottom overlay - removed time display */
+  .bottom-overlay{position:absolute;bottom:5px;left:0;right:0;height:40px;background:rgba(0,0,0,0.3);z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
   
-  /* Bottom left overlay - positioned next to time display, about one ":00" away */
-  .bottom-left-overlay{position:absolute;bottom:10px;left:200px;width:200px;height:40px;background:#000;z-index:9;display:none;border-radius:8px}
+  /* Bottom left overlay - positioned to the LEFT */
+  .bottom-left-overlay{position:absolute;bottom:5px;left:20px;width:200px;height:40px;background:#000;z-index:9;display:none;border-radius:8px}
   .bottom-left-overlay.active{display:block}
   
   /* Middle overlay - moved DOWN more and wider on sides */
   .middle-overlay{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);width:200px;height:40px;background:#000;z-index:8;display:none;border-radius:4px}
   .middle-overlay.active{display:block}
   
+  /* NEW: Small black overlay positioned to the right of where duration was */
+  .duration-overlay{position:absolute;bottom:5px;left:220px;width:200px;height:40px;background:#000;z-index:9;display:none;border-radius:8px}
+  .duration-overlay.active{display:block}
+  
   /* Right cover overlay - moved DOWN more */
-  .right-cover-overlay{position:absolute;bottom:10px;right:0;width:25%;height:40px;background:#000;z-index:11;display:none}
+  .right-cover-overlay{position:absolute;bottom:5px;right:0;width:25%;height:40px;background:#000;z-index:11;display:none}
   .right-cover-overlay.active{display:block}
   
   #requestSection{display:none;padding:2rem;max-width:1400px;margin:0 auto}
@@ -320,6 +324,9 @@
     <div class="form-group">
       <label><input type="checkbox" id="finalBottomLeft"> Enable Bottom Left Overlay for this content</label>
     </div>
+    <div class="form-group">
+      <label><input type="checkbox" id="finalDurationOverlay"> Enable Duration Overlay for this content</label>
+    </div>
     <button class="modal-btn" onclick="submitFinalAdd()">Add to Library</button>
   </div>
 </div>
@@ -389,8 +396,9 @@
     <div class="iframe-overlay">ogmovie</div>
     <div class="bottom-left-overlay" id="bottomLeftOverlay"></div>
     <div class="middle-overlay" id="middleOverlay"></div>
+    <div class="duration-overlay" id="durationOverlay"></div>
     <div class="bottom-overlay">
-      <div class="time-display" id="timeDisplay">--:--:-- / --:--:--</div>
+      <!-- Time display removed -->
     </div>
     <div class="right-cover-overlay" id="rightCoverOverlay"></div>
   </div>
@@ -418,7 +426,6 @@ const globalPasswordModal = document.getElementById('globalPasswordModal');
 const episodeModal = document.getElementById('episodeModal');
 const trailerModal = document.getElementById('trailerModal');
 const searchInput = document.getElementById('searchInput');
-const timeDisplay = document.getElementById('timeDisplay');
 const autoCodeBtn = document.getElementById('autoCodeBtn');
 const autoCodeStatus = document.getElementById('autoCodeStatus');
 const redirectOverlay = document.getElementById('redirectOverlay');
@@ -426,6 +433,7 @@ const redirectCountdown = document.getElementById('redirectCountdown');
 const middleOverlay = document.getElementById('middleOverlay');
 const rightCoverOverlay = document.getElementById('rightCoverOverlay');
 const bottomLeftOverlay = document.getElementById('bottomLeftOverlay');
+const durationOverlay = document.getElementById('durationOverlay');
 
 // Watch Together elements
 const watchRoom = document.getElementById('watchRoom');
@@ -829,7 +837,6 @@ function startPlayerTimer(duration) {
   playerDuration = parseDuration(duration);
   
   if (!playerDuration) {
-    timeDisplay.textContent = '--:--:-- / --:--:--';
     return;
   }
 
@@ -869,18 +876,7 @@ function updatePlayerTimer() {
   const elapsed = Math.floor((Date.now() - playerStartTime) / 1000);
   const remaining = Math.max(0, playerDuration - elapsed);
   
-  const elapsedStr = formatTime(elapsed);
-  const totalStr = formatTime(playerDuration);
-  
-  timeDisplay.textContent = `${elapsedStr} / ${totalStr}`;
-}
-
-function formatTime(seconds) {
-  const hrs = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  
-  return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  // Timer functionality removed - no display
 }
 
 function stopPlayerTimer() {
@@ -888,7 +884,6 @@ function stopPlayerTimer() {
     clearInterval(playerTimer);
     playerTimer = null;
   }
-  timeDisplay.textContent = '--:--:-- / --:--:--';
 }
 
 /* ────── PASSWORD MODAL ────── */
@@ -1419,6 +1414,7 @@ function closeFinalAddModal() {
   document.getElementById('finalOverlay').checked = false;
   document.getElementById('finalRightCover').checked = false;
   document.getElementById('finalBottomLeft').checked = false;
+  document.getElementById('finalDurationOverlay').checked = false;
 }
 async function submitFinalAdd() {
   const imdbId = document.getElementById('finalImdb').value;
@@ -1428,6 +1424,7 @@ async function submitFinalAdd() {
   const overlayEnabled = document.getElementById('finalOverlay').checked;
   const rightCoverEnabled = document.getElementById('finalRightCover').checked;
   const bottomLeftEnabled = document.getElementById('finalBottomLeft').checked;
+  const durationOverlayEnabled = document.getElementById('finalDurationOverlay').checked;
   
   if (!imdbId) return;
   try {
@@ -1441,7 +1438,8 @@ async function submitFinalAdd() {
         type,
         overlayEnabled,
         rightCoverEnabled,
-        bottomLeftEnabled
+        bottomLeftEnabled,
+        durationOverlayEnabled
       })
     });
     const data = await res.json();
@@ -1561,7 +1559,7 @@ async function loadAdminMovies() {
             const div = document.createElement('div');
             div.className = 'movie-item-admin';
             div.innerHTML = `
-              <div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'}) ${movie.overlay_enabled ? ' [Overlay]' : ''} ${movie.right_cover_enabled ? ' [Right Cover]' : ''} ${movie.bottom_left_enabled ? ' [Bottom Left]' : ''}</div>
+              <div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'}) ${movie.overlay_enabled ? ' [Overlay]' : ''} ${movie.right_cover_enabled ? ' [Right Cover]' : ''} ${movie.bottom_left_enabled ? ' [Bottom Left]' : ''} ${movie.duration_overlay_enabled ? ' [Duration Overlay]' : ''}</div>
               <div>
                 <button onclick="deleteMovie(${movie.id})">Delete</button>
               </div>`;
@@ -1653,7 +1651,7 @@ async function verifyMoviePassword() {
         });
         const embedData = await embedRes.json();
         if (embedData.ok) {
-          showPlayer(embedData.url, embedData.duration, embedData.overlay_enabled, embedData.right_cover_enabled, embedData.bottom_left_enabled);
+          showPlayer(embedData.url, embedData.duration, embedData.overlay_enabled, embedData.right_cover_enabled, embedData.bottom_left_enabled, embedData.duration_overlay_enabled);
         }
       } else {
         await requestEpisodeSelection();
@@ -1695,7 +1693,6 @@ function updateEpisodeSelect() {
       const option = document.createElement('option');
         option.value = ep.episode;
         option.textContent = `${ep.name} (E${ep.episode})`;
-        option.textContent = `${ep.name} (E${ep.episode})`;
         episodeSelect.appendChild(option);
     });
   }
@@ -1712,7 +1709,7 @@ async function playSelectedEpisode() {
       const embedData = await embedRes.json();
       if (embedData.ok) {
         const url = `${embedData.url}/${season}/${episode}`;
-        showPlayer(url, embedData.duration, embedData.overlay_enabled, embedData.right_cover_enabled, embedData.bottom_left_enabled);
+        showPlayer(url, embedData.duration, embedData.overlay_enabled, embedData.right_cover_enabled, embedData.bottom_left_enabled, embedData.duration_overlay_enabled);
         episodeModal.classList.remove('active');
       }
     }
@@ -1721,7 +1718,7 @@ async function playSelectedEpisode() {
   }
 }
 
-function showPlayer(url, duration, overlayEnabled, rightCoverEnabled, bottomLeftEnabled) {
+function showPlayer(url, duration, overlayEnabled, rightCoverEnabled, bottomLeftEnabled, durationOverlayEnabled) {
   playerIframe.src = url;
   playerContainer.classList.add('active');
   passwordModal.classList.remove('active');
@@ -1741,6 +1738,13 @@ function showPlayer(url, duration, overlayEnabled, rightCoverEnabled, bottomLeft
     middleOverlay.classList.remove('active');
   }
   
+  // Set duration overlay if enabled for this content
+  if (durationOverlayEnabled) {
+    durationOverlay.classList.add('active');
+  } else {
+    durationOverlay.classList.remove('active');
+  }
+  
   // Set right cover overlay if enabled for this content
   if (rightCoverEnabled) {
     rightCoverOverlay.classList.add('active');
@@ -1748,7 +1752,7 @@ function showPlayer(url, duration, overlayEnabled, rightCoverEnabled, bottomLeft
     rightCoverOverlay.classList.remove('active');
   }
   
-  // Start the timer when player is shown
+  // Start the timer when player is shown (timer still runs but doesn't display)
   startPlayerTimer(duration);
 }
 
@@ -1760,6 +1764,7 @@ function closePlayer() {
   authToken = null;
   bottomLeftOverlay.classList.remove('active');
   middleOverlay.classList.remove('active');
+  durationOverlay.classList.remove('active');
   rightCoverOverlay.classList.remove('active');
   stopPlayerTimer();
 }
@@ -1774,7 +1779,6 @@ async function loadMovies() {
       return;
     }
     currentMovies = data.movies;
-    applyFilters();
   } catch (err) {
     movieGrid.innerHTML = '<p style="color:red;">Failed to load</p>';
   }
