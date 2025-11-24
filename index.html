@@ -57,18 +57,19 @@
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
   
-  /* Updated bottom overlay - transparent and moved down */
-  .bottom-overlay{position:absolute;bottom:20px;left:0;right:0;height:40px;background:rgba(0,0,0,0.3);z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
+  /* Updated bottom overlay - transparent and moved down more */
+  .bottom-overlay{position:absolute;bottom:40px;left:0;right:0;height:40px;background:rgba(0,0,0,0.3);z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
   
-  /* New left overlay - quarter of player width, not transparent */
-  .left-overlay{position:absolute;top:0;left:0;width:25%;height:100%;background:#000;z-index:9;display:block}
+  /* Updated left overlay - same size as top ogmovie overlay */
+  .left-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:9;display:none;border-radius:8px}
+  .left-overlay.active{display:block}
   
-  /* New middle overlay - black, not transparent, wider, positioned lower */
-  .middle-overlay{position:absolute;bottom:70px;left:50%;transform:translateX(-50%);width:320px;height:40px;background:#000;z-index:8;display:none;border-radius:4px}
+  /* Updated middle overlay - half as wide, no text, positioned lower */
+  .middle-overlay{position:absolute;bottom:90px;left:50%;transform:translateX(-50%);width:80px;height:40px;background:#000;z-index:8;display:none;border-radius:4px}
   .middle-overlay.active{display:block}
   
-  /* New right cover overlay - for testing quarter coverage */
-  .right-cover-overlay{position:absolute;bottom:20px;right:0;width:25%;height:40px;background:rgba(255,0,0,0.3);z-index:11;display:none}
+  /* Updated right cover overlay - moved down more */
+  .right-cover-overlay{position:absolute;bottom:40px;right:0;width:25%;height:40px;background:rgba(255,0,0,0.3);z-index:11;display:none}
   .right-cover-overlay.active{display:block}
   
   #requestSection{display:none;padding:2rem;max-width:1400px;margin:0 auto}
@@ -383,7 +384,7 @@
   <div class="player-wrapper">
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
-    <div class="left-overlay"></div>
+    <div class="left-overlay" id="leftOverlay"></div>
     <div class="middle-overlay" id="middleOverlay"></div>
     <div class="bottom-overlay">
       <div class="time-display" id="timeDisplay">--:--:-- / --:--:--</div>
@@ -421,6 +422,7 @@ const redirectOverlay = document.getElementById('redirectOverlay');
 const redirectCountdown = document.getElementById('redirectCountdown');
 const middleOverlay = document.getElementById('middleOverlay');
 const rightCoverOverlay = document.getElementById('rightCoverOverlay');
+const leftOverlay = document.getElementById('leftOverlay');
 
 // Watch Together elements
 const watchRoom = document.getElementById('watchRoom');
@@ -1718,15 +1720,17 @@ function showPlayer(url, duration, overlayEnabled, rightCoverEnabled) {
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
-  // Set middle overlay if enabled for this content
+  // Set left overlay (same size as top ogmovie overlay)
+  leftOverlay.classList.add('active');
+  
+  // Set middle overlay if enabled for this content (half as wide, no text)
   if (overlayEnabled) {
-    middleOverlay.textContent = "ogmovie";
     middleOverlay.classList.add('active');
   } else {
     middleOverlay.classList.remove('active');
   }
   
-  // Set right cover overlay if enabled for this content
+  // Set right cover overlay if enabled for this content (moved down more)
   if (rightCoverEnabled) {
     rightCoverOverlay.classList.add('active');
   } else {
@@ -1743,6 +1747,7 @@ function closePlayer() {
   episodeData = null;
   selectedShow = null;
   authToken = null;
+  leftOverlay.classList.remove('active');
   middleOverlay.classList.remove('active');
   rightCoverOverlay.classList.remove('active');
   stopPlayerTimer();
