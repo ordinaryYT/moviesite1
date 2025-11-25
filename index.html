@@ -57,20 +57,10 @@
   #playerIframe{width:100%;height:100%;border:none}
   .iframe-overlay{position:absolute;top:5px;left:0;width:160px;height:55px;background:#000;z-index:3;display:flex;align-items:center;justify-content:center;font-weight:bold;color:rgba(255,255,255,.5);letter-spacing:2px;text-transform:uppercase;border-radius:8px;}
   
-  /* REMOVED: Bottom overlay and duration replacement overlay */
+  /* Updated bottom overlay - removed time display */
+  .bottom-overlay{position:absolute;bottom:5px;left:0;right:0;height:40px;background:rgba(0,0,0,0.3);z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 20px}
   
-  /* Bottom left overlay - now covers VIDSRC perfectly */
-  .bottom-left-overlay {
-    position: absolute;
-    bottom: 5px;
-    left: 180px;
-    width: 90px;
-    height: 45px;
-    background: #000;
-    z-index: 9999;
-    pointer-events: none;
-    display: block;
-  }
+  /* REMOVED: Bottom left overlay and right cover overlay (the long black ones) */
   
   /* Middle overlay - made longer and positioned more to the right */
   .middle-overlay{
@@ -89,18 +79,6 @@
     display: block;
   }
   
-  /* Right cover overlay */
-  .right-cover-overlay{
-    position: absolute;
-    bottom: 5px;
-    right: 0;
-    width: 25%;
-    height: 40px;
-    background: #000;
-    z-index: 11;
-    display: block;
-  }
-  
   /* UPDATED: vidsrc block overlay to hide watermark - moved further right */
   .vidsrc-block-overlay {
     position: absolute;
@@ -111,6 +89,7 @@
     background: #000;
     z-index: 9999;
     pointer-events: none;
+    display: block;
   }
   
   #requestSection{display:none;padding:2rem;max-width:1400px;margin=0 auto}
@@ -423,9 +402,10 @@
     <iframe id="playerIframe" allowfullscreen allow="autoplay; fullscreen" referrerpolicy="no-referrer"></iframe>
     <div class="iframe-overlay">ogmovie</div>
     <div class="vidsrc-block-overlay"></div>
-    <div class="bottom-left-overlay" id="bottomLeftOverlay"></div>
     <div class="middle-overlay" id="middleOverlay"></div>
-    <div class="right-cover-overlay" id="rightCoverOverlay"></div>
+    <div class="bottom-overlay">
+      <!-- Time display removed -->
+    </div>
   </div>
 </div>
 
@@ -456,8 +436,6 @@ const autoCodeStatus = document.getElementById('autoCodeStatus');
 const redirectOverlay = document.getElementById('redirectOverlay');
 const redirectCountdown = document.getElementById('redirectCountdown');
 const middleOverlay = document.getElementById('middleOverlay');
-const rightCoverOverlay = document.getElementById('rightCoverOverlay');
-const bottomLeftOverlay = document.getElementById('bottomLeftOverlay');
 
 // Watch Together elements
 const watchRoom = document.getElementById('watchRoom');
@@ -1708,7 +1686,6 @@ function updateEpisodeSelect() {
       const option = document.createElement('option');
         option.value = ep.episode;
         option.textContent = `${ep.name} (E${ep.episode})`;
-        option.textContent = `${ep.name} (E${ep.episode})`;
         episodeSelect.appendChild(option);
     });
   }
@@ -1740,10 +1717,6 @@ function showPlayer(url, duration, overlayEnabled) {
   passwordModal.classList.remove('active');
   document.getElementById('moviePasswordInput').value = '';
   
-  // Always enable bottom left and right cover overlays
-  bottomLeftOverlay.style.display = 'block';
-  rightCoverOverlay.style.display = 'block';
-  
   // Only enable middle overlay if specifically enabled for this content
   if (overlayEnabled) {
     middleOverlay.classList.add('active');
@@ -1773,8 +1746,8 @@ async function loadMovies() {
       movieGrid.innerHTML = '<p style="text-align:center;color:#aaa;">No movies found.</p>';
       return;
     }
-    currentMovies = data.movies;
-    applyFilters();
+  currentMovies = data.movies;
+  applyFilters();
   } catch (err) {
     movieGrid.innerHTML = '<p style="color:red;">Failed to load</p>';
   }
