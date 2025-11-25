@@ -729,7 +729,7 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
     if (!rows[0] || rows[0].used) return res.status(403).json({ ok: false, error: 'Code already used' });
   }
 
-  let { imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie', overlayEnabled = false, rightCoverEnabled = false } = req.body;
+  let { imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie', overlayEnabled = false } = req.body;
   if (!imdbId) return res.status(400).json({ ok: false, error: 'IMDb ID required' });
 
   if (!imdbId.startsWith('tt')) imdbId = 'tt' + imdbId;
@@ -744,7 +744,7 @@ app.post('/api/movies', authMiddleware, async (req, res) => {
   const { rows } = await pool.query(
     `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes, overlay_enabled, right_cover_enabled)
      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-    [finalTitle, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes), overlayEnabled, rightCoverEnabled]
+    [finalTitle, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes), overlayEnabled, true]
   );
 
   // Fetch poster, title, year, duration from OMDb
@@ -934,16 +934,26 @@ app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
 
   const { movieId } = req.user;
   const { rows } = await pool.query(
-    'SELECT imdb_id, type, duration, overlay_enabled, right_cover_enabled FROM movies WHERE id = $1',
+    'SELECT imdb_id, type, duration, overlay_enabled FROM movies WHERE id = $1',
     [movieId]
   );
   if (!rows[0]) return res.json({ ok: false, error: 'Not found' });
 
-  const { imdb_id, type, duration, overlay_enabled, right_cover_enabled } = rows[0];
+  const { imdb_id, type, duration, overlay_enabled } = rows[0];
   const base = type === 'movie' ? 'movie' : 'tv';
   const url = `https://vidsrc.me/embed/${base}/${imdb_id}`;
 
-  res.json({ ok: true, url, duration, overlay_enabled, right_cover_enabled });
+  // Always return true for right cover, bottom left, and duration replacement overlays
+  // Only middle overlay is optional based on database value
+  res.json({ 
+    ok: true, 
+    url, 
+    duration, 
+    overlay_enabled: overlay_enabled || false,
+    right_cover_enabled: true,
+    bottom_left_enabled: true,
+    duration_replacement_enabled: true
+  });
 });
 
 app.get('/api/trailer', async (req, res) => {
