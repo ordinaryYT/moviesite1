@@ -77,7 +77,7 @@ function generateRoomCode() {
 async function ensureTables() {
   console.log('Ensuring database tables exist...');
   
-  // First create all tables
+  // Create tables first
   await pool.query(`
     CREATE TABLE IF NOT EXISTS movies (
       id SERIAL PRIMARY KEY,
@@ -138,18 +138,24 @@ async function ensureTables() {
     )
   `);
 
-  // Now safely add columns if they don't exist
+  // Safely add columns
   await pool.query(`
     ALTER TABLE movies ADD COLUMN IF NOT EXISTS overlay_enabled BOOLEAN DEFAULT FALSE;
-  `).catch(err => console.log('Overlay column check:', err.message));
+  `).catch(err => {
+    console.log('Overlay column already exists or error:', err.message);
+  });
 
   await pool.query(`
     ALTER TABLE movies ADD COLUMN IF NOT EXISTS right_cover_enabled BOOLEAN DEFAULT FALSE;
-  `).catch(err => console.log('Right cover column check:', err.message));
+  `).catch(err => {
+    console.log('Right cover column already exists or error:', err.message);
+  });
 
   await pool.query(`
     ALTER TABLE movies ADD COLUMN IF NOT EXISTS duration TEXT;
-  `).catch(err => console.log('Duration column check:', err.message));
+  `).catch(err => {
+    console.log('Duration column already exists or error:', err.message);
+  });
 
   await pool.query(`
     INSERT INTO bot_config (key, value) VALUES ('codes_enabled', TRUE)
@@ -361,7 +367,7 @@ if (DISCORD_BOT_TOKEN) {
 
 ensureTables();
 
-// Socket.IO for Watch Together + Redirect
+// Socket.IO for Watch Together
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
@@ -370,24 +376,590 @@ io.on('connection', (socket) => {
     redirectUrl: 'https://sajdhgaehtoihgaohgjdh.onrender.com'
   });
 
-  // ... (rest of your socket handlers remain unchanged)
-  socket.on('create-room', (data) => { /* ... */ });
-  socket.on('join-room', (data) => { /* ... */ });
-  socket.on('webrtc-offer', (data) => { /* ... */ });
-  socket.on('webrtc-answer', (data) => { /* ... */ });
-  socket.on('webrtc-ice-candidate', (data) => { /* ... */ });
-  socket.on('host-screen-started', (data) => { /* ... */ });
-  socket.on('host-screen-stopped', (data) => { /* ... */ });
-  socket.on('chat-message', (data) => { /* ... */ });
+  socket.on('create-room', (data) => {
+    const roomCode = generateRoomCode();
+    const room = {
+      id: roomCode,
+      host: socket.id,
+      hostName: data.hostName || 'Host',
+      isPublic: data.isPublic || false,
+      movieTitle: data.movieTitle || 'Unknown',
+      maxViewers: 9,
+      viewers: new Map(),
+      createdAt: new Date()
+    };
+    
+    room.viewers.set(socket.id, { id: socket.id, name: data.hostName || 'Host', isHost: true });
+    watchTogetherRooms.set(roomCode, room);
+    
+    socket.join(roomCode);
+    socket.emit('room-created', { roomCode, room });
+    
+    console.log(`Room created: ${roomCode} by ${socket.id}`);
+  });
 
-  socket.on('disconnect', () => { /* ... */ });
+  socket.on('join-room', (data) => {
+    const room = watchTogetherRooms.get(data.roomCode);
+    if (!room) {
+      socket.emit('room-error', { error: 'Room not found' });
+      return;
+    }
+
+    if (room.viewers.size >= room.maxViewers) {
+      socket.emit('room-error', { error: 'Room is full' });
+      return;
+    }
+
+    room.viewers.set(socket.id, { 
+      id: socket.id, 
+      name: data.viewerName || `Viewer${room.viewers.size}`,
+      isHost: false 
+    });
+
+    socket.join(data.roomCode);
+    socket.emit('room-joined', { room });
+    
+    socket.to(data.roomCode).emit('viewer-joined', {
+      viewer: { id: socket.id, name: data.viewerName || `Viewer${room.viewers.size}` }
+    });
+
+    socket.emit('viewers-updated', { 
+      viewers: Array.from(room.viewers.values()) 
+    });
+
+    console.log(`User ${socket.id} joined room ${data.roomCode}`);
+  });
+
+  socket.on('webrtc-offer', (data) => {
+    socket.to(data.target).emit('webrtc-offer', {
+      offer: data.offer,
+      sender: socket.id
+    });
+  });
+
+  socket.on('webrtc-answer', (data) => {
+    socket.to(data.target).emit('webrtc-answer', {
+      answer: data.answer,
+      sender: socket.id
+    });
+  });
+
+  socket.on('webrtc-ice-candidate', (data) => {
+    socket.to(data.target).emit('webrtc-ice-candidate', {
+      candidate: data.candidate,
+      sender: socket.id
+    });
+  });
+
+  socket.on('host-screen-started', (data) => {
+    socket.to(data.roomCode).emit('host-screen-started', {
+      hostId: socket.id
+    });
+  });
+
+  socket.on('host-screen-stopped', (data) => {
+    socket.to(data.roomCode).emit('host-screen-stopped');
+  });
+
+  socket.on('chat-message', (data) => {
+    const room = watchTogetherRooms.get(data.roomCode);
+    if (room) {
+      const viewer = room.viewers.get(socket.id);
+      io.to(data.roomCode).emit('chat-message', {
+        message: data.message,
+        sender: viewer?.name || 'Unknown',
+        timestamp: new Date().toLocaleTimeString()
+      });
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+    
+    for (const [roomCode, room] of watchTogetherRooms.entries()) {
+      if (room.host === socket.id) {
+        io.to(roomCode).emit('room-closed', { reason: 'Host left the room' });
+        watchTogetherRooms.delete(roomCode);
+      } else if (room.viewers.has(socket.id)) {
+        room.viewers.delete(socket.id);
+        socket.to(roomCode).emit('viewer-left', { viewerId: socket.id });
+        
+        if (room.viewers.size === 0) {
+          setTimeout(() => {
+            if (watchTogetherRooms.get(roomCode)?.viewers.size === 0) {
+              watchTogetherRooms.delete(roomCode);
+            }
+          }, 300000);
+        }
+      }
+    }
+  });
 });
 
-// All your API routes (unchanged)
-app.get('/api/watch-together/rooms', (req, res) => { /* ... */ });
-app.post('/api/watch-together/room-exists', (req, res) => { /* ... */ });
+// Watch Together API endpoints
+app.get('/api/watch-together/rooms', (req, res) => {
+  const publicRooms = Array.from(watchTogetherRooms.values())
+    .filter(room => room.isPublic && room.viewers.size > 0)
+    .map(room => ({
+      id: room.id,
+      hostName: room.hostName,
+      movieTitle: room.movieTitle,
+      viewerCount: room.viewers.size,
+      maxViewers: room.maxViewers,
+      createdAt: room.createdAt
+    }));
+  
+  res.json({ ok: true, rooms: publicRooms });
+});
 
-// ... (all other routes: auth, movies, admin, etc. remain the same)
+app.post('/api/watch-together/room-exists', (req, res) => {
+  const { roomCode } = req.body;
+  const room = watchTogetherRooms.get(roomCode);
+  res.json({ ok: true, exists: !!room, isFull: room ? room.viewers.size >= room.maxViewers : false });
+});
+
+const authMiddleware = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ ok: false, error: 'No token' });
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ ok: false, error: 'Invalid token' });
+  }
+};
+
+const requireFullAdmin = (req, res, next) => {
+  if (req.user.role !== 'admin') return res.status(403).json({ ok: false, error: 'Insufficient permissions' });
+  next();
+};
+
+// Discord OAuth routes
+app.get('/api/auth/discord', (req, res) => {
+  const redirectUri = `${req.protocol}://${req.get('host')}/api/auth/discord/callback`;
+  const discordAuthUrl = `https://discord.com/api/oauth2/authorize?client_id=${DISCORD_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=identify`;
+  res.redirect(discordAuthUrl);
+});
+
+app.get('/api/auth/discord/callback', async (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.redirect('/?error=no_code');
+
+  try {
+    const tokenResponse = await fetch('https://discord.com/api/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: DISCORD_CLIENT_ID,
+        client_secret: DISCORD_CLIENT_SECRET,
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: `${req.protocol}://${req.get('host')}/api/auth/discord/callback`,
+      }),
+    });
+
+    const tokenData = await tokenResponse.json();
+    if (!tokenData.access_token) return res.redirect('/?error=token_failed');
+
+    const userResponse = await fetch('https://discord.com/api/users/@me', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+
+    const userData = await userResponse.json();
+    if (!userData.id) return res.redirect('/?error=user_failed');
+
+    const { rows } = await pool.query(
+      `INSERT INTO users (discord_id, discord_username) 
+       VALUES ($1, $2) 
+       ON CONFLICT (discord_id) 
+       DO UPDATE SET discord_username = $2 
+       RETURNING id`,
+      [userData.id, `${userData.username}#${userData.discriminator || '0'}`]
+    );
+
+    const token = jwt.sign({ 
+      userId: rows[0].id, 
+      discordId: userData.id,
+      username: userData.username 
+    }, JWT_SECRET, { expiresIn: '30d' });
+
+    res.redirect(`/?discord_login=success&token=${token}`);
+  } catch (error) {
+    console.error('Discord OAuth error:', error);
+    res.redirect('/?error=auth_failed');
+  }
+});
+
+// User settings endpoints
+app.get('/api/user/settings', authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT discord_username, auto_code_enabled FROM users WHERE id = $1',
+      [req.user.userId]
+    );
+    if (rows[0]) {
+      res.json({ ok: true, settings: rows[0] });
+    } else {
+      res.json({ ok: false, error: 'User not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+app.post('/api/user/settings/auto-code', authMiddleware, async (req, res) => {
+  const { enabled } = req.body;
+  try {
+    await pool.query(
+      'UPDATE users SET auto_code_enabled = $1 WHERE id = $2',
+      [enabled, req.user.userId]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+app.post('/api/auto-code/request', authMiddleware, async (req, res) => {
+  const { movieTitle, movieId } = req.body;
+  try {
+    const { rows: userRows } = await pool.query(
+      'SELECT discord_username FROM users WHERE id = $1',
+      [req.user.userId]
+    );
+    
+    if (!userRows[0]) return res.json({ ok: false, error: 'User not found' });
+
+    const codesEnabled = await getCodesEnabled();
+    if (!codesEnabled) return res.json({ ok: false, error: 'Code generation is currently disabled by admin' });
+
+    if (autoCodeChannel) {
+      await autoCodeChannel.send(
+        `${userRows[0].discord_username} - requested a one-time code for: **${movieTitle}** (ID: ${movieId})`
+      );
+      res.json({ ok: true, message: 'Code request sent! Check your DMs for the code.' });
+    } else {
+      res.json({ ok: false, error: 'Auto-code channel not configured' });
+    }
+  } catch (error) {
+    console.error('Auto-code request error:', error);
+    res.json({ ok: false, error: 'Failed to request code' });
+  }
+});
+
+app.get('/api/movies', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, title, type, year, image, imdb_id, duration, overlay_enabled, right_cover_enabled FROM movies ORDER BY created_at DESC'
+    );
+    res.json({ ok: true, movies: rows });
+  } catch (error) {
+    console.error('Error fetching movies:', error);
+    res.status(500).json({ ok: false, error: 'Failed to load movies' });
+  }
+});
+
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body;
+  if (password === ADMIN_PASSWORD) {
+    const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '12h' });
+    res.json({ ok: true, token, role: 'admin' });
+  } else {
+    res.json({ ok: false, error: 'Wrong password' });
+  }
+});
+
+app.post('/api/admin/onetime-login', async (req, res) => {
+  const { code } = req.body;
+  try {
+    const { rows } = await pool.query('SELECT id, code_hash, used FROM one_time_admin_codes');
+    for (const r of rows) {
+      if (!r.used && await bcrypt.compare(code, r.code_hash)) {
+        const token = jwt.sign({ role: 'limited_admin', code_id: r.id }, JWT_SECRET, { expiresIn: '1h' });
+        return res.json({ ok: true, token, role: 'limited_admin' });
+      }
+    }
+    res.json({ ok: false, error: 'Invalid or used code' });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+app.post('/api/movies', authMiddleware, async (req, res) => {
+  const { role, code_id } = req.user;
+  if (role === 'limited_admin') {
+    const { rows } = await pool.query('SELECT used FROM one_time_admin_codes WHERE id = $1', [code_id]);
+    if (!rows[0] || rows[0].used) return res.status(403).json({ ok: false, error: 'Code already used' });
+  }
+
+  let { imdbId, contentPasswords = [], oneTimePasswords = [], type = 'movie', overlayEnabled = false } = req.body;
+  if (!imdbId) return res.status(400).json({ ok: false, error: 'IMDb ID required' });
+
+  if (!imdbId.startsWith('tt')) imdbId = 'tt' + imdbId;
+
+  const hashes = await Promise.all(contentPasswords.map(p => bcrypt.hash(p, 10)));
+  const otHashes = await Promise.all(oneTimePasswords.map(p => bcrypt.hash(p, 10)));
+
+  let year = null;
+  let finalTitle = imdbId;
+  let duration = null;
+
+  const { rows } = await pool.query(
+    `INSERT INTO movies (title, imdb_id, type, password_hashes, one_time_password_hashes, overlay_enabled, right_cover_enabled)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+    [finalTitle, imdbId, type, JSON.stringify(hashes), JSON.stringify(otHashes), overlayEnabled, true]
+  );
+
+  let posterUrl = null;
+  try {
+    const omdbRes = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=${OMDb_KEY}`);
+    const omdbData = await omdbRes.json();
+    if (omdbData.Poster && omdbData.Poster !== 'N/A') posterUrl = omdbData.Poster;
+    if (omdbData.Title) finalTitle = omdbData.Title;
+    if (omdbData.Year) year = omdbData.Year;
+    if (omdbData.Runtime && omdbData.Runtime !== 'N/A') duration = omdbData.Runtime;
+  } catch (err) {
+    console.error('OMDb fetch failed:', err);
+  }
+
+  await pool.query(
+    'UPDATE movies SET image = $1, title = $2, year = $3, duration = $4 WHERE id = $5',
+    [posterUrl, finalTitle, year, duration, rows[0].id]
+  );
+
+  if (role === 'limited_admin') {
+    await pool.query('UPDATE one_time_admin_codes SET used = TRUE WHERE id = $1', [code_id]);
+  }
+
+  res.json({ ok: true, movieId: rows[0].id });
+});
+
+app.delete('/api/movies/:id', authMiddleware, requireFullAdmin, async (req, res) => {
+  const { rowCount } = await pool.query('DELETE FROM movies WHERE id = $1', [req.params.id]);
+  res.json({ ok: rowCount > 0 });
+});
+
+app.post('/api/admin/global-passwords', authMiddleware, requireFullAdmin, async (req, res) => {
+  const { password, isOneTime } = req.body;
+  const hash = await bcrypt.hash(password, 10);
+  const { rows } = await pool.query(
+    'INSERT INTO global_passwords (password_hash, is_one_time) VALUES ($1, $2) RETURNING id',
+    [hash, !!isOneTime]
+  );
+  res.json({ ok: true, id: rows[0].id });
+});
+
+app.get('/api/admin/global-passwords', authMiddleware, requireFullAdmin, async (req, res) => {
+  const { rows } = await pool.query('SELECT id, is_one_time, created_at FROM global_passwords');
+  res.json({ ok: true, passwords: rows });
+});
+
+app.delete('/api/admin/global-passwords/:id', authMiddleware, requireFullAdmin, async (req, res) => {
+  const { rowCount } = await pool.query('DELETE FROM global_passwords WHERE id = $1', [req.params.id]);
+  res.json({ ok: rowCount > 0 });
+});
+
+app.get('/api/movies/:id/episodes', async (req, res) => {
+  const id = req.params.id;
+  const { rows } = await pool.query('SELECT imdb_id, type FROM movies WHERE id = $1', [id]);
+  if (!rows[0] || rows[0].type !== 'tv_show') {
+    return res.json({ ok: false, error: 'Not a TV show' });
+  }
+
+  const imdbId = rows[0].imdb_id;
+  try {
+    const showRes = await fetch(`https://api.tvmaze.com/lookup/shows?imdb=${imdbId}`);
+    if (!showRes.ok) throw new Error();
+    const show = await showRes.json();
+
+    const epRes = await fetch(`https://api.tvmaze.com/shows/${show.id}/episodes`);
+    if (!epRes.ok) throw new Error();
+    const eps = await epRes.json();
+
+    const seasons = {};
+    eps.forEach(ep => {
+      const s = ep.season.toString();
+      if (!seasons[s]) seasons[s] = [];
+      seasons[s].push({
+        episode: ep.number,
+        name: ep.name || `Episode ${ep.number}`
+      });
+    });
+
+    res.json({ ok: true, seasons });
+  } catch (err) {
+    res.json({ ok: false, error: 'Failed to load episodes' });
+  }
+});
+
+app.post('/api/movies/:id/authorize', async (req, res) => {
+  if (redirectEnabled) {
+    return res.json({ ok: false, error: 'Website is currently redirecting' });
+  }
+
+  const { password } = req.body;
+  if (!password) return res.json({ ok: false, error: 'Password required' });
+
+  const { rows } = await pool.query(
+    'SELECT password_hashes, one_time_password_hashes FROM movies WHERE id = $1',
+    [req.params.id]
+  );
+  if (!rows[0]) return res.json({ ok: false, error: 'Movie not found' });
+
+  let regular = [], ot = [];
+  try { regular = JSON.parse(rows[0].password_hashes || '[]'); } catch (_) { regular = []; }
+  try { ot = JSON.parse(rows[0].one_time_password_hashes || '[]'); } catch (_) { ot = []; }
+
+  const hasSpecificPasswords = regular.length > 0 || ot.length > 0;
+
+  for (let i = 0; i < ot.length; i++) {
+    if (await bcrypt.compare(password, ot[i])) {
+      ot.splice(i, 1);
+      await pool.query('UPDATE movies SET one_time_password_hashes = $1 WHERE id = $2',
+        [JSON.stringify(ot), req.params.id]);
+      return res.json({ ok: true, token: jwt.sign({ movieId: req.params.id }, JWT_SECRET, { expiresIn: '6h' }) });
+    }
+  }
+
+  for (const h of regular) {
+    if (await bcrypt.compare(password, h)) {
+      return res.json({ ok: true, token: jwt.sign({ movieId: req.params.id }, JWT_SECRET, { expiresIn: '6h' }) });
+    }
+  }
+
+  if (hasSpecificPasswords) {
+    return res.json({ ok: false, error: 'Wrong password' });
+  }
+
+  const { rows: globals } = await pool.query('SELECT id, password_hash, is_one_time FROM global_passwords');
+  
+  for (const g of globals) {
+    if (g.is_one_time && await bcrypt.compare(password, g.password_hash)) {
+      await pool.query('DELETE FROM global_passwords WHERE id = $1', [g.id]);
+      return res.json({ ok: true, token: jwt.sign({ movieId: req.params.id }, JWT_SECRET, { expiresIn: '6h' }) });
+    }
+  }
+  
+  for (const g of globals) {
+    if (!g.is_one_time && await bcrypt.compare(password, g.password_hash)) {
+      return res.json({ ok: true, token: jwt.sign({ movieId: req.params.id }, JWT_SECRET, { expiresIn: '6h' }) });
+    }
+  }
+
+  res.json({ ok: false, error: 'Wrong password' });
+});
+
+app.get('/api/movies/:id/embed', authMiddleware, async (req, res) => {
+  if (redirectEnabled) {
+    return res.json({ ok: false, error: 'Website is currently redirecting' });
+  }
+
+  const { movieId } = req.user;
+  const { rows } = await pool.query(
+    'SELECT imdb_id, type, duration, overlay_enabled FROM movies WHERE id = $1',
+    [movieId]
+  );
+  if (!rows[0]) return res.json({ ok: false, error: 'Not found' });
+
+  const { imdb_id, type, duration, overlay_enabled } = rows[0];
+  const base = type === 'movie' ? 'movie' : 'tv';
+  const url = `https://vidsrc.me/embed/${base}/${imdb_id}`;
+
+  res.json({ 
+    ok: true, 
+    url, 
+    duration, 
+    overlay_enabled: overlay_enabled || false,
+    right_cover_enabled: true,
+    bottom_left_enabled: true,
+    duration_replacement_enabled: true
+  });
+});
+
+app.get('/api/trailer', async (req, res) => {
+  if (!YOUTUBE_API_KEY) return res.json({ ok: false, error: 'YouTube API key not set' });
+  const { title } = req.query;
+  if (!title) return res.status(400).json({ ok: false, error: 'Title required' });
+
+  const query = encodeURIComponent(title);
+  try {
+    const ytRes = await fetch(
+      `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${query}&type=video&key=${YOUTUBE_API_KEY}`
+    );
+    const data = await ytRes.json();
+
+    if (!data.items?.length) return res.json({ ok: false, error: 'No trailer found' });
+
+    const video = data.items.find(v =>
+      v.snippet.title.toLowerCase().includes('official') ||
+      v.snippet.title.toLowerCase().includes('trailer')
+    ) || data.items[0];
+
+    res.json({ ok: true, url: `https://www.youtube.com/embed/${video.id.videoId}` });
+  } catch (err) {
+    res.json({ ok: false, error: 'Failed to fetch trailer' });
+  }
+});
+
+app.post('/api/wishlist', async (req, res) => {
+  const { title, type, imdb_id } = req.body;
+  if (!title || !type) return res.status(400).json({ ok: false, error: 'Title and type required' });
+
+  try {
+    const { rows } = await pool.query('SELECT 1 FROM movies WHERE LOWER(title) = LOWER($1)', [title]);
+    if (rows.length > 0) return res.json({ ok: false, error: 'Already available' });
+
+    if (!wishlistChannel) return res.json({ ok: false, error: 'Channel not configured' });
+
+    const displayId = imdb_id ? imdb_id.replace(/^tt/, '') : 'N/A';
+
+    const embed = new EmbedBuilder()
+      .setColor('#e50914')
+      .setTitle(`New ${type.charAt(0).toUpperCase() + type.slice(1)} Request`)
+      .addFields(
+        { name: 'Title', value: title, inline: true },
+        { name: 'ID', value: displayId, inline: true }
+      )
+      .setFooter({ text: 'Pending Review' })
+      .setTimestamp();
+
+    await wishlistChannel.send({ embeds: [embed] });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
+app.get('/api/fix-posters', async (req, res) => {
+  const pass = req.query.pass;
+  if (pass !== ADMIN_PASSWORD) {
+    return res.status(403).json({ ok: false, error: 'Invalid password' });
+  }
+
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, imdb_id FROM movies WHERE imdb_id IS NOT NULL AND (image IS NULL OR image = \'\' OR image = \'N/A\')'
+    );
+
+    let fixed = 0;
+    for (const movie of rows) {
+      try {
+        const omdbRes = await fetch(`https://www.omdbapi.com/?i=${movie.imdb_id}&apikey=${OMDb_KEY}`);
+        const data = await omdbRes.json();
+        if (data.Poster && data.Poster !== 'N/A') {
+          await pool.query('UPDATE movies SET image = $1 WHERE id = $2', [data.Poster, movie.id]);
+          fixed++;
+        }
+      } catch (err) {
+        console.error(`Failed for ${movie.id}:`, err.message);
+      }
+    }
+
+    res.json({ ok: true, fixed, message: `Fixed ${fixed} posters. Refresh site.` });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
