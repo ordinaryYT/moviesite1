@@ -156,8 +156,8 @@
     <h3>Public Rooms</h3>
     <div id="publicRooms" class="rooms-grid"></div>
   </div>
-  <div id="adminPanel"></div>
-  <div id="settingsPanel"></div>
+  <div id="adminPanel" class="admin-panel"></div>
+  <div id="settingsPanel" class="admin-panel"></div>
 </main>
 
 <div id="redirectOverlay" class="redirect-overlay">
@@ -654,7 +654,7 @@ async function toggleAutoCode(enabled) {
   try {
     const res = await fetch(`${API}/user/settings/auto-code`, {
       method: 'POST',
-      headers: {'Content-Type': 'application/json','Authorization': `Bearer ${userToken}`},
+      headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}`},
       body: JSON.stringify({ enabled })
     });
     const data = await res.json();
@@ -665,9 +665,7 @@ async function toggleAutoCode(enabled) {
 async function loadUserData() {
   if (!userToken) return;
   try {
-    const res = await fetch(`${API}/user/settings`, {
-      headers: { 'Authorization': `Bearer ${userToken}` }
-    });
+    const res = await fetch(`${API}/user/settings`, { headers: { 'Authorization': `Bearer ${userToken}` } });
     const data = await res.json();
     if (data.ok) userSettings = data.settings;
   } catch {}
@@ -682,7 +680,7 @@ async function requestAutoCode() {
   try {
     const res = await fetch(`${API}/auto-code/request`, {
       method: 'POST',
-      headers: {'Content-Type': 'application/json','Authorization': `Bearer ${userToken}`},
+      headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}`},
       body: JSON.stringify({ movieTitle: movie.title, movieId: selectedMovieId })
     });
     const data = await res.json();
@@ -942,7 +940,7 @@ async function requestEpisodeSelection() {
       episodeData = data.seasons;
       const seasonSelect = document.getElementById('seasonSelect');
       seasonSelect.innerHTML = '';
-      Object.keys(episodeData).sort((a,b)=>parseInt(a)-parseInt(b)).forEach(season => {
+      Object.keys(episodeData).sort((a,b)=>a-b).forEach(season => {
         const option = document.createElement('option');
         option.value = season;
         option.textContent = `Season ${season}`;
