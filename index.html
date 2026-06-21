@@ -654,7 +654,7 @@ async function toggleAutoCode(enabled) {
   try {
     const res = await fetch(`${API}/user/settings/auto-code`, {
       method: 'POST',
-      headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}`},
+      headers: {'Content-Type': 'application/json','Authorization': `Bearer ${userToken}`},
       body: JSON.stringify({ enabled })
     });
     const data = await res.json();
@@ -665,7 +665,9 @@ async function toggleAutoCode(enabled) {
 async function loadUserData() {
   if (!userToken) return;
   try {
-    const res = await fetch(`${API}/user/settings`, { headers: { 'Authorization': `Bearer ${userToken}` } });
+    const res = await fetch(`${API}/user/settings`, {
+      headers: { 'Authorization': `Bearer ${userToken}` }
+    });
     const data = await res.json();
     if (data.ok) userSettings = data.settings;
   } catch {}
@@ -680,7 +682,7 @@ async function requestAutoCode() {
   try {
     const res = await fetch(`${API}/auto-code/request`, {
       method: 'POST',
-      headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${userToken}`},
+      headers: {'Content-Type': 'application/json','Authorization': `Bearer ${userToken}`},
       body: JSON.stringify({ movieTitle: movie.title, movieId: selectedMovieId })
     });
     const data = await res.json();
@@ -854,15 +856,13 @@ async function loadAdminMovies() {
     const data = await res.json();
     if (data.ok) {
       const container = document.getElementById('movieListAdmin');
-      if (container) {
-        container.innerHTML = '';
-        data.movies.forEach(movie => {
-          const div = document.createElement('div');
-          div.className = 'movie-item-admin';
-          div.innerHTML = `<div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'}) ${movie.overlay_enabled ? ' [Middle Overlay]' : ''}</div><div><button onclick="deleteMovie(${movie.id})">Delete</button></div>`;
-          container.appendChild(div);
-        });
-      }
+      container.innerHTML = '';
+      data.movies.forEach(movie => {
+        const div = document.createElement('div');
+        div.className = 'movie-item-admin';
+        div.innerHTML = `<div><strong>${movie.title}</strong> (${movie.year || 'N/A'}, ${movie.type === 'movie' ? 'Movie' : 'TV Show'}) ${movie.overlay_enabled ? ' [Middle Overlay]' : ''}</div><div><button onclick="deleteMovie(${movie.id})">Delete</button></div>`;
+        container.appendChild(div);
+      });
     }
   } catch {}
 }
@@ -888,15 +888,13 @@ async function loadGlobalPasswords() {
     const data = await res.json();
     if (data.ok) {
       const container = document.getElementById('globalPasswordList');
-      if (container) {
-        container.innerHTML = '';
-        data.passwords.forEach(pwd => {
-          const item = document.createElement('div');
-          item.className = 'movie-item-admin';
-          item.innerHTML = `<div>${pwd.is_one_time ? 'One-Time' : 'Regular'} Password (Created: ${new Date(pwd.created_at).toLocaleString()})</div><button onclick="deleteGlobalPassword(${pwd.id})">Delete</button>`;
-          container.appendChild(item);
-        });
-      }
+      container.innerHTML = '';
+      data.passwords.forEach(pwd => {
+        const item = document.createElement('div');
+        item.className = 'movie-item-admin';
+        item.innerHTML = `<div>${pwd.is_one_time ? 'One-Time' : 'Regular'} Password (Created: ${new Date(pwd.created_at).toLocaleString()})</div><button onclick="deleteGlobalPassword(${pwd.id})">Delete</button>`;
+        container.appendChild(item);
+      });
     }
   } catch {}
 }
@@ -944,7 +942,7 @@ async function requestEpisodeSelection() {
       episodeData = data.seasons;
       const seasonSelect = document.getElementById('seasonSelect');
       seasonSelect.innerHTML = '';
-      Object.keys(episodeData).sort((a,b)=>a-b).forEach(season => {
+      Object.keys(episodeData).sort((a,b)=>parseInt(a)-parseInt(b)).forEach(season => {
         const option = document.createElement('option');
         option.value = season;
         option.textContent = `Season ${season}`;
@@ -1041,7 +1039,7 @@ settingsBtn.addEventListener('click', openSettingsPanel);
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    [loginModal, document.getElementById('addContentSearchModal'), document.getElementById('finalAddModal'), passwordModal, globalPasswordModal, episodeModal, trailerModal, playerContainer, document.getElementById('createRoomModal'), document.getElementById('joinRoomModal')].forEach(m => m.classList.remove('active'));
+    [loginModal, document.getElementById('addContentSearchModal'), document.getElementById('finalAddModal'), passwordModal, globalPasswordModal, episodeModal, trailerModal, playerContainer, document.getElementById('createRoomModal'), document.getElementById('joinRoomModal')].forEach(m => { if(m) m.classList.remove('active'); });
     if (watchRoom.style.display === 'block') leaveWatchRoom();
     if (settingsPanel.classList.contains('active')) closeSettingsPanel();
   }
